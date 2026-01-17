@@ -23,6 +23,7 @@ RUN ./gradlew :server:buildFatJar :composeApp:jsBrowserProductionWebpack --no-da
 
 # Runtime stage
 FROM eclipse-temurin:21-jre-alpine
+LABEL org.opencontainers.image.source=https://github.com/CommanderTvis/hue-manager
 WORKDIR /app
 
 # Create non-root user for security
