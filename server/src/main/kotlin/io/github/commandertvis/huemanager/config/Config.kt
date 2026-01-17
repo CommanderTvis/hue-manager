@@ -10,6 +10,8 @@ data class Config(
     val password: String,
     val region: GeoLocation,
     val pseudoSunset: String,
+    val timezone: String,
+    val keystorePassword: String?,
     val hueBridgeIp: String?,
     val hueUsername: String?
 )
@@ -40,6 +42,8 @@ object ConfigLoader {
         val region = parseRegion(regionStr)
 
         val pseudoSunset = env["PSEUDO_SUNSET"] ?: "21:05"
+        val timezone = env["TIMEZONE"] ?: "Europe/Berlin"
+        val keystorePassword = env["KEYSTORE_PASSWORD"]
 
         val hueBridgeIp = env["HUE_BRIDGE_IP"]?.takeIf { it.isNotBlank() }
         val hueUsername = env["HUE_USERNAME"]?.takeIf { it.isNotBlank() }
@@ -48,6 +52,8 @@ object ConfigLoader {
             password = password,
             region = region,
             pseudoSunset = pseudoSunset,
+            timezone = timezone,
+            keystorePassword = keystorePassword,
             hueBridgeIp = hueBridgeIp,
             hueUsername = hueUsername
         )

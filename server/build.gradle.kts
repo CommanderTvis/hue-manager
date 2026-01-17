@@ -5,6 +5,10 @@ plugins {
     application
 }
 
+kotlin {
+    jvmToolchain(17)
+}
+
 group = "io.github.commandertvis.huemanager"
 version = "1.0.0"
 application {

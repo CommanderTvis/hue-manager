@@ -96,6 +96,22 @@ enum class LinkStatus {
     FAILED
 }
 
+// Bridge configuration from client
+@Serializable
+data class BridgeConfigRequest(
+    val bridgeIp: String,
+    val username: String? = null  // If null, server will try to link
+)
+
+@Serializable
+data class BridgeConfigResponse(
+    val success: Boolean,
+    val connected: Boolean,
+    val bridgeIp: String?,
+    val needsLinking: Boolean,
+    val message: String
+)
+
 // Generic API responses
 @Serializable
 data class ApiError(

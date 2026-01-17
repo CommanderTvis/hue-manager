@@ -132,7 +132,8 @@ class AutomationManager(
         if (userState != UserState.AWAKE) return
 
         val now = Clock.System.now()
-        val localNow = now.toLocalDateTime(TimeZone.currentSystemDefault())
+        val timeZone = TimeZone.of(config.timezone)
+        val localNow = now.toLocalDateTime(timeZone)
         val currentTime = localNow.time
 
         val desiredState = calculateDesiredState(currentTime)
@@ -203,7 +204,8 @@ class AutomationManager(
         // For accurate results, use a proper astronomical library
         val lat = config.region.latitude
         val now = Clock.System.now()
-        val dayOfYear = now.toLocalDateTime(TimeZone.currentSystemDefault()).dayOfYear
+        val timeZone = TimeZone.of(config.timezone)
+        val dayOfYear = now.toLocalDateTime(timeZone).dayOfYear
 
         // Approximate sunrise/sunset based on latitude and day of year
         // This is a rough approximation - production code should use proper solar calculations

@@ -19,4 +19,6 @@ captures
 node_modules/
 .env
 
+kotlin-js-store/
+
 .claude/settings.local.json

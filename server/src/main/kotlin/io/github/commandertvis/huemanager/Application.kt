@@ -14,12 +14,14 @@ import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.engine.*
+import io.ktor.server.http.content.*
 import io.ktor.server.netty.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.cors.routing.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import java.io.File
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
@@ -41,30 +43,24 @@ fun main() {
 
     runBlocking {
         val initialized = hueService.initialize()
-        if (!initialized && hueService.needsLinking) {
-            logger.info("Hue bridge needs linking. Starting link process...")
-            when (val result = hueService.startLinking()) {
-                is LinkResult.Success -> logger.info("Bridge linked successfully!")
-                is LinkResult.Error -> {
-                    logger.error("Failed to link bridge: ${result.message}")
-                    return@runBlocking
-                }
-                LinkResult.LinkButtonNotPressed -> {
-                    logger.error("Link button was not pressed in time")
-                    return@runBlocking
-                }
-            }
+        if (initialized) {
+            // Set all discovered lamps as automated by default
+            val lamps = hueService.getLights()
+            automationManager.setAutomatedLamps(lamps.keys)
+            logger.info("Connected to Hue bridge with ${lamps.size} lamps")
+        } else {
+            logger.info("Hue bridge not configured. Use the web UI or API to configure bridge connection.")
         }
-
-        // Set all discovered lamps as automated by default
-        val lamps = hueService.getLights()
-        automationManager.setAutomatedLamps(lamps.keys)
     }
 
     Runtime.getRuntime().addShutdownHook(Thread {
         automationManager.shutdown()
         hueService.close()
     })
+
+    // TODO: Implement HTTPS support using keystore (requires Ktor 3.x API adjustment for applicationEngineEnvironment)
+    // val keystoreFile = File("keystore.jks")
+    // if (keystoreFile.exists() && config.keystorePassword != null) { ... }
 
     embeddedServer(Netty, port = SERVER_PORT, host = "0.0.0.0") {
         module(config, hueService, sessionManager, automationManager)
@@ -97,8 +93,17 @@ fun Application.module(
     }
 
     routing {
-        get("/") {
-            call.respondText("Hue Manager Server v1.0.0")
+        // --- Static Web UI ---
+        val webDir = File("web")
+        if (webDir.exists() && webDir.isDirectory) {
+            singlePageApplication {
+                filesPath = "web"
+                defaultPage = "index.html"
+            }
+        } else {
+            get("/") {
+                call.respondText("Hue Manager Server v1.0.0 - Web UI not available")
+            }
         }
 
         // --- Authentication ---
@@ -109,6 +114,108 @@ fun Application.module(
                 call.respond(LoginResponse.success(session.token))
             } else {
                 call.respond(HttpStatusCode.Unauthorized, LoginResponse.failure("Invalid password"))
+            }
+        }
+
+        // --- Bridge Configuration (from client) ---
+        post("/api/bridge/configure") {
+            val token = call.request.header("Authorization")?.removePrefix("Bearer ")
+            if (!sessionManager.validateSession(token)) {
+                call.respond(HttpStatusCode.Unauthorized, ApiError("Invalid session", 401))
+                return@post
+            }
+
+            val request = call.receive<BridgeConfigRequest>()
+
+            val username = request.username
+            if (username != null) {
+                // Client provided username, try to connect directly
+                val success = hueService.configureBridge(request.bridgeIp, username)
+                if (success) {
+                    // Initialize automation with discovered lamps
+                    val lamps = hueService.getLights()
+                    automationManager.setAutomatedLamps(lamps.keys)
+
+                    call.respond(
+                        BridgeConfigResponse(
+                            success = true,
+                            connected = true,
+                            bridgeIp = request.bridgeIp,
+                            needsLinking = false,
+                            message = "Connected to bridge with ${lamps.size} lamps"
+                        )
+                    )
+                } else {
+                    call.respond(
+                        BridgeConfigResponse(
+                            success = false,
+                            connected = false,
+                            bridgeIp = request.bridgeIp,
+                            needsLinking = true,
+                            message = "Failed to connect - invalid credentials or bridge unreachable"
+                        )
+                    )
+                }
+            } else {
+                // No username, need to link - start linking process
+                call.respond(
+                    BridgeConfigResponse(
+                        success = true,
+                        connected = false,
+                        bridgeIp = request.bridgeIp,
+                        needsLinking = true,
+                        message = "Bridge IP set. Press link button on bridge and call /api/bridge/link"
+                    )
+                )
+            }
+        }
+
+        post("/api/bridge/link") {
+            val token = call.request.header("Authorization")?.removePrefix("Bearer ")
+            if (!sessionManager.validateSession(token)) {
+                call.respond(HttpStatusCode.Unauthorized, ApiError("Invalid session", 401))
+                return@post
+            }
+
+            val request = call.receive<BridgeConfigRequest>()
+
+            when (val result = hueService.linkExternalBridge(request.bridgeIp)) {
+                is LinkResult.Success -> {
+                    val lamps = hueService.getLights()
+                    automationManager.setAutomatedLamps(lamps.keys)
+
+                    call.respond(
+                        BridgeConfigResponse(
+                            success = true,
+                            connected = true,
+                            bridgeIp = request.bridgeIp,
+                            needsLinking = false,
+                            message = "Successfully linked! Found ${lamps.size} lamps"
+                        )
+                    )
+                }
+                is LinkResult.Error -> {
+                    call.respond(
+                        BridgeConfigResponse(
+                            success = false,
+                            connected = false,
+                            bridgeIp = request.bridgeIp,
+                            needsLinking = true,
+                            message = result.message
+                        )
+                    )
+                }
+                LinkResult.LinkButtonNotPressed -> {
+                    call.respond(
+                        BridgeConfigResponse(
+                            success = false,
+                            connected = false,
+                            bridgeIp = request.bridgeIp,
+                            needsLinking = true,
+                            message = "Link button was not pressed"
+                        )
+                    )
+                }
             }
         }
 

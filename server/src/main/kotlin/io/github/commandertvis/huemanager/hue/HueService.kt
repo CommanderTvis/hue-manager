@@ -129,6 +129,60 @@ class HueService(private var config: Config) {
 
     fun getBridgeIp(): String? = bridgeIp
 
+    /**
+     * Configure bridge from external source (e.g., client app that discovered it locally)
+     */
+    suspend fun configureBridge(ip: String, user: String): Boolean {
+        logger.info("Configuring bridge from external source: $ip")
+
+        val valid = HueBridge.validateConnection(ip, user)
+        if (!valid) {
+            logger.error("Failed to validate external bridge config at $ip")
+            return false
+        }
+
+        bridgeIp = ip
+        username = user
+        ConfigLoader.updateHueCredentials(ip, user)
+
+        return connect()
+    }
+
+    /**
+     * Start linking from external bridge IP (client discovered it locally)
+     */
+    suspend fun linkExternalBridge(ip: String, maxAttempts: Int = 30, delayMs: Long = 2000): LinkResult {
+        bridgeIp = ip
+        logger.info("Starting link process with externally-provided bridge at $ip")
+        logger.info("Please press the link button on your Hue bridge...")
+
+        repeat(maxAttempts) { attempt ->
+            val result = HueBridge.createUser(ip)
+            when (result) {
+                is LinkResult.Success -> {
+                    username = result.username
+                    ConfigLoader.updateHueCredentials(ip, result.username)
+                    logger.info("Successfully linked! Username: ${result.username}")
+
+                    if (connect()) {
+                        return result
+                    }
+                    return LinkResult.Error("Linked but failed to connect")
+                }
+                is LinkResult.LinkButtonNotPressed -> {
+                    if (attempt < maxAttempts - 1) {
+                        delay(delayMs)
+                    }
+                }
+                is LinkResult.Error -> {
+                    return result
+                }
+            }
+        }
+
+        return LinkResult.Error("Linking timed out - button was not pressed")
+    }
+
     fun close() {
         client?.close()
         HueBridge.close()
