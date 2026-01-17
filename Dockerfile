@@ -16,9 +16,10 @@ COPY gradle/libs.versions.toml gradle/
 # Copy source modules
 COPY shared shared
 COPY server server
+COPY composeApp composeApp
 
-# Build the fat JAR
-RUN ./gradlew :server:buildFatJar --no-daemon
+# Build the fat JAR and Web assets
+RUN ./gradlew :server:buildFatJar :composeApp:jsBrowserProductionWebpack --no-daemon
 
 # Runtime stage
 FROM eclipse-temurin:21-jre-alpine
@@ -30,6 +31,9 @@ USER huemanager
 
 # Copy the built JAR
 COPY --from=build /app/server/build/libs/*-all.jar app.jar
+
+# Copy the web assets
+COPY --from=build /app/composeApp/build/dist/js/productionExecutable /app/web
 
 # Expose the server port
 EXPOSE 8080
