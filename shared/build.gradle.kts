@@ -8,8 +8,6 @@ plugins {
 }
 
 kotlin {
-    jvmToolchain(17)
-
     androidLibrary {
         namespace = "io.github.commandertvis.huemanager.shared"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
