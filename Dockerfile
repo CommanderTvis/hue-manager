@@ -1,5 +1,5 @@
 # Build stage
-FROM gradle:8.5-jdk21 AS build
+FROM eclipse-temurin:21-jdk AS build
 WORKDIR /app
 
 # Copy gradle files first for better caching

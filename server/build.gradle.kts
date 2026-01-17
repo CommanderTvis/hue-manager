@@ -45,5 +45,5 @@ dependencies {
     implementation(libs.dotenv)
 
     testImplementation(libs.ktor.serverTestHost)
-    testImplementation(libs.kotlin.testJunit)
+    testImplementation(kotlin("test-junit"))
 }

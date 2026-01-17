@@ -96,6 +96,14 @@ enum class LinkStatus {
     FAILED
 }
 
+// Bridge discovery
+@Serializable
+data class DiscoveredBridge(
+    val id: String,
+    val internalipaddress: String,
+    val port: Int? = null
+)
+
 // Bridge configuration from client
 @Serializable
 data class BridgeConfigRequest(

@@ -199,6 +199,49 @@ class ApiClient(
         }
     }
 
+    suspend fun discoverBridges(): Result<List<DiscoveredBridge>> {
+        return try {
+            val response: HttpResponse = client.get("https://discovery.meethue.com")
+            Result.success(response.body())
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun configureBridge(request: BridgeConfigRequest): Result<BridgeConfigResponse> {
+        return try {
+            val response: HttpResponse = client.post("$baseUrl/api/bridge/configure") {
+                contentType(ContentType.Application.Json)
+                header(HttpHeaders.Authorization, "Bearer $authToken")
+                setBody(request)
+            }
+            if (response.status.isSuccess()) {
+                Result.success(response.body())
+            } else {
+                Result.failure(ApiException("Bridge configuration failed: ${response.status}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun linkBridge(request: BridgeConfigRequest): Result<BridgeConfigResponse> {
+        return try {
+            val response: HttpResponse = client.post("$baseUrl/api/bridge/link") {
+                contentType(ContentType.Application.Json)
+                header(HttpHeaders.Authorization, "Bearer $authToken")
+                setBody(request)
+            }
+            if (response.status.isSuccess()) {
+                Result.success(response.body())
+            } else {
+                Result.failure(ApiException("Bridge linking failed: ${response.status}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     fun close() {
         client.close()
     }

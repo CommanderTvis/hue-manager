@@ -1,5 +1,5 @@
 [versions]
-agp = "8.11.2"
+agp = "8.12.0"
 android-compileSdk = "36"
 android-minSdk = "24"
 android-targetSdk = "36"
@@ -15,14 +15,12 @@ junit = "4.13.2"
 kotlin = "2.3.0"
 kotlinx-coroutines = "1.10.2"
 ktor = "3.3.3"
-logback = "1.5.24"
-dotenv = "6.5.0"
-kotlinx-serialization = "1.8.1"
-kotlinx-datetime = "0.6.2"
+logback = "1.5.25"
+dotenv = "6.5.1"
+kotlinx-serialization = "1.9.0"
+kotlinx-datetime = "0.7.1"
 
 [libraries]
-kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
-kotlin-testJunit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
 junit = { module = "junit:junit", version.ref = "junit" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidx-core" }
 androidx-testExt-junit = { module = "androidx.test.ext:junit", version.ref = "androidx-testExt" }
@@ -66,6 +64,7 @@ composeHotReload = { id = "org.jetbrains.compose.hot-reload", version.ref = "com
 composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
 composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlinAndroid = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 ktor = { id = "io.ktor.plugin", version.ref = "ktor" }
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlinSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

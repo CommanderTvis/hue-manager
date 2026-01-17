@@ -4,7 +4,8 @@
 
 A Philips Hue lamp management system with:
 - **server/**: Ktor backend for managing lamp state via Philips Hue REST API
-- **composeApp/**: Compose Multiplatform UI (Android, Desktop JVM, Web JS/WasmJS)
+- **composeApp/**: Compose Multiplatform UI library (Desktop JVM, Web JS/WasmJS, Android target)
+- **androidApp/**: Android application module (depends on composeApp)
 - **shared/**: Shared data models and constants
 
 ## Current State
@@ -191,6 +192,8 @@ hue-manager/
 │   ├── ui/                  # UI screens
 │   ├── viewmodel/           # ViewModels
 │   └── network/             # Server API client
+├── androidApp/src/main/kotlin/io/github/commandertvis/huemanager/
+│   └── MainActivity.kt      # Android entry point
 ├── .env.example
 ├── Dockerfile
 └── docker-compose.yml

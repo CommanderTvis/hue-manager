@@ -26,6 +26,16 @@ composeApp is UI.
 
 # UI design
 
+## Screen Flows
+
+**Desktop/mobile flow:**
+
+Server choose -> Auth -> Bridge pairing (if not done) -> Lamps
+
+**Web app flow:**
+
+Auth -> "Please pair" screen if bridge is not paired OR Lamps if paired
+
 ## Server choose screen
 
 On the local apps (desktop and android), there should be an initial prompt to give the Ktor server's URL. When a new URL is being entered, try connecting to check if the server is at least reachable.
@@ -40,11 +50,13 @@ Then, if needed, it should start Hue bridge access acquisition (the one where yo
 
 Since the remote server can't discover a Hue bridge in my home, the app should be able to do it and grant to the server the actual IP of my Hue bridge.
 
+Also, since the Web UI hosted on the remote server can't connect to the Bridge, it should handle the situation when Bridge is not paired yet properly.
+
 ## Lamps screen (aka. main screen)
 
 Should list all lamps of home and their current state.
 
-Provide controls to turn on/off individual lamps, to change their brigthness and color.
+Provide controls to turn on/off individual lamps, to change their brightness and color.
 
 Manual changes should be respected only for 1 hour unless a special control is pressed, then we are going back to automation.
 
