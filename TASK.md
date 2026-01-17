@@ -4,6 +4,8 @@
 
 Maintain CLAUDE.md automatically as your memory to keep track of what needs to be done, project structure, etc.
 
+When new tasks/changes/conventions/recommendations appear, implement them.
+
 # Motivation
 
 I have a problem with managing my Philips Hue lamps.
@@ -109,3 +111,7 @@ Configure GitHub Actions to build snapshots from master. Images have to be tagge
 Authentication session has to be secure, I don't know exactly how. Anyway, be vigilant because it's a private home management system.
 
 Use .env (gitignored) and .env.example (to show structure .env) for configuration of necessary API secrets, including password. Also .env should have region for geo features. Time zone also has to be stored in .env. The default one has to be Europe/Berlin.
+
+## Misc
+
+- Philips Hue has tight rate limits, especially for discovery. Make sure to throttle requests.

@@ -1,8 +1,8 @@
 package io.github.commandertvis.huemanager.auth
 
 import io.github.commandertvis.huemanager.config.Config
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
+import kotlin.time.Clock
+import kotlin.time.Instant
 import java.security.SecureRandom
 import java.util.*
 import kotlin.time.Duration.Companion.days

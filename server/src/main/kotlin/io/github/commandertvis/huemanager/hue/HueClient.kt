@@ -12,12 +12,19 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import java.security.cert.X509Certificate
 import javax.net.ssl.X509TrustManager
+import kotlin.time.Duration.Companion.seconds
 
 class HueClient(
     private val bridgeIp: String,
     private val username: String
 ) {
     private val baseUrl = "https://$bridgeIp/api/$username"
+
+    // Hue bridge rate limits (shared across all connected apps):
+    // - Individual lights: ~10 commands per second
+    // - Groups: 1 command per second
+    private val lightRateLimiter = RateLimiter(maxTokens = 10, refillRate = 1.seconds)
+    private val groupRateLimiter = RateLimiter(maxTokens = 1, refillRate = 1.seconds)
 
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
@@ -37,16 +44,16 @@ class HueClient(
         }
     }
 
-    suspend fun getLights(): Map<String, HueLight> {
+    suspend fun getLights(): Map<String, HueLight> = lightRateLimiter.execute {
         val response: HttpResponse = client.get("$baseUrl/lights")
         val json = response.body<JsonObject>()
-        return json.mapValues { (_, value) ->
+        json.mapValues { (_, value) ->
             Json.decodeFromJsonElement<HueLight>(value)
         }
     }
 
-    suspend fun getLight(id: String): HueLight? {
-        return try {
+    suspend fun getLight(id: String): HueLight? = lightRateLimiter.execute {
+        try {
             val response: HttpResponse = client.get("$baseUrl/lights/$id")
             response.body<HueLight>()
         } catch (e: Exception) {
@@ -54,8 +61,8 @@ class HueClient(
         }
     }
 
-    suspend fun setLightState(id: String, state: HueLightStateUpdate): Boolean {
-        return try {
+    suspend fun setLightState(id: String, state: HueLightStateUpdate): Boolean = lightRateLimiter.execute {
+        try {
             val response: HttpResponse = client.put("$baseUrl/lights/$id/state") {
                 contentType(ContentType.Application.Json)
                 setBody(state)
@@ -66,16 +73,16 @@ class HueClient(
         }
     }
 
-    suspend fun getGroups(): Map<String, HueGroup> {
+    suspend fun getGroups(): Map<String, HueGroup> = groupRateLimiter.execute {
         val response: HttpResponse = client.get("$baseUrl/groups")
         val json = response.body<JsonObject>()
-        return json.mapValues { (_, value) ->
+        json.mapValues { (_, value) ->
             Json.decodeFromJsonElement<HueGroup>(value)
         }
     }
 
-    suspend fun getGroup(id: String): HueGroup? {
-        return try {
+    suspend fun getGroup(id: String): HueGroup? = groupRateLimiter.execute {
+        try {
             val response: HttpResponse = client.get("$baseUrl/groups/$id")
             response.body<HueGroup>()
         } catch (e: Exception) {
@@ -83,8 +90,8 @@ class HueClient(
         }
     }
 
-    suspend fun setGroupState(id: String, state: HueLightStateUpdate): Boolean {
-        return try {
+    suspend fun setGroupState(id: String, state: HueLightStateUpdate): Boolean = groupRateLimiter.execute {
+        try {
             val response: HttpResponse = client.put("$baseUrl/groups/$id/action") {
                 contentType(ContentType.Application.Json)
                 setBody(state)

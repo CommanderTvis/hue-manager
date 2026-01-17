@@ -3,6 +3,7 @@ package io.github.commandertvis.huemanager.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -44,7 +45,9 @@ fun ServerConnectScreen(
             onValueChange = { viewModel.updateUrl(it) },
             label = { Text("Server URL") },
             isError = uiState.error != null,
-            supportingText = uiState.error?.let { { Text(it) } },
+            supportingText = uiState.error?.let { error -> 
+                { SelectionContainer { Text(error) } }
+            },
             singleLine = true,
             enabled = !uiState.isConnecting,
             keyboardOptions = KeyboardOptions(

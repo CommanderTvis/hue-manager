@@ -1,7 +1,6 @@
 package io.github.commandertvis.huemanager.api
 
 import io.github.commandertvis.huemanager.models.*
-import kotlinx.datetime.LocalTime
 import kotlinx.serialization.Serializable
 
 // Status endpoint responses

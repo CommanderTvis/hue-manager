@@ -24,9 +24,10 @@ A Philips Hue lamp management system with:
 
 **Server Files Created:**
 - `server/.../config/Config.kt` - Configuration loading from .env
-- `server/.../hue/HueClient.kt` - HTTP client for Hue REST API
-- `server/.../hue/HueBridge.kt` - Bridge discovery and linking
+- `server/.../hue/HueClient.kt` - HTTP client for Hue REST API with rate limiting
+- `server/.../hue/HueBridge.kt` - Bridge discovery and linking with rate limiting
 - `server/.../hue/HueService.kt` - Service layer managing Hue connection
+- `server/.../hue/RateLimiter.kt` - Token bucket and minimum delay rate limiters
 
 **Shared Models Created (Phase 2):**
 - `shared/.../models/Lamp.kt` - Lamp, LampState, ColorMode, LampType
@@ -198,3 +199,26 @@ hue-manager/
 ├── Dockerfile
 └── docker-compose.yml
 ```
+
+## Misc
+
+### Rate Limiting
+Philips Hue bridge has strict rate limits (shared across all connected apps):
+- Individual lights: ~10 commands/second
+- Groups: 1 command/second
+
+**Implementation (`RateLimiter.kt`):**
+1. **Token Bucket Rate Limiter** - For Hue bridge API calls
+   - Light operations: 10 requests/second (allows bursts)
+   - Group operations: 1 request/second (stricter limit)
+   - Uses monotonic time (`TimeSource.Monotonic`) to avoid clock-change issues
+2. **Minimum Delay Rate Limiter** - For infrequent operations
+   - Discovery: 5 second minimum delay between calls
+   - Linking/validation: 1 second minimum delay between attempts
+
+**Protected Operations:**
+- `HueClient` lights: getLights(), getLight(), setLightState() → 10 req/sec
+- `HueClient` groups: getGroups(), getGroup(), setGroupState() → 1 req/sec
+- `HueBridge`: discoverBridges() (5s delay), createUser() (1s delay), validateConnection() (1s delay)
+
+All rate limiters are coroutine-safe using Kotlin's `Mutex`.

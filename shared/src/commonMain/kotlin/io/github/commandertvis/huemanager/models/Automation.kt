@@ -1,6 +1,6 @@
 package io.github.commandertvis.huemanager.models
 
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 import kotlinx.datetime.LocalTime
 import kotlinx.serialization.Serializable
 
