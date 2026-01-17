@@ -35,4 +35,8 @@ plugins {
 include(":composeApp")
 include(":server")
 include(":shared")
-include(":androidApp")
+
+// Only include androidApp if the directory exists (Docker)
+if (file("androidApp").exists()) {
+    include(":androidApp")
+}
