@@ -19,6 +19,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+          build-scan-publish: false
+
+      - name: Build with Gradle
+        run: ./gradlew :server:buildFatJar :composeApp:jsBrowserDistribution
+
+      - name: Prepare Docker build context
+        run: |
+          mkdir -p build-output
+          cp server/build/libs/*-all.jar build-output/server.jar
+          cp -r composeApp/build/dist/js/productionExecutable build-output/web
+
       - name: Log in to the Container registry
         uses: docker/login-action@v3
         with:
@@ -42,8 +63,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: Dockerfile.runtime
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max

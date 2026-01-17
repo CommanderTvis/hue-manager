@@ -22,3 +22,6 @@ node_modules/
 kotlin-js-store/
 
 .claude/settings.local.json
+
+# CI build artifacts
+build-output/

@@ -1,0 +1,21 @@
+# Runtime-only Dockerfile for CI builds
+# Expects pre-built artifacts in build-output/
+FROM eclipse-temurin:21-jre-alpine
+LABEL org.opencontainers.image.source=https://github.com/CommanderTvis/hue-manager
+WORKDIR /app
+
+RUN addgroup -S huemanager && adduser -S huemanager -G huemanager
+USER huemanager
+
+# Copy pre-built JAR (built by CI, not Docker)
+COPY build-output/server.jar app.jar
+
+# Copy pre-built web assets
+COPY build-output/web /app/web
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/api/status || exit 1
+
+ENTRYPOINT ["java", "-jar", "app.jar"]
