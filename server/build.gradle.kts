@@ -7,6 +7,9 @@ plugins {
 
 kotlin {
     jvmToolchain(17)
+    compilerOptions {
+        allWarningsAsErrors.set(false)
+    }
 }
 
 group = "io.github.commandertvis.huemanager"

@@ -27,7 +27,7 @@ class SessionManager(private val config: Config) {
         val session = UserSession(
             token = token,
             createdAt = now,
-            expiresAt = now + sessionDuration
+            expiresAt = now.plus(sessionDuration)
         )
 
         sessions[token] = session

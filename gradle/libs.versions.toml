@@ -18,7 +18,7 @@ ktor = "3.3.3"
 logback = "1.5.25"
 dotenv = "6.5.1"
 kotlinx-serialization = "1.9.0"
-kotlinx-datetime = "0.7.1"
+kotlinx-datetime = "0.7.1-0.6.x-compat"
 
 [libraries]
 junit = { module = "junit:junit", version.ref = "junit" }

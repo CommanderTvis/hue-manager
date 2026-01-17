@@ -2,6 +2,7 @@ package io.github.commandertvis.huemanager.storage
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 
 private class AndroidServerUrlStorage(context: Context) : ServerUrlStorage {
     private val prefs: SharedPreferences = context.getSharedPreferences(
@@ -9,16 +10,14 @@ private class AndroidServerUrlStorage(context: Context) : ServerUrlStorage {
         Context.MODE_PRIVATE
     )
     
-    override fun getServerUrl(): String? {
-        return prefs.getString(KEY_SERVER_URL, null)
-    }
+    override fun getServerUrl(): String? = prefs.getString(KEY_SERVER_URL, null)
     
     override fun setServerUrl(url: String) {
-        prefs.edit().putString(KEY_SERVER_URL, url).apply()
+        prefs.edit { putString(KEY_SERVER_URL, url) }
     }
     
     override fun clearServerUrl() {
-        prefs.edit().remove(KEY_SERVER_URL).apply()
+        prefs.edit { remove(KEY_SERVER_URL) }
     }
     
     companion object {
