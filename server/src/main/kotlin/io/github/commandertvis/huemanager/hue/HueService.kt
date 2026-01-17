@@ -149,38 +149,34 @@ class HueService(private var config: Config) {
     }
 
     /**
-     * Start linking from external bridge IP (client discovered it locally)
+     * Try to link once - returns immediately with result.
+     * Client should poll this endpoint repeatedly while waiting for button press.
      */
-    suspend fun linkExternalBridge(ip: String, maxAttempts: Int = 30, delayMs: Long = 2000): LinkResult {
+    suspend fun tryLinkOnce(ip: String): LinkResult {
         bridgeIp = ip
-        logger.info("Starting link process with externally-provided bridge at $ip")
-        logger.info("Please press the link button on your Hue bridge...")
+        logger.info("Attempting link with bridge at $ip")
 
-        repeat(maxAttempts) { attempt ->
-            val result = HueBridge.createUser(ip)
-            when (result) {
-                is LinkResult.Success -> {
-                    username = result.username
-                    ConfigLoader.updateHueCredentials(ip, result.username)
-                    logger.info("Successfully linked! Username: ${result.username}")
+        val result = HueBridge.createUser(ip)
+        when (result) {
+            is LinkResult.Success -> {
+                username = result.username
+                ConfigLoader.updateHueCredentials(ip, result.username)
+                logger.info("Successfully linked! Username: ${result.username}")
 
-                    if (connect()) {
-                        return result
-                    }
-                    return LinkResult.Error("Linked but failed to connect")
-                }
-                is LinkResult.LinkButtonNotPressed -> {
-                    if (attempt < maxAttempts - 1) {
-                        delay(delayMs)
-                    }
-                }
-                is LinkResult.Error -> {
+                if (connect()) {
                     return result
                 }
+                return LinkResult.Error("Linked but failed to connect")
+            }
+            is LinkResult.LinkButtonNotPressed -> {
+                logger.debug("Button not pressed yet")
+                return result
+            }
+            is LinkResult.Error -> {
+                logger.error("Link error: ${result.message}")
+                return result
             }
         }
-
-        return LinkResult.Error("Linking timed out - button was not pressed")
     }
 
     fun close() {

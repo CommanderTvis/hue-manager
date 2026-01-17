@@ -10,11 +10,14 @@ import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
+import org.slf4j.LoggerFactory
 import java.security.cert.X509Certificate
 import javax.net.ssl.X509TrustManager
 import kotlin.time.Duration.Companion.seconds
 
 object HueBridge {
+    private val logger = LoggerFactory.getLogger(HueBridge::class.java)
+
     private const val DISCOVERY_URL = "https://discovery.meethue.com"
     private const val APP_NAME = "hue-manager"
     private const val DEVICE_NAME = "server"
@@ -58,6 +61,8 @@ object HueBridge {
             LinkRequest(devicetype = "$APP_NAME#$DEVICE_NAME")
         )
 
+        logger.debug("Attempting to create user on bridge at $bridgeIp")
+
         try {
             val response: HttpResponse = client.post(url) {
                 contentType(ContentType.Application.Json)
@@ -65,9 +70,12 @@ object HueBridge {
             }
 
             val responseText = response.bodyAsText()
+            logger.debug("Bridge response: $responseText")
+
             val jsonArray = Json.parseToJsonElement(responseText).jsonArray
 
             if (jsonArray.isEmpty()) {
+                logger.warn("Empty response from bridge")
                 return@execute LinkResult.Error("Empty response from bridge")
             }
 
@@ -79,8 +87,14 @@ object HueBridge {
                 val description = error["description"]?.jsonPrimitive?.content ?: "Unknown error"
 
                 return@execute when (errorType) {
-                    101 -> LinkResult.LinkButtonNotPressed
-                    else -> LinkResult.Error(description)
+                    101 -> {
+                        logger.debug("Link button not pressed yet")
+                        LinkResult.LinkButtonNotPressed
+                    }
+                    else -> {
+                        logger.warn("Bridge error: type=$errorType, description=$description")
+                        LinkResult.Error(description)
+                    }
                 }
             }
 
@@ -88,11 +102,14 @@ object HueBridge {
                 val success = firstElement["success"]!!.jsonObject
                 val username = success["username"]?.jsonPrimitive?.content
                     ?: return@execute LinkResult.Error("No username in response")
+                logger.info("Successfully created user: $username")
                 return@execute LinkResult.Success(username)
             }
 
+            logger.warn("Unexpected response format: $responseText")
             LinkResult.Error("Unexpected response format")
         } catch (e: Exception) {
+            logger.error("Error connecting to bridge: ${e.message}", e)
             LinkResult.Error(e.message ?: "Unknown error")
         }
     }

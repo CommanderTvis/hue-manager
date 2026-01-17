@@ -13,6 +13,7 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.Json
+import kotlin.time.Duration.Companion.seconds
 
 expect fun createHttpClient(): HttpClient
 
@@ -21,6 +22,9 @@ class ApiClient(
 ) {
     private val client = createHttpClient()
     private var authToken: String? = null
+
+    // Rate limiter for discovery.meethue.com (5 second minimum between calls)
+    private val discoveryRateLimiter = MinimumDelayRateLimiter(minimumDelay = 5.seconds)
 
     fun setAuthToken(token: String?) {
         authToken = token
@@ -200,9 +204,26 @@ class ApiClient(
     }
 
     suspend fun discoverBridges(): Result<List<DiscoveredBridge>> {
+        // Check rate limit before making request
+        val waitTime = discoveryRateLimiter.getRemainingWaitTime()
+        if (waitTime > kotlin.time.Duration.ZERO) {
+            return Result.failure(
+                ApiException("Please wait ${waitTime.inWholeSeconds} seconds before discovering again.")
+            )
+        }
+
         return try {
+            discoveryRateLimiter.recordCall()
             val response: HttpResponse = client.get("https://discovery.meethue.com")
-            Result.success(response.body())
+            when {
+                response.status.isSuccess() -> Result.success(response.body())
+                response.status.value == 429 -> Result.failure(
+                    ApiException("Too many discovery requests. Please wait a few seconds and try again.")
+                )
+                else -> Result.failure(
+                    ApiException("Discovery failed: ${response.status}")
+                )
+            }
         } catch (e: Exception) {
             Result.failure(e)
         }

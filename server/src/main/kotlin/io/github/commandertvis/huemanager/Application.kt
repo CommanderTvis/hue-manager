@@ -179,7 +179,7 @@ fun Application.module(
 
             val request = call.receive<BridgeConfigRequest>()
 
-            when (val result = hueService.linkExternalBridge(request.bridgeIp)) {
+            when (val result = hueService.tryLinkOnce(request.bridgeIp)) {
                 is LinkResult.Success -> {
                     val lamps = hueService.getLights()
                     automationManager.setAutomatedLamps(lamps.keys)

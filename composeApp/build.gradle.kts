@@ -65,6 +65,7 @@ kotlin {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
             implementation(libs.ktor.kmpClient.cio)
+            implementation(libs.logback)
         }
         jsMain.dependencies {
             implementation(libs.ktor.kmpClient.js)
