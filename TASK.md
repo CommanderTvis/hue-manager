@@ -90,6 +90,8 @@ The server has to be fully buildable + deployable with Dockerfile. Meaning that 
 
 Use and auto-manage HTTPS automatically with Let's Encrypt certbot on compatible servers (if certbot is not installed, then forget about HTTPS and fallback to HTTP, that will be fine for debugging).
 
+Configure GitHub Actions to build snapshots from master. Images have to be tagged by commit hash, we don't need versions currently.
+
 Authentication session has to be secure, I don't know exactly how. Anyway, be vigilant because it's a private home management system.
 
 Use .env (gitignored) and .env.example (to show structure .env) for configuration of necessary API secrets, including password. Also .env should have region for geo features. Time zone also has to be stored in .env. The default one has to be Europe/Berlin.
