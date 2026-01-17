@@ -1,90 +1,110 @@
-This is a Kotlin Multiplatform project targeting Android, Web, Desktop (JVM), Server.
+# Hue Manager
 
-* [/composeApp](./composeApp/src) is for code that will be shared across your Compose Multiplatform applications.
-  It contains several subfolders:
-  - [commonMain](./composeApp/src/commonMain/kotlin) is for code that’s common for all targets.
-  - Other folders are for Kotlin code that will be compiled for only the platform indicated in the folder name.
-    For example, if you want to use Apple’s CoreCrypto for the iOS part of your Kotlin app,
-    the [iosMain](./composeApp/src/iosMain/kotlin) folder would be the right place for such calls.
-    Similarly, if you want to edit the Desktop (JVM) specific part, the [jvmMain](./composeApp/src/jvmMain/kotlin)
-    folder is the appropriate location.
+A Philips Hue lamp management system with daylight automation, built with Kotlin Multiplatform.
 
-* [/androidApp](./androidApp/src/main) is for the Android application. It depends on the composeApp module
-  and contains the Android-specific entry point (MainActivity) and resources.
+## Features
 
-* [/server](./server/src/main/kotlin) is for the Ktor server application.
+- **Daylight Simulation**: Automatically adjusts lamp brightness and color temperature throughout the day
+- **Wake/Sleep Modes**: One-tap "I woke up!" and "I'm asleep!" actions
+- **Multi-Platform Clients**: Desktop (JVM), Web (JS/WasmJS), and Android apps
+- **Bridge Auto-Discovery**: Finds Hue bridges on your network via meethue.com
+- **Manual Override Tracking**: Temporarily disables automation when you manually adjust a lamp
+- **Docker Deployment**: Easy self-hosting with Docker Compose
 
-* [/shared](./shared/src) is for the code that will be shared between all targets in the project.
-  The most important subfolder is [commonMain](./shared/src/commonMain/kotlin). If preferred, you
-  can add code to the platform-specific folders here too.
+## Architecture
 
-### Build and Run Android Application
+```
+┌─────────────────┐      HTTP     ┌──────────────────┐    REST API    ┌─────────────────┐
+│  Client Apps    │◄─────────────►│   Ktor Server    │◄──────────────►│  Philips Hue    │
+│  (Desktop/Web/  │               │                  │                │    Bridge       │
+│   Android)      │               │  - Automation    │                │                 │
+└─────────────────┘               │  - Session Auth  │                └─────────────────┘
+                                  │  - Rate Limiting │
+                                  └──────────────────┘
+```
 
-To build and run the development version of the Android app, use the run configuration from the run widget
-in your IDE’s toolbar or build it directly from the terminal:
-- on macOS/Linux
-  ```shell
-  ./gradlew :androidApp:assembleDebug
-  ```
-- on Windows
-  ```shell
-  .\gradlew.bat :androidApp:assembleDebug
-  ```
+## Project Structure
 
-### Build and Run Desktop (JVM) Application
+| Module        | Description                                                     |
+|---------------|-----------------------------------------------------------------|
+| `server/`     | Ktor backend - Hue API integration, automation engine, REST API |
+| `composeApp/` | Compose Multiplatform UI (Desktop, Web, Android targets)        |
+| `androidApp/` | Android application entry point                                 |
+| `shared/`     | Shared data models and API DTOs                                 |
 
-To build and run the development version of the desktop app, use the run configuration from the run widget
-in your IDE’s toolbar or run it directly from the terminal:
-- on macOS/Linux
-  ```shell
-  ./gradlew :composeApp:run
-  ```
-- on Windows
-  ```shell
-  .\gradlew.bat :composeApp:run
-  ```
+## Quick Start
 
-### Build and Run Server
+### 1. Configure Environment
 
-To build and run the development version of the server, use the run configuration from the run widget
-in your IDE’s toolbar or run it directly from the terminal:
-- on macOS/Linux
-  ```shell
-  ./gradlew :server:run
-  ```
-- on Windows
-  ```shell
-  .\gradlew.bat :server:run
-  ```
+Copy `.env.example` to `.env` and configure:
 
-### Build and Run Web Application
+```bash
+PASSWORD=your_secure_password
+REGION=52.52,13.405  # latitude,longitude
+PSEUDO_SUNSET=21:00  # when evening mode starts
+TIMEZONE=Europe/Berlin
+```
 
-To build and run the development version of the web app, use the run configuration from the run widget
-in your IDE's toolbar or run it directly from the terminal:
-- for the Wasm target (faster, modern browsers):
-  - on macOS/Linux
-    ```shell
-    ./gradlew :composeApp:wasmJsBrowserDevelopmentRun
-    ```
-  - on Windows
-    ```shell
-    .\gradlew.bat :composeApp:wasmJsBrowserDevelopmentRun
-    ```
-- for the JS target (slower, supports older browsers):
-  - on macOS/Linux
-    ```shell
-    ./gradlew :composeApp:jsBrowserDevelopmentRun
-    ```
-  - on Windows
-    ```shell
-    .\gradlew.bat :composeApp:jsBrowserDevelopmentRun
-    ```
+### 2. Run the Server
 
----
+```bash
+./gradlew :server:run
+```
 
-Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html),
-[Compose Multiplatform](https://github.com/JetBrains/compose-multiplatform/#compose-multiplatform),
-[Kotlin/Wasm](https://kotl.in/wasm/)…
+The server will auto-discover your Hue bridge. On first run, press the link button on your bridge when prompted.
 
-We would appreciate your feedback on Compose/Web and Kotlin/Wasm in the public Slack channel [#compose-web](https://slack-chats.kotlinlang.org/c/compose-web).
-If you face any issues, please report them on [YouTrack](https://youtrack.jetbrains.com/newIssue?project=CMP).
+### 3. Run a Client
+
+**Desktop:**
+```bash
+./gradlew :composeApp:run
+```
+
+**Web (Wasm):**
+```bash
+./gradlew :composeApp:wasmJsBrowserDevelopmentRun
+```
+
+**Android:**
+```bash
+./gradlew :androidApp:assembleDebug
+```
+
+## Docker Deployment
+
+```bash
+docker compose up -d
+```
+
+The server uses host networking for Hue bridge discovery. Configure via environment variables in `docker-compose.yml`.
+
+## API Endpoints
+
+| Method | Endpoint           | Auth | Description                            |
+|--------|--------------------|------|----------------------------------------|
+| GET    | `/api/status`      | No   | Connection status and automation state |
+| GET    | `/api/lamps`       | No   | List all lamps                         |
+| PUT    | `/api/lamps/{id}`  | Yes  | Update lamp state                      |
+| PUT    | `/api/lamps/all`   | Yes  | Update all lamps                       |
+| POST   | `/api/session`     | No   | Login with password                    |
+| POST   | `/api/wakeup`      | Yes  | Trigger "I woke up!"                   |
+| POST   | `/api/sleep`       | Yes  | Trigger "I'm asleep!"                  |
+| GET    | `/api/automation`  | No   | Automation status                      |
+| POST   | `/api/bridge/link` | Yes  | Link Hue bridge                        |
+
+## Daylight Automation
+
+The automation engine simulates natural daylight patterns:
+
+| Time Period         | Behavior                                              |
+|---------------------|-------------------------------------------------------|
+| Wake → Sunset       | Bright white light, compensating for outdoor darkness |
+| Pseudo-sunset → +3h | Gradual transition to warm orange, dimming            |
+| After wind-down     | Minimal orange light                                  |
+| Sleep action        | All automated lamps off                               |
+
+## Tech Stack
+
+- **Kotlin/Multiplatform**
+- **Ktor**
+- **Compose Multiplatform**
