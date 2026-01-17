@@ -1,0 +1,28 @@
+services:
+  hue-manager:
+    build: .
+    container_name: hue-manager
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      # Override or provide defaults here if needed
+      - TZ=UTC
+    # Required for Hue bridge discovery on local network
+    network_mode: host
+    # Alternative: use bridge mode with explicit port mapping
+    # networks:
+    #   - hue-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+# Uncomment if not using host network mode
+# networks:
+#   hue-network:
+#     driver: bridge
