@@ -19,7 +19,7 @@ COPY server server
 COPY composeApp composeApp
 
 # Build the fat JAR and Web assets
-RUN ./gradlew :server:buildFatJar :composeApp:jsBrowserProductionWebpack --no-daemon
+RUN ./gradlew :server:buildFatJar :composeApp:jsBrowserDistribution --no-daemon
 
 # Runtime stage
 FROM eclipse-temurin:21-jre-alpine

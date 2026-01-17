@@ -130,8 +130,22 @@ The server acts as a persistent process that:
 ### Phase 7: DevOps - COMPLETE
 - [x] Dockerfile for server (multi-stage build with JDK 21)
 - [x] docker-compose.yml with environment configuration (host network mode for Hue discovery)
-- [ ] HTTPS setup documentation (Let's Encrypt) - optional, use reverse proxy
+- [x] GitHub Actions workflow for Docker image builds (tagged by commit hash, with layer caching)
 - [x] .gitignore updates for security (.env added)
+- [ ] HTTPS setup documentation (Let's Encrypt) - optional, use reverse proxy
+
+**Note on GitHub Container Visibility:**
+The GitHub Actions workflow pushes images to `ghcr.io`. Container visibility (public/private) must be configured manually in GitHub:
+1. After first push, go to repository Settings → Packages
+2. Select the package → Package settings → Change visibility to Private
+3. This is a one-time manual configuration per repository
+
+### Phase 8: UI - Server URL Selection (Desktop & Android) - TODO
+- [ ] Server URL input screen for local apps (desktop and android)
+- [ ] URL validation with connectivity check when entering new URL
+- [ ] Local storage for server URL (platform-specific persistence)
+- [ ] Navigation flow: Server selection -> Auth -> Main screen
+- [ ] Error handling for unreachable servers
 
 ## Technical Notes
 

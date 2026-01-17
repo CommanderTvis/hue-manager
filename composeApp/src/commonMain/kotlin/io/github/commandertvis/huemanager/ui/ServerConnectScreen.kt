@@ -11,13 +11,19 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import io.github.commandertvis.huemanager.SERVER_PORT
+import io.github.commandertvis.huemanager.storage.ServerUrlStorage
+import io.github.commandertvis.huemanager.viewmodel.ServerConnectViewModel
 
 @Composable
 fun ServerConnectScreen(
+    storage: ServerUrlStorage,
+    initialUrl: String?,
     onConnect: (String) -> Unit
 ) {
-    var url by remember { mutableStateOf("http://localhost:$SERVER_PORT") }
-    var error by remember { mutableStateOf<String?>(null) }
+    val viewModel = remember(storage, initialUrl) { 
+        ServerConnectViewModel(storage, initialUrl) 
+    }
+    val uiState by viewModel.uiState.collectAsState()
 
     Column(
         modifier = Modifier
@@ -34,27 +40,19 @@ fun ServerConnectScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         OutlinedTextField(
-            value = url,
-            onValueChange = { 
-                url = it 
-                error = null
-            },
+            value = uiState.url,
+            onValueChange = { viewModel.updateUrl(it) },
             label = { Text("Server URL") },
-            isError = error != null,
-            supportingText = error?.let { { Text(it) } },
+            isError = uiState.error != null,
+            supportingText = uiState.error?.let { { Text(it) } },
             singleLine = true,
+            enabled = !uiState.isConnecting,
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Uri,
                 imeAction = ImeAction.Go
             ),
             keyboardActions = KeyboardActions(
-                onGo = {
-                    if (url.isNotBlank()) {
-                        onConnect(url)
-                    } else {
-                        error = "URL cannot be empty"
-                    }
-                }
+                onGo = { viewModel.connect(onConnect) }
             ),
             modifier = Modifier.fillMaxWidth()
         )
@@ -62,16 +60,20 @@ fun ServerConnectScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         Button(
-            onClick = {
-                if (url.isNotBlank()) {
-                    onConnect(url)
-                } else {
-                    error = "URL cannot be empty"
-                }
-            },
+            onClick = { viewModel.connect(onConnect) },
+            enabled = !uiState.isConnecting,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Connect")
+            if (uiState.isConnecting) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Connecting...")
+            } else {
+                Text("Connect")
+            }
         }
     }
 }

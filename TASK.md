@@ -28,7 +28,9 @@ composeApp is UI.
 
 ## Server choose screen
 
-On the local apps (desktop and android), there should be an initial prompt to give the Ktor server's URL.
+On the local apps (desktop and android), there should be an initial prompt to give the Ktor server's URL. When a new URL is being entered, try connecting to check if the server is at least reachable.
+
+The prompt has to store URL somewhere locally. 
 
 ## Auth screen
 
@@ -90,7 +92,7 @@ The server has to be fully buildable + deployable with Dockerfile. Meaning that 
 
 Use and auto-manage HTTPS automatically with Let's Encrypt certbot on compatible servers (if certbot is not installed, then forget about HTTPS and fallback to HTTP, that will be fine for debugging).
 
-Configure GitHub Actions to build snapshots from master. Images have to be tagged by commit hash, we don't need versions currently. The container registry has to be private. Also make sure the workflow caches the Docker layers properly.
+Configure GitHub Actions to build snapshots from master. Images have to be tagged by commit hash, we don't need versions currently. The visibilty of pushed containers has to be private. Also, make sure the workflow caches the Docker layers properly.
 
 Authentication session has to be secure, I don't know exactly how. Anyway, be vigilant because it's a private home management system.
 
