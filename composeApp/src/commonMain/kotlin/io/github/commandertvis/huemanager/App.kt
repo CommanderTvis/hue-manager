@@ -101,10 +101,17 @@ fun App(
                                 },
                                 onStartPairing = {
                                     scope.launch {
+                                        println("[DEBUG_LOG] Start Pairing clicked (Web)")
                                         apiClient.getAuthorizationUrl().onSuccess { url ->
+                                            println("[DEBUG_LOG] Received URL (Web): $url")
                                             if (url.isNotEmpty()) {
                                                 platform.openUrl(url)
+                                            } else {
+                                                println("[DEBUG_LOG] Received empty URL (Web)")
                                             }
+                                        }.onFailure { e ->
+                                            println("[DEBUG_LOG] Failed to get URL (Web): ${e.message}")
+                                            e.printStackTrace()
                                         }
                                     }
                                 }
@@ -127,10 +134,17 @@ fun App(
                                 },
                                 onStartPairing = {
                                     scope.launch {
+                                        println("[DEBUG_LOG] Start Pairing clicked (Desktop/Mobile)")
                                         apiClient.getAuthorizationUrl().onSuccess { url ->
+                                            println("[DEBUG_LOG] Received URL (Desktop/Mobile): $url")
                                             if (url.isNotEmpty()) {
                                                 platform.openUrl(url)
+                                            } else {
+                                                println("[DEBUG_LOG] Received empty URL (Desktop/Mobile)")
                                             }
+                                        }.onFailure { e ->
+                                            println("[DEBUG_LOG] Failed to get URL (Desktop/Mobile): ${e.message}")
+                                            e.printStackTrace()
                                         }
                                     }
                                 }

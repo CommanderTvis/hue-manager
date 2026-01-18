@@ -118,10 +118,13 @@ fun Application.module(
             val redirectUri = "http://${call.request.host()}:${call.request.port()}/api/hue/callback"
             val state = java.util.UUID.randomUUID().toString()
             
+            logger.info("Generating authorization URL for redirectUri: $redirectUri")
             val authUrl = hueService.getAuthorizationUrl(redirectUri, state)
             if (authUrl != null) {
+                logger.info("Generated URL: $authUrl")
                 call.respond(mapOf("authorizationUrl" to authUrl, "state" to state))
             } else {
+                logger.warn("Failed to generate authorization URL - HueService returned null")
                 call.respond(HttpStatusCode.ServiceUnavailable, ApiError("OAuth2 not configured. Set HUE_CLIENT_ID, HUE_CLIENT_SECRET, and HUE_APP_ID in .env", 503))
             }
         }

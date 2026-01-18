@@ -43,11 +43,13 @@ class HueRemoteClient(
      * Generate the OAuth2 authorization URL for user to visit.
      */
     fun getAuthorizationUrl(redirectUri: String, state: String): String {
-        return "https://api.meethue.com/v2/oauth2/authorize?" +
+        val url = "https://api.meethue.com/v2/oauth2/authorize?" +
             "client_id=$clientId&" +
             "response_type=code&" +
             "state=$state&" +
             "redirect_uri=${redirectUri.encodeURLParameter()}"
+        logger.info("Built auth URL with clientId: $clientId and redirectUri: $redirectUri")
+        return url
     }
     
     /**
