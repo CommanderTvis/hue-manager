@@ -48,9 +48,9 @@ fun main() {
             // Set all discovered lamps as automated by default
             val lamps = hueService.getLights()
             automationManager.setAutomatedLamps(lamps.keys)
-            logger.info("Connected to Hue bridge with ${lamps.size} lamps")
+            logger.info("Connected to Philips Hue with ${lamps.size} lamps")
         } else {
-            logger.info("Hue bridge not configured. Use the web UI or API to configure bridge connection.")
+            logger.info("Philips Hue not configured. Use the web UI or API to configure connection.")
         }
     }
 
@@ -154,7 +154,7 @@ fun Application.module(
                     <head><title>Hue Authorization</title></head>
                     <body>
                         <h1>Authorization Successful!</h1>
-                        <p>Now press the link button on your Hue bridge, then click the button below.</p>
+                        <p>Now press the link button on your Hue Bridge, then click the button below.</p>
                         <button onclick="linkBridge()">Complete Setup</button>
                         <p id="status"></p>
                         <script>
@@ -188,7 +188,7 @@ fun Application.module(
                     call.respond(mapOf("success" to false, "message" to result.message))
                 }
                 LinkResult.LinkButtonNotPressed -> {
-                    call.respond(mapOf("success" to false, "message" to "Press the link button on your bridge first"))
+                    call.respond(mapOf("success" to false, "message" to "Press the link button on your Hue Bridge first"))
                 }
             }
         }

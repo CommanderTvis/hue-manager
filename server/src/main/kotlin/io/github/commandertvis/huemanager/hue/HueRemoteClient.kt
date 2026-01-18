@@ -206,7 +206,7 @@ class HueRemoteClient(
                 username = newUsername
                 ConfigLoader.updateHueTokens(accessToken!!, refreshToken ?: "", newUsername)
                 
-                logger.info("Successfully linked to bridge, username: $newUsername")
+                logger.info("Successfully linked to Hue Bridge, username: $newUsername")
                 LinkResult.Success(newUsername)
             } else if (body.contains("link button not pressed")) {
                 LinkResult.LinkButtonNotPressed
@@ -217,7 +217,7 @@ class HueRemoteClient(
                 LinkResult.Error(errorMessage)
             }
         } catch (e: Exception) {
-            logger.error("Error linking bridge: ${e.message}", e)
+            logger.error("Error linking Hue Bridge: ${e.message}", e)
             LinkResult.Error(e.message ?: "Unknown error")
         }
     }

@@ -9,9 +9,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun PleasePairScreen(
+fun PleaseAuthorizeScreen(
     onRetry: () -> Unit,
-    onStartPairing: () -> Unit = {}
+    onStartAuthorizing: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -21,7 +21,7 @@ fun PleasePairScreen(
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "Bridge Not Paired",
+            text = "Philips Hue Not Authorized",
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.padding(bottom = 24.dp)
         )
@@ -36,14 +36,14 @@ fun PleasePairScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "The server is not connected to a Hue bridge yet.",
+                    text = "The server is not authorized to your Philips Hue account yet.",
                     style = MaterialTheme.typography.bodyLarge,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
 
                 Text(
-                    text = "To set up the bridge connection:",
+                    text = "To set up the connection:",
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
@@ -52,7 +52,7 @@ fun PleasePairScreen(
                     modifier = Modifier.padding(start = 16.dp, bottom = 16.dp)
                 ) {
                     Text(
-                        text = "1. Click 'Start Pairing' below to open the Philips Hue login page",
+                        text = "1. Click 'Start Authorizing' below to open the Philips Hue login page",
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
@@ -62,7 +62,7 @@ fun PleasePairScreen(
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
                     Text(
-                        text = "3. Press the link button on your Hue bridge when prompted",
+                        text = "3. Press the link button on your Hue Bridge when prompted",
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
@@ -73,7 +73,7 @@ fun PleasePairScreen(
                 }
 
                 Text(
-                    text = "Once the bridge is linked, click 'Check Again' to continue.",
+                    text = "Once the account is linked, click 'Check Again' to continue.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -81,10 +81,10 @@ fun PleasePairScreen(
                 )
 
                 Button(
-                    onClick = onStartPairing,
+                    onClick = onStartAuthorizing,
                     modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                 ) {
-                    Text("Start Pairing")
+                    Text("Start Authorizing")
                 }
 
                 OutlinedButton(

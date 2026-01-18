@@ -1,6 +1,5 @@
 package io.github.commandertvis.huemanager
 
-import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeContentPadding
 import androidx.compose.material3.MaterialTheme
@@ -65,11 +64,11 @@ fun App(
                             scope.launch {
                                 apiClient.getStatus().onSuccess { status ->
                                     bridgeStatus = if (status.needsLinking) {
-                                        BridgeStatus.NeedsPairing
+                                        BridgeStatus.NeedsAuthorization
                                     } else if (status.connected) {
                                         BridgeStatus.Connected
                                     } else {
-                                        BridgeStatus.NeedsPairing
+                                        BridgeStatus.NeedsAuthorization
                                     }
                                 }
                             }
@@ -85,21 +84,21 @@ fun App(
                             )
                         }
                         
-                        bridgeStatus == BridgeStatus.NeedsPairing && platform.isWeb -> {
+                        bridgeStatus == BridgeStatus.NeedsAuthorization && platform.isWeb -> {
                             // Web app: show "Please pair" screen
-                            PleasePairScreen(
+                            PleaseAuthorizeScreen(
                                 onRetry = {
                                     scope.launch {
                                         apiClient.getStatus().onSuccess { status ->
                                             bridgeStatus = if (status.connected && !status.needsLinking) {
                                                 BridgeStatus.Connected
                                             } else {
-                                                BridgeStatus.NeedsPairing
+                                                BridgeStatus.NeedsAuthorization
                                             }
                                         }
                                     }
                                 },
-                                onStartPairing = {
+                                onStartAuthorizing = {
                                     scope.launch {
                                         println("[DEBUG_LOG] Start Pairing clicked (Web)")
                                         apiClient.getAuthorizationUrl().onSuccess { url ->
@@ -118,21 +117,21 @@ fun App(
                             )
                         }
                         
-                        bridgeStatus == BridgeStatus.NeedsPairing && !platform.isWeb -> {
+                        bridgeStatus == BridgeStatus.NeedsAuthorization && !platform.isWeb -> {
                             // Desktop/mobile: OAuth is done via browser, show same screen as web
-                            PleasePairScreen(
+                            PleaseAuthorizeScreen(
                                 onRetry = {
                                     scope.launch {
                                         apiClient.getStatus().onSuccess { status ->
                                             bridgeStatus = if (status.connected && !status.needsLinking) {
                                                 BridgeStatus.Connected
                                             } else {
-                                                BridgeStatus.NeedsPairing
+                                                BridgeStatus.NeedsAuthorization
                                             }
                                         }
                                     }
                                 },
-                                onStartPairing = {
+                                onStartAuthorizing = {
                                     scope.launch {
                                         println("[DEBUG_LOG] Start Pairing clicked (Desktop/Mobile)")
                                         apiClient.getAuthorizationUrl().onSuccess { url ->
@@ -170,6 +169,6 @@ fun App(
 }
 
 enum class BridgeStatus {
-    NeedsPairing,
+    NeedsAuthorization,
     Connected
 }
