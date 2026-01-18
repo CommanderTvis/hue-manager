@@ -259,6 +259,20 @@ class ApiClient(
         }
     }
 
+    suspend fun getAuthorizationUrl(): Result<String> {
+        return try {
+            val response: HttpResponse = client.get("$baseUrl/api/hue/authorize")
+            if (response.status.isSuccess()) {
+                val body: Map<String, String> = response.body()
+                Result.success(body["authorizationUrl"] ?: "")
+            } else {
+                Result.failure(ApiException("Failed to get authorization URL: ${response.status}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     fun close() {
         client.close()
     }

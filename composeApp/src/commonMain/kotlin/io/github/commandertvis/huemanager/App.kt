@@ -98,6 +98,15 @@ fun App(
                                             }
                                         }
                                     }
+                                },
+                                onStartPairing = {
+                                    scope.launch {
+                                        apiClient.getAuthorizationUrl().onSuccess { url ->
+                                            if (url.isNotEmpty()) {
+                                                platform.openUrl(url)
+                                            }
+                                        }
+                                    }
                                 }
                             )
                         }
@@ -112,6 +121,15 @@ fun App(
                                                 BridgeStatus.Connected
                                             } else {
                                                 BridgeStatus.NeedsPairing
+                                            }
+                                        }
+                                    }
+                                },
+                                onStartPairing = {
+                                    scope.launch {
+                                        apiClient.getAuthorizationUrl().onSuccess { url ->
+                                            if (url.isNotEmpty()) {
+                                                platform.openUrl(url)
                                             }
                                         }
                                     }

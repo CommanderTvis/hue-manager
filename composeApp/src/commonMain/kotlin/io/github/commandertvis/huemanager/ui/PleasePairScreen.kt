@@ -10,7 +10,8 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun PleasePairScreen(
-    onRetry: () -> Unit
+    onRetry: () -> Unit,
+    onStartPairing: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -51,7 +52,7 @@ fun PleasePairScreen(
                     modifier = Modifier.padding(start = 16.dp, bottom = 16.dp)
                 ) {
                     Text(
-                        text = "1. Open your server URL + /api/hue/authorize in a browser",
+                        text = "1. Click 'Start Pairing' below to open the Philips Hue login page",
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
@@ -80,6 +81,13 @@ fun PleasePairScreen(
                 )
 
                 Button(
+                    onClick = onStartPairing,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                ) {
+                    Text("Start Pairing")
+                }
+
+                OutlinedButton(
                     onClick = onRetry,
                     modifier = Modifier.fillMaxWidth()
                 ) {
