@@ -115,12 +115,6 @@ fun Application.module(
 
         // --- Bridge Configuration (from client) ---
         post("/api/bridge/configure") {
-            val token = call.request.header("Authorization")?.removePrefix("Bearer ")
-            if (!sessionManager.validateSession(token)) {
-                call.respond(HttpStatusCode.Unauthorized, ApiError("Invalid session", 401))
-                return@post
-            }
-
             val request = call.receive<BridgeConfigRequest>()
 
             val username = request.username

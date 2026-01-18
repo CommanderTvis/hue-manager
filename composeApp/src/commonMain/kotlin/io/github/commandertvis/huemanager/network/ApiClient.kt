@@ -230,7 +230,6 @@ class ApiClient(
         return try {
             val response: HttpResponse = client.post("$baseUrl/api/bridge/configure") {
                 contentType(ContentType.Application.Json)
-                header(HttpHeaders.Authorization, "Bearer $authToken")
                 setBody(request)
             }
             if (response.status.isSuccess()) {
