@@ -115,7 +115,7 @@ fun Application.module(
 
         // --- OAuth2 for Philips Hue Remote API ---
         get("/api/hue/authorize") {
-            val redirectUri = "http://${call.request.host()}:${call.request.port()}/api/hue/callback"
+            val redirectUri = call.resolveHueRedirectUri(config)
             val state = java.util.UUID.randomUUID().toString()
             
             logger.info("Generating authorization URL for redirectUri: $redirectUri")
@@ -143,7 +143,7 @@ fun Application.module(
                 return@get
             }
             
-            val redirectUri = "http://${call.request.host()}:${call.request.port()}/api/hue/callback"
+            val redirectUri = call.resolveHueRedirectUri(config)
             val success = hueService.handleOAuthCallback(code, redirectUri)
             
             if (success) {
@@ -415,4 +415,28 @@ fun Application.module(
             call.respond(ApiSuccess("Override cleared"))
         }
     }
+}
+
+private fun ApplicationCall.resolveHueRedirectUri(config: Config): String {
+    val configured = config.hueRedirectUri?.takeIf { it.isNotBlank() }
+    if (configured != null) {
+        return configured
+    }
+
+    val forwardedProto = request.headers["X-Forwarded-Proto"]
+    val forwardedHost = request.headers["X-Forwarded-Host"]
+    val forwardedPort = request.headers["X-Forwarded-Port"]
+
+    val scheme = forwardedProto ?: if (request.port() == 443) "https" else "http"
+    val host = forwardedHost ?: request.host()
+    val port = forwardedPort ?: request.port().toString()
+
+    val hostWithPort = if (":" in host) {
+        host
+    } else {
+        val isDefaultPort = (scheme == "http" && port == "80") || (scheme == "https" && port == "443")
+        if (isDefaultPort) host else "$host:$port"
+    }
+
+    return "$scheme://$hostWithPort/api/hue/callback"
 }

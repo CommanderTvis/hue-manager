@@ -20,6 +20,7 @@ data class Config(
     val hueClientId: String?,
     val hueClientSecret: String?,
     val hueAppId: String?,
+    val hueRedirectUri: String?,
     val hueAccessToken: String?,
     val hueRefreshToken: String?
 )
@@ -55,11 +56,12 @@ object ConfigLoader {
 
         val hueUsername = env["HUE_USERNAME"]?.takeIf { it.isNotBlank() }
 
-        val hueClientId = env["HUE_CLIENT_ID"]?.takeIf { it.isNotBlank() }
-        val hueClientSecret = env["HUE_CLIENT_SECRET"]?.takeIf { it.isNotBlank() }
-        val hueAppId = env["HUE_APP_ID"]?.takeIf { it.isNotBlank() }
-        val hueAccessToken = env["HUE_ACCESS_TOKEN"]?.takeIf { it.isNotBlank() }
-        val hueRefreshToken = env["HUE_REFRESH_TOKEN"]?.takeIf { it.isNotBlank() }
+        val hueClientId = env["HUE_CLIENT_ID"]?.trim()?.takeIf { it.isNotBlank() }
+        val hueClientSecret = env["HUE_CLIENT_SECRET"]?.trim()?.takeIf { it.isNotBlank() }
+        val hueAppId = env["HUE_APP_ID"]?.trim()?.takeIf { it.isNotBlank() }
+        val hueRedirectUri = env["HUE_REDIRECT_URI"]?.trim()?.takeIf { it.isNotBlank() }
+        val hueAccessToken = env["HUE_ACCESS_TOKEN"]?.trim()?.takeIf { it.isNotBlank() }
+        val hueRefreshToken = env["HUE_REFRESH_TOKEN"]?.trim()?.takeIf { it.isNotBlank() }
 
         return Config(
             password = password,
@@ -71,6 +73,7 @@ object ConfigLoader {
             hueClientId = hueClientId,
             hueClientSecret = hueClientSecret,
             hueAppId = hueAppId,
+            hueRedirectUri = hueRedirectUri,
             hueAccessToken = hueAccessToken,
             hueRefreshToken = hueRefreshToken
         )
