@@ -3,6 +3,8 @@ package io.github.commandertvis.huemanager.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.commandertvis.huemanager.api.BridgeConfigRequest
+import io.github.commandertvis.huemanager.hue.HueBridgeClient
+import io.github.commandertvis.huemanager.hue.LinkResult
 import io.github.commandertvis.huemanager.network.ApiClient
 import io.github.commandertvis.huemanager.ui.BridgePairingUiState
 import kotlinx.coroutines.delay
@@ -59,60 +61,77 @@ class BridgePairingViewModel(
 
     fun startLinking() {
         val bridgeIp = _uiState.value.selectedBridgeIp ?: return
-        
+
         viewModelScope.launch {
             _uiState.update { it.copy(isLinking = true, linkingAttempt = 0, errorMessage = null) }
-            
-            // Try linking for up to 30 attempts (60 seconds with 2 second delay)
-            var attempt = 0
-            val maxAttempts = 30
-            
-            while (attempt < maxAttempts) {
-                attempt++
-                _uiState.update { it.copy(linkingAttempt = attempt) }
-                
-                val result = apiClient.linkBridge(BridgeConfigRequest(bridgeIp = bridgeIp))
-                
-                result.onSuccess { response ->
-                    if (response.success && response.connected) {
-                        _uiState.update {
-                            it.copy(
-                                isLinking = false,
-                                isComplete = true,
-                                errorMessage = null
+
+            // Create direct client to bridge (local network connection)
+            val bridgeClient = HueBridgeClient(bridgeIp)
+
+            try {
+                // Try linking for up to 30 attempts (60 seconds with 2 second delay)
+                var attempt = 0
+                val maxAttempts = 30
+
+                while (attempt < maxAttempts) {
+                    attempt++
+                    _uiState.update { it.copy(linkingAttempt = attempt) }
+
+                    when (val result = bridgeClient.createUser()) {
+                        is LinkResult.Success -> {
+                            // Successfully linked! Now send credentials to server
+                            val configResult = apiClient.configureBridge(
+                                BridgeConfigRequest(
+                                    bridgeIp = bridgeIp,
+                                    username = result.username
+                                )
                             )
+
+                            configResult.onSuccess { response ->
+                                _uiState.update {
+                                    it.copy(
+                                        isLinking = false,
+                                        isComplete = true,
+                                        errorMessage = null
+                                    )
+                                }
+                            }.onFailure { error ->
+                                _uiState.update {
+                                    it.copy(
+                                        isLinking = false,
+                                        errorMessage = "Linked to bridge but failed to configure server: ${error.message}"
+                                    )
+                                }
+                            }
+                            return@launch
                         }
-                        return@launch
-                    } else if (!response.needsLinking) {
-                        // Some other error occurred
-                        _uiState.update {
-                            it.copy(
-                                isLinking = false,
-                                errorMessage = response.message
-                            )
+
+                        is LinkResult.Error -> {
+                            _uiState.update {
+                                it.copy(
+                                    isLinking = false,
+                                    errorMessage = "Linking error: ${result.message}"
+                                )
+                            }
+                            return@launch
                         }
-                        return@launch
+
+                        LinkResult.LinkButtonNotPressed -> {
+                            // Button not pressed yet, continue waiting
+                            delay(2000)
+                        }
                     }
-                    // If needsLinking is true, continue waiting
-                }.onFailure { error ->
-                    _uiState.update {
-                        it.copy(
-                            isLinking = false,
-                            errorMessage = "Linking failed: ${error.message}"
-                        )
-                    }
-                    return@launch
                 }
-                
-                delay(2000) // Wait 2 seconds before next attempt
-            }
-            
-            // Timeout
-            _uiState.update {
-                it.copy(
-                    isLinking = false,
-                    errorMessage = "Linking timeout. Please try again and press the button on your bridge."
-                )
+
+                // Timeout
+                _uiState.update {
+                    it.copy(
+                        isLinking = false,
+                        errorMessage = "Linking timeout. Please try again and press the button on your bridge."
+                    )
+                }
+            } finally {
+                bridgeClient.close()
             }
         }
     }

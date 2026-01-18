@@ -40,14 +40,21 @@ A Philips Hue lamp management system with:
 - `server/.../auth/SessionManager.kt` - Token-based session management
 - `server/.../automation/AutomationManager.kt` - User state, lamp overrides, heartbeat
 
-**UI Files Created (Phase 5 & 6):**
+**UI Files Created (Phase 5, 6 & 8):**
 - `composeApp/.../network/ApiClient.kt` - Multiplatform Ktor client with all API methods
-- `composeApp/.../auth/SessionStorage.kt` - Token storage with StateFlow
+- `composeApp/.../hue/HueBridgeClient.kt` - Direct HTTP client for local bridge pairing (connects to bridge on home network)
+- `composeApp/.../auth/SessionStorage.kt` - Persistent session token storage with StateFlow (platform-specific backends)
+- `composeApp/.../storage/ServerUrlStorage.kt` - Platform-specific server URL storage (JVM, Android, JS, WasmJS)
 - `composeApp/.../viewmodel/AuthViewModel.kt` - Login state management
 - `composeApp/.../viewmodel/LampsViewModel.kt` - Lamp state and control management
+- `composeApp/.../viewmodel/ServerConnectViewModel.kt` - Server URL validation and connectivity check
+- `composeApp/.../viewmodel/BridgePairingViewModel.kt` - Bridge discovery and LOCAL linking flow (connects directly to bridge)
 - `composeApp/.../ui/LoginScreen.kt` - Password input with error handling
 - `composeApp/.../ui/MainScreen.kt` - Full lamp control interface
 - `composeApp/.../ui/LampCard.kt` - Individual lamp card with toggle, brightness slider
+- `composeApp/.../ui/ServerConnectScreen.kt` - Server URL input and validation (Desktop/Android)
+- `composeApp/.../ui/BridgePairingScreen.kt` - Bridge discovery and pairing UI (Desktop/Android)
+- `composeApp/.../ui/PleasePairScreen.kt` - Bridge pairing prompt for web app
 
 **Tech Stack:**
 - Kotlin 2.3.0
@@ -61,14 +68,27 @@ A Philips Hue lamp management system with:
 ## Architecture
 
 ```
-Client (composeApp) <--HTTP/WS--> Server (Ktor) <--REST API--> Philips Hue Bridge
+Client (composeApp) <--HTTP--> Server (Ktor on VDS) <--REST API--> Philips Hue Bridge (via port forward/VPN)
+                     \
+                      --HTTP--> Philips Hue Bridge (direct, for pairing only)
 ```
 
+**Bridge Pairing Flow (Critical):**
+Since the server is hosted on a remote VDS and cannot directly access the Hue bridge on the home network:
+1. **Client discovers bridges** via discovery.meethue.com (works from anywhere)
+2. **Client connects directly** to bridge IP on local network via `HueBridgeClient`
+3. User presses physical button on bridge
+4. **Client creates user** with bridge (HTTP request to local bridge IP)
+5. **Client sends credentials** (bridgeIp + username) to server via `/api/bridge/configure`
+6. **Server stores credentials** and uses them to control bridge (bridge must be accessible via port forward/VPN/public IP)
+
 The server acts as a persistent process that:
-1. Maintains connection to Hue bridge
+1. Maintains connection to Hue bridge (using credentials from client)
 2. Runs automation (daylight simulation)
 3. Provides API for the client UI
 4. Handles 10-minute heartbeat for automation persistence
+
+**Important:** The bridge IP sent to the server should be the publicly accessible address (or VPN address), NOT the local 192.168.x.x address.
 
 ## TODO - Implementation Phases
 
@@ -101,22 +121,25 @@ The server acts as a persistent process that:
 - [x] GET /api/settings - get current settings
 - [x] PUT /api/settings - update pseudo-sunset, automated lamps
 - [x] DELETE /api/lamps/{id}/override - clear manual override
+- [x] POST /api/bridge/configure - configure bridge with IP and optional username
+- [x] POST /api/bridge/link - link bridge using button press flow
 
-### Phase 4: Automation Engine - MOSTLY COMPLETE
+### Phase 4: Automation Engine - COMPLETE
 - [x] Sunrise/sunset calculation based on region (basic algorithm)
 - [x] Daylight simulation algorithm (wake -> sunset -> wind-down)
 - [x] Heartbeat coroutine (10 min) for state persistence
 - [x] Manual override tracking (1 hour timeout)
-- [ ] Entertainment area detection (Hue Sync support) - TODO: needs API polling
+- [x] Entertainment area detection (Hue Sync support) - polls entertainment groups for active streaming
 
 ### Phase 5: UI - Auth Screen - COMPLETE
 - [x] Password input field
-- [x] Session token storage (in-memory with StateFlow)
+- [x] Session token storage (persistent with platform-specific backends: JVM Preferences, Android SharedPreferences, browser localStorage)
 - [x] Error handling and feedback
 - [x] API client with all endpoints (multiplatform)
 - [x] AuthViewModel for login state
 - [x] Navigation between login and main screens
-- [ ] Hue bridge linking UI (if needed) - deferred to later
+- [x] Hue bridge linking UI with discovery and pairing flow (Desktop/Android)
+- [x] PleasePairScreen for web app (when bridge not linked)
 
 ### Phase 6: UI - Lamps Screen - COMPLETE
 - [x] Lamp list with current states (LazyColumn)
@@ -142,12 +165,13 @@ The GitHub Actions workflow pushes images to `ghcr.io`. Container visibility (pu
 2. Select the package → Package settings → Change visibility to Private
 3. This is a one-time manual configuration per repository
 
-### Phase 8: UI - Server URL Selection (Desktop & Android) - TODO
-- [ ] Server URL input screen for local apps (desktop and android)
-- [ ] URL validation with connectivity check when entering new URL
-- [ ] Local storage for server URL (platform-specific persistence)
-- [ ] Navigation flow: Server selection -> Auth -> Main screen
-- [ ] Error handling for unreachable servers
+### Phase 8: UI - Server URL Selection (Desktop & Android) - COMPLETE
+- [x] Server URL input screen for local apps (desktop and android)
+- [x] URL validation with connectivity check when entering new URL
+- [x] Local storage for server URL (platform-specific persistence: JVM Preferences, Android SharedPreferences, browser localStorage)
+- [x] Navigation flow: Server selection -> Auth -> Bridge pairing (if needed) -> Main screen
+- [x] Error handling for unreachable servers
+- [x] Web app uses hardcoded server URL (same origin)
 
 ## Technical Notes
 
@@ -171,6 +195,8 @@ sleep_action: Turn off all automated lamps
 PASSWORD=<auth password>
 REGION=<latitude,longitude or city name>
 PSEUDO_SUNSET=21:05
+TIMEZONE=Europe/Berlin
+KEYSTORE_PASSWORD=<optional, for HTTPS>
 HUE_BRIDGE_IP=<optional, for manual config>
 HUE_USERNAME=<stored after linking>
 ```
@@ -222,3 +248,41 @@ Philips Hue bridge has strict rate limits (shared across all connected apps):
 - `HueBridge`: discoverBridges() (5s delay), createUser() (1s delay), validateConnection() (1s delay)
 
 All rate limiters are coroutine-safe using Kotlin's `Mutex`.
+
+### Persistent Session Storage
+The application stores session tokens persistently across app restarts using platform-specific storage backends:
+
+**Implementation:**
+- **SessionStorage** - Common interface with StateFlow for reactive updates
+- **SessionStorageBackend** - Platform-specific implementations:
+  - **JVM**: Java Preferences API (`java.util.prefs.Preferences`)
+  - **Android**: SharedPreferences (`hue_manager_prefs`)
+  - **JS/WasmJS**: Browser localStorage
+
+**Security Note:**
+- Session tokens (not raw passwords) are stored persistently
+- Tokens can be revoked server-side and have limited lifetime
+- Server URL and session token are stored in the same storage mechanism on each platform
+
+This allows users to stay logged in across app restarts without re-entering credentials, while maintaining security through token-based authentication.
+
+### Bridge Pairing Architecture
+
+**Critical Design Decision:**
+The Hue bridge pairing process MUST be performed by the client, not the server, because:
+- The server runs on a remote VDS and cannot reach the bridge's local IP (192.168.x.x)
+- Only devices on the local network can perform the button-press authentication
+- The client (desktop/Android app) is on the same network as the bridge
+
+**Implementation (`HueBridgeClient`):**
+1. **Platform-specific HTTP clients** - JVM (CIO), Android (OkHttp), JS/WasmJS (Js engine)
+2. **Direct HTTP connection** - Uses `http://<bridge-ip>/api` (not HTTPS, to avoid self-signed cert issues on local network)
+3. **Button press flow** - Polls bridge for up to 30 attempts (60 seconds) waiting for button press
+4. **Credential handoff** - Sends bridgeIp + username to server via `/api/bridge/configure`
+
+**Server Endpoints:**
+- `POST /api/bridge/configure` - Accepts bridgeIp + username from client, stores credentials
+- `POST /api/bridge/link` - **DEPRECATED** - Should NOT be used as server cannot reach local bridge IP
+
+**Security Note:**
+The bridge IP used for pairing (local network) may differ from the IP the server uses (public/VPN). The client should prompt for both if needed, or the bridge must be accessible from the internet via port forwarding.

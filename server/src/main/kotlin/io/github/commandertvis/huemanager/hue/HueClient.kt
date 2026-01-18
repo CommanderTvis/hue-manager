@@ -150,11 +150,17 @@ data class HueGroup(
     val type: String,
     val state: HueGroupState? = null,
     val action: HueLightState? = null,
-    val `class`: String? = null
+    val `class`: String? = null,
+    val stream: HueStreamState? = null
 )
 
 @Serializable
 data class HueGroupState(
     val all_on: Boolean,
     val any_on: Boolean
+)
+
+@Serializable
+data class HueStreamState(
+    val active: Boolean
 )

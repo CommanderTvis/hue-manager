@@ -32,4 +32,6 @@ fun initializeServerUrlStorage(context: Context) {
     applicationContext = context.applicationContext
 }
 
+fun getApplicationContext(): Context = applicationContext
+
 actual fun createServerUrlStorage(): ServerUrlStorage = AndroidServerUrlStorage(applicationContext)

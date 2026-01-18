@@ -47,8 +47,23 @@ class AutomationManager(
     fun getAutomatedLampIds(): Set<String> = automatedLampIds.toSet()
 
     fun isEntertainmentActive(): Boolean {
-        // TODO: Check if any entertainment group is active
-        return false
+        return runBlocking {
+            getActiveEntertainmentLamps().isNotEmpty()
+        }
+    }
+
+    private suspend fun getActiveEntertainmentLamps(): Set<String> {
+        val entertainmentGroups = hueService.getEntertainmentGroups()
+        val activeLamps = mutableSetOf<String>()
+
+        for ((_, group) in entertainmentGroups) {
+            if (group.stream?.active == true) {
+                activeLamps.addAll(group.lights)
+            }
+        }
+
+        logger.debug("Active entertainment lamps: $activeLamps")
+        return activeLamps
     }
 
     suspend fun wakeUp(): UserState {
@@ -142,10 +157,14 @@ class AutomationManager(
         val currentTime = localNow.time
 
         val desiredState = calculateDesiredState(currentTime)
+        val entertainmentLamps = getActiveEntertainmentLamps()
 
         for (lampId in automatedLampIds) {
             if (lampOverrides.containsKey(lampId)) {
                 continue // Skip overridden lamps
+            }
+            if (entertainmentLamps.contains(lampId)) {
+                continue // Skip lamps in active entertainment areas
             }
             hueService.setLightState(lampId, desiredState)
         }

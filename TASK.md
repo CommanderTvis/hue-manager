@@ -42,13 +42,13 @@ Auth -> "Please pair" screen if bridge is not paired OR Lamps if paired
 
 On the local apps (desktop and android), there should be an initial prompt to give the Ktor server's URL. When a new URL is being entered, try connecting to check if the server is at least reachable.
 
-The prompt has to store URL somewhere locally. 
+The prompt has to store URL somewhere locally. Password has to be stored, too.
 
 ## Auth screen
 
 Should prompt only for password. The password is stored in the .env file.
 
-Then, if needed, it should start Hue bridge access acquisition (the one where you need to click on the button on the bridge) and memorize the keys for Hue.
+Then, if needed, it should start Hue bridge access acquisition (the one where you need to click on the button on the bridge) and memorize the keys for Hue. The Hue bridge pairing probably should have been performed by the local client. Make sure the relevant Hue API is commonized to avoid code duplication.
 
 Since the remote server can't discover a Hue bridge in my home, the app should be able to do it and grant to the server the actual IP of my Hue bridge.
 
