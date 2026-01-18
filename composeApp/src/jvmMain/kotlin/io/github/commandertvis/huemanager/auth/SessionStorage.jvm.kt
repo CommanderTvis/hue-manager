@@ -17,7 +17,7 @@ private class JvmSessionStorageBackend : SessionStorageBackend {
         prefs.flush()
     }
 
-    companion object {
+    private companion object {
         private const val KEY_SESSION_TOKEN = "session_token"
     }
 }

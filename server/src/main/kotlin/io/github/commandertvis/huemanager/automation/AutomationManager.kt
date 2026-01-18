@@ -5,15 +5,14 @@ import io.github.commandertvis.huemanager.config.GeoLocation
 import io.github.commandertvis.huemanager.hue.HueLightStateUpdate
 import io.github.commandertvis.huemanager.hue.HueService
 import kotlinx.coroutines.*
-import kotlin.time.Clock
-import kotlin.time.Instant
-import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import org.slf4j.LoggerFactory
+import kotlin.time.Clock
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Instant
 
 enum class UserState {
     AWAKE, ASLEEP
@@ -62,7 +61,7 @@ class AutomationManager(
             }
         }
 
-        logger.debug("Active entertainment lamps: $activeLamps")
+        logger.debug("Active entertainment lamps: {}", activeLamps)
         return activeLamps
     }
 
