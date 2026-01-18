@@ -113,98 +113,79 @@ fun Application.module(
             }
         }
 
-        // --- Bridge Configuration (from client) ---
-        post("/api/bridge/configure") {
-            val request = call.receive<BridgeConfigRequest>()
-
-            val username = request.username
-            if (username != null) {
-                // Client provided username, try to connect directly
-                val success = hueService.configureBridge(request.bridgeIp, username)
-                if (success) {
-                    // Initialize automation with discovered lamps
-                    val lamps = hueService.getLights()
-                    automationManager.setAutomatedLamps(lamps.keys)
-
-                    call.respond(
-                        BridgeConfigResponse(
-                            success = true,
-                            connected = true,
-                            bridgeIp = request.bridgeIp,
-                            needsLinking = false,
-                            message = "Connected to bridge with ${lamps.size} lamps"
-                        )
-                    )
-                } else {
-                    call.respond(
-                        BridgeConfigResponse(
-                            success = false,
-                            connected = false,
-                            bridgeIp = request.bridgeIp,
-                            needsLinking = true,
-                            message = "Failed to connect - invalid credentials or bridge unreachable"
-                        )
-                    )
-                }
+        // --- OAuth2 for Philips Hue Remote API ---
+        get("/api/hue/authorize") {
+            val redirectUri = "http://${call.request.host()}:${call.request.port()}/api/hue/callback"
+            val state = java.util.UUID.randomUUID().toString()
+            
+            val authUrl = hueService.getAuthorizationUrl(redirectUri, state)
+            if (authUrl != null) {
+                call.respond(mapOf("authorizationUrl" to authUrl, "state" to state))
             } else {
-                // No username, need to link - start linking process
-                call.respond(
-                    BridgeConfigResponse(
-                        success = true,
-                        connected = false,
-                        bridgeIp = request.bridgeIp,
-                        needsLinking = true,
-                        message = "Bridge IP set. Press link button on bridge and call /api/bridge/link"
-                    )
-                )
+                call.respond(HttpStatusCode.ServiceUnavailable, ApiError("OAuth2 not configured. Set HUE_CLIENT_ID, HUE_CLIENT_SECRET, and HUE_APP_ID in .env", 503))
             }
         }
-
-        post("/api/bridge/link") {
-            val token = call.request.header("Authorization")?.removePrefix("Bearer ")
-            if (!sessionManager.validateSession(token)) {
-                call.respond(HttpStatusCode.Unauthorized, ApiError("Invalid session", 401))
-                return@post
+        
+        get("/api/hue/callback") {
+            val code = call.parameters["code"]
+            val error = call.parameters["error"]
+            
+            if (error != null) {
+                call.respondText("Authorization failed: $error", status = HttpStatusCode.BadRequest)
+                return@get
             }
-
-            val request = call.receive<BridgeConfigRequest>()
-
-            when (val result = hueService.tryLinkOnce(request.bridgeIp)) {
+            
+            if (code == null) {
+                call.respondText("Missing authorization code", status = HttpStatusCode.BadRequest)
+                return@get
+            }
+            
+            val redirectUri = "http://${call.request.host()}:${call.request.port()}/api/hue/callback"
+            val success = hueService.handleOAuthCallback(code, redirectUri)
+            
+            if (success) {
+                // After getting tokens, we need to link to the bridge
+                call.respondText("""
+                    <!DOCTYPE html>
+                    <html>
+                    <head><title>Hue Authorization</title></head>
+                    <body>
+                        <h1>Authorization Successful!</h1>
+                        <p>Now press the link button on your Hue bridge, then click the button below.</p>
+                        <button onclick="linkBridge()">Complete Setup</button>
+                        <p id="status"></p>
+                        <script>
+                            async function linkBridge() {
+                                document.getElementById('status').textContent = 'Linking...';
+                                const response = await fetch('/api/hue/link', { method: 'POST' });
+                                const result = await response.json();
+                                if (result.success) {
+                                    document.getElementById('status').textContent = 'Success! You can close this window.';
+                                } else {
+                                    document.getElementById('status').textContent = 'Error: ' + result.message;
+                                }
+                            }
+                        </script>
+                    </body>
+                    </html>
+                """.trimIndent(), ContentType.Text.Html)
+            } else {
+                call.respondText("Failed to exchange authorization code for tokens", status = HttpStatusCode.InternalServerError)
+            }
+        }
+        
+        post("/api/hue/link") {
+            when (val result = hueService.linkRemoteBridge()) {
                 is LinkResult.Success -> {
                     val lamps = hueService.getLights()
                     automationManager.setAutomatedLamps(lamps.keys)
-
-                    call.respond(
-                        BridgeConfigResponse(
-                            success = true,
-                            connected = true,
-                            bridgeIp = request.bridgeIp,
-                            needsLinking = false,
-                            message = "Successfully linked! Found ${lamps.size} lamps"
-                        )
-                    )
+                    call.respond(mapOf("success" to true, "message" to "Linked! Found ${lamps.size} lamps"))
                 }
                 is LinkResult.Error -> {
-                    call.respond(
-                        BridgeConfigResponse(
-                            success = false,
-                            connected = false,
-                            bridgeIp = request.bridgeIp,
-                            needsLinking = true,
-                            message = result.message
-                        )
-                    )
+                    call.respond(mapOf("success" to false, "message" to result.message))
                 }
                 LinkResult.LinkButtonNotPressed -> {
-                    call.respond(
-                        BridgeConfigResponse(
-                            success = false,
-                            connected = false,
-                            bridgeIp = request.bridgeIp,
-                            needsLinking = true,
-                            message = "Link button was not pressed"
-                        )
-                    )
+                    call.respond(mapOf("success" to false, "message" to "Press the link button on your bridge first"))
                 }
             }
         }
@@ -218,7 +199,7 @@ fun Application.module(
             call.respond(
                 StatusResponse(
                     connected = hueService.isConnected,
-                    bridgeIp = hueService.getBridgeIp(),
+                    bridgeIp = null, // Remote API doesn't expose bridge IP
                     needsLinking = hueService.needsLinking,
                     automationState = userState,
                     entertainmentActive = automationManager.isEntertainmentActive()

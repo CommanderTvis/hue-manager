@@ -15,8 +15,13 @@ data class Config(
     val pseudoSunset: String,
     val timezone: String,
     val keystorePassword: String?,
-    val hueBridgeIp: String?,
-    val hueUsername: String?
+    val hueUsername: String?,
+    // Philips Hue Remote API (OAuth2)
+    val hueClientId: String?,
+    val hueClientSecret: String?,
+    val hueAppId: String?,
+    val hueAccessToken: String?,
+    val hueRefreshToken: String?
 )
 
 @Serializable
@@ -48,8 +53,13 @@ object ConfigLoader {
         val timezone = env["TIMEZONE"] ?: "Europe/Berlin"
         val keystorePassword = env["KEYSTORE_PASSWORD"]
 
-        val hueBridgeIp = env["HUE_BRIDGE_IP"]?.takeIf { it.isNotBlank() }
         val hueUsername = env["HUE_USERNAME"]?.takeIf { it.isNotBlank() }
+
+        val hueClientId = env["HUE_CLIENT_ID"]?.takeIf { it.isNotBlank() }
+        val hueClientSecret = env["HUE_CLIENT_SECRET"]?.takeIf { it.isNotBlank() }
+        val hueAppId = env["HUE_APP_ID"]?.takeIf { it.isNotBlank() }
+        val hueAccessToken = env["HUE_ACCESS_TOKEN"]?.takeIf { it.isNotBlank() }
+        val hueRefreshToken = env["HUE_REFRESH_TOKEN"]?.takeIf { it.isNotBlank() }
 
         return Config(
             password = password,
@@ -57,12 +67,16 @@ object ConfigLoader {
             pseudoSunset = pseudoSunset,
             timezone = timezone,
             keystorePassword = keystorePassword,
-            hueBridgeIp = hueBridgeIp,
-            hueUsername = hueUsername
+            hueUsername = hueUsername,
+            hueClientId = hueClientId,
+            hueClientSecret = hueClientSecret,
+            hueAppId = hueAppId,
+            hueAccessToken = hueAccessToken,
+            hueRefreshToken = hueRefreshToken
         )
     }
 
-    fun updateHueCredentials(bridgeIp: String, username: String) {
+    fun updateHueTokens(accessToken: String, refreshToken: String, username: String? = null) {
         val currentContent = if (envFile.exists()) {
             envFile.readText()
         } else {
@@ -80,8 +94,11 @@ object ConfigLoader {
             }
         }
 
-        updateOrAdd("HUE_BRIDGE_IP", bridgeIp)
-        updateOrAdd("HUE_USERNAME", username)
+        updateOrAdd("HUE_ACCESS_TOKEN", accessToken)
+        updateOrAdd("HUE_REFRESH_TOKEN", refreshToken)
+        if (username != null) {
+            updateOrAdd("HUE_USERNAME", username)
+        }
 
         envFile.writeText(lines.joinToString("\n"))
     }

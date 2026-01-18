@@ -1,109 +1,57 @@
 package io.github.commandertvis.huemanager.hue
 
 import io.github.commandertvis.huemanager.config.Config
-import io.github.commandertvis.huemanager.config.ConfigLoader
-import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 
 class HueService(private var config: Config) {
     private val logger = LoggerFactory.getLogger(HueService::class.java)
 
-    private var client: HueClient? = null
-    private var bridgeIp: String? = config.hueBridgeIp
-    private var username: String? = config.hueUsername
+    // Remote API client (cloud connection via OAuth2)
+    private var remoteClient: HueRemoteClient? = HueRemoteClient.fromConfig(config)
 
     val isConnected: Boolean
-        get() = client != null
+        get() = remoteClient?.isConfigured == true
 
     val needsLinking: Boolean
-        get() = bridgeIp == null || username == null
+        get() = remoteClient?.isConfigured != true
+    
+    val needsOAuth: Boolean
+        get() = config.hueClientId != null && remoteClient?.isConfigured != true
+    
+    fun getAuthorizationUrl(redirectUri: String, state: String): String? {
+        return remoteClient?.getAuthorizationUrl(redirectUri, state)
+    }
+    
+    suspend fun handleOAuthCallback(code: String, redirectUri: String): Boolean {
+        val tokens = remoteClient?.exchangeCodeForTokens(code, redirectUri)
+        return tokens != null
+    }
+    
+    suspend fun linkRemoteBridge(): LinkResult {
+        return remoteClient?.linkBridge() ?: LinkResult.Error("Remote client not configured")
+    }
 
     suspend fun initialize(): Boolean {
-        if (bridgeIp == null) {
-            logger.info("No bridge IP configured, attempting discovery...")
-            val bridges = HueBridge.discoverBridges()
-            if (bridges.isEmpty()) {
-                logger.warn("No Hue bridges discovered")
-                return false
-            }
-            bridgeIp = bridges.first().internalipaddress
-            logger.info("Discovered bridge at $bridgeIp")
+        // With remote API, we just check if we have valid tokens
+        if (remoteClient?.isConfigured == true) {
+            logger.info("Remote API client configured, ready to use")
+            return true
         }
-
-        if (username == null) {
-            logger.info("No username configured, bridge linking required")
-            return false
-        }
-
-        return connect()
-    }
-
-    private suspend fun connect(): Boolean {
-        val ip = bridgeIp ?: return false
-        val user = username ?: return false
-
-        val valid = HueBridge.validateConnection(ip, user)
-        if (!valid) {
-            logger.error("Failed to validate connection to bridge at $ip")
-            return false
-        }
-
-        client = HueClient(ip, user)
-        logger.info("Connected to Hue bridge at $ip")
-        return true
-    }
-
-    suspend fun startLinking(maxAttempts: Int = 30, delayMs: Long = 2000): LinkResult {
-        val ip = bridgeIp
-        if (ip == null) {
-            val bridges = HueBridge.discoverBridges()
-            if (bridges.isEmpty()) {
-                return LinkResult.Error("No Hue bridges found")
-            }
-            bridgeIp = bridges.first().internalipaddress
-        }
-
-        val targetIp = bridgeIp!!
-        logger.info("Starting link process with bridge at $targetIp")
-        logger.info("Please press the link button on your Hue bridge...")
-
-        repeat(maxAttempts) { attempt ->
-            val result = HueBridge.createUser(targetIp)
-            when (result) {
-                is LinkResult.Success -> {
-                    username = result.username
-                    ConfigLoader.updateHueCredentials(targetIp, result.username)
-                    logger.info("Successfully linked! Username: ${result.username}")
-
-                    if (connect()) {
-                        return result
-                    }
-                    return LinkResult.Error("Linked but failed to connect")
-                }
-                is LinkResult.LinkButtonNotPressed -> {
-                    if (attempt < maxAttempts - 1) {
-                        delay(delayMs)
-                    }
-                }
-                is LinkResult.Error -> {
-                    return result
-                }
-            }
-        }
-
-        return LinkResult.Error("Linking timed out - button was not pressed")
+        
+        logger.info("Remote API not configured, OAuth2 authorization required")
+        return false
     }
 
     suspend fun getLights(): Map<String, HueLight> {
-        return client?.getLights() ?: emptyMap()
+        return remoteClient?.getLights() ?: emptyMap()
     }
 
     suspend fun getLight(id: String): HueLight? {
-        return client?.getLight(id)
+        return remoteClient?.getLight(id)
     }
 
     suspend fun setLightState(id: String, state: HueLightStateUpdate): Boolean {
-        return client?.setLightState(id, state) ?: false
+        return remoteClient?.setLightState(id, state) ?: false
     }
 
     suspend fun setAllLightsState(state: HueLightStateUpdate): Boolean {
@@ -118,7 +66,7 @@ class HueService(private var config: Config) {
     }
 
     suspend fun getGroups(): Map<String, HueGroup> {
-        return client?.getGroups() ?: emptyMap()
+        return remoteClient?.getGroups() ?: emptyMap()
     }
 
     suspend fun getEntertainmentGroups(): Map<String, HueGroup> {
@@ -127,60 +75,7 @@ class HueService(private var config: Config) {
 
     fun getConfig(): Config = config
 
-    fun getBridgeIp(): String? = bridgeIp
-
-    /**
-     * Configure bridge from external source (e.g., client app that discovered it locally)
-     */
-    suspend fun configureBridge(ip: String, user: String): Boolean {
-        logger.info("Configuring bridge from external source: $ip")
-
-        val valid = HueBridge.validateConnection(ip, user)
-        if (!valid) {
-            logger.error("Failed to validate external bridge config at $ip")
-            return false
-        }
-
-        bridgeIp = ip
-        username = user
-        ConfigLoader.updateHueCredentials(ip, user)
-
-        return connect()
-    }
-
-    /**
-     * Try to link once - returns immediately with result.
-     * Client should poll this endpoint repeatedly while waiting for button press.
-     */
-    suspend fun tryLinkOnce(ip: String): LinkResult {
-        bridgeIp = ip
-        logger.info("Attempting link with bridge at $ip")
-
-        val result = HueBridge.createUser(ip)
-        when (result) {
-            is LinkResult.Success -> {
-                username = result.username
-                ConfigLoader.updateHueCredentials(ip, result.username)
-                logger.info("Successfully linked! Username: ${result.username}")
-
-                if (connect()) {
-                    return result
-                }
-                return LinkResult.Error("Linked but failed to connect")
-            }
-            is LinkResult.LinkButtonNotPressed -> {
-                logger.debug("Button not pressed yet")
-                return result
-            }
-            is LinkResult.Error -> {
-                logger.error("Link error: ${result.message}")
-                return result
-            }
-        }
-    }
-
     fun close() {
-        client?.close()
-        HueBridge.close()
+        remoteClient?.close()
     }
 }

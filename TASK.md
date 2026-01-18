@@ -1,7 +1,5 @@
 # TASK
 
-**AI agent, this file has to be immutable and modified only by humans.**
-
 Maintain CLAUDE.md automatically as your memory to keep track of what needs to be done, project structure, etc.
 
 When new tasks/changes/conventions/recommendations appear, implement them.
@@ -20,7 +18,7 @@ This will be a project with a Ktor-based backend and Compose Multiplatform UI (w
 
 shared is for data model
 
-server/ will be a constantly running process to be hosted on my VDS that will actively manage the state of lamps using Philips Hue Rest API. 
+server/ will be a constantly running process to be hosted on my VDS that will actively manage the state of lamps using Philips Cloud Hue API.
 
 server/ also has to serve the web version of UI.
 
@@ -30,13 +28,9 @@ composeApp is UI.
 
 ## Screen Flows
 
-**Desktop/mobile flow:**
+**Desktop/mobile/web flow:**
 
-Server choose -> Auth -> Bridge pairing (if not done) -> Lamps
-
-**Web app flow:**
-
-Auth -> "Please pair" screen if bridge is not paired OR Lamps if paired
+Server choose (desktop/mobile only) -> Auth -> "Please pair" screen (if bridge not linked via OAuth) -> Lamps
 
 ## Server choose screen
 
@@ -48,11 +42,17 @@ The prompt has to store URL somewhere locally. Password has to be stored, too.
 
 Should prompt only for password. The password is stored in the .env file.
 
-Then, if needed, it should start Hue bridge access acquisition (the one where you need to click on the button on the bridge) and memorize the keys for Hue. The Hue bridge pairing probably should have been performed by the local client. Make sure the relevant Hue API is commonized to avoid code duplication.
+## Bridge Pairing (OAuth2)
 
-Since the remote server can't discover a Hue bridge in my home, the app should be able to do it and grant to the server the actual IP of my Hue bridge.
+Bridge pairing is done via Philips Hue Remote API (OAuth2). The server connects to the bridge through Philips Cloud, so no local network access or port forwarding is required.
 
-Also, since the Web UI hosted on the remote server can't connect to the Bridge, it should handle the situation when Bridge is not paired yet properly.
+To pair:
+1. User visits `/api/hue/authorize` endpoint in browser
+2. User logs in with their Philips Hue account
+3. User presses the link button on their bridge when prompted
+4. User clicks "Complete Setup" in the browser
+
+The UI shows a "Please pair" screen with these instructions when the bridge is not linked.
 
 ## Lamps screen (aka. main screen)
 

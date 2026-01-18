@@ -51,18 +51,28 @@ fun PleasePairScreen(
                     modifier = Modifier.padding(start = 16.dp, bottom = 16.dp)
                 ) {
                     Text(
-                        text = "1. Use the desktop or mobile app to discover and pair with your Hue bridge",
+                        text = "1. Open your server URL + /api/hue/authorize in a browser",
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
                     Text(
-                        text = "2. Or configure the bridge manually on the server",
+                        text = "2. Log in with your Philips Hue account",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    Text(
+                        text = "3. Press the link button on your Hue bridge when prompted",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    Text(
+                        text = "4. Click 'Complete Setup' in the browser",
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
 
                 Text(
-                    text = "Once the bridge is paired, refresh this page to continue.",
+                    text = "Once the bridge is linked, click 'Check Again' to continue.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,

@@ -13,7 +13,6 @@ import io.github.commandertvis.huemanager.network.ApiClient
 import io.github.commandertvis.huemanager.storage.createServerUrlStorage
 import io.github.commandertvis.huemanager.ui.*
 import io.github.commandertvis.huemanager.viewmodel.AuthViewModel
-import io.github.commandertvis.huemanager.viewmodel.BridgePairingViewModel
 import kotlinx.coroutines.launch
 
 @Composable
@@ -104,32 +103,19 @@ fun App(
                         }
                         
                         bridgeStatus == BridgeStatus.NeedsPairing && !platform.isWeb -> {
-                            // Desktop/mobile: show bridge pairing screen
-                            val bridgePairingViewModel = remember(apiClient) {
-                                BridgePairingViewModel(apiClient)
-                            }
-                            val pairingUiState by bridgePairingViewModel.uiState.collectAsState()
-                            
-                            // Auto-start discovery
-                            LaunchedEffect(Unit) {
-                                if (pairingUiState.discoveredBridges.isEmpty() && !pairingUiState.isDiscovering) {
-                                    bridgePairingViewModel.discoverBridges()
+                            // Desktop/mobile: OAuth is done via browser, show same screen as web
+                            PleasePairScreen(
+                                onRetry = {
+                                    scope.launch {
+                                        apiClient.getStatus().onSuccess { status ->
+                                            bridgeStatus = if (status.connected && !status.needsLinking) {
+                                                BridgeStatus.Connected
+                                            } else {
+                                                BridgeStatus.NeedsPairing
+                                            }
+                                        }
+                                    }
                                 }
-                            }
-                            
-                            // When pairing is complete, update bridge status
-                            LaunchedEffect(pairingUiState.isComplete) {
-                                if (pairingUiState.isComplete) {
-                                    bridgeStatus = BridgeStatus.Connected
-                                }
-                            }
-                            
-                            BridgePairingScreen(
-                                uiState = pairingUiState,
-                                onDiscoverBridges = { bridgePairingViewModel.discoverBridges() },
-                                onSelectBridge = { ip -> bridgePairingViewModel.selectBridge(ip) },
-                                onRetry = { bridgePairingViewModel.retry() },
-                                onSubmitPublicIp = { publicIp -> bridgePairingViewModel.submitPublicIp(publicIp) }
                             )
                         }
                         
