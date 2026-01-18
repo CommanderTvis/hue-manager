@@ -16,7 +16,6 @@ data class Config(
     val timezone: String,
     val keystorePassword: String?,
     val hueUsername: String?,
-    // Philips Hue Remote API (OAuth2) - Required for operation
     val hueClientId: String,
     val hueClientSecret: String,
     val hueAppId: String,

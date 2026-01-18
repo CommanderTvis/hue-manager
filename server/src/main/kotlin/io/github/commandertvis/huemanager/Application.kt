@@ -123,7 +123,7 @@ fun Application.module(
                 call.respond(mapOf(
                     "authorizationUrl" to authUrl,
                     "state" to state,
-                    "minimal" to minimal,
+                    "mode" to if (minimal) "minimal" else "full",
                     "note" to if (minimal) "Using MINIMAL parameters (client_id, response_type, state only)" else "Using FULL parameters (includes redirect_uri, deviceid, devicename, appid)"
                 ))
             } else {
