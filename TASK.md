@@ -30,7 +30,7 @@ composeApp is UI.
 
 **Desktop/mobile/web flow:**
 
-Server choose (desktop/mobile only) -> Auth -> "Please pair" screen (if bridge not linked via OAuth) -> Lamps
+Server choose (desktop/mobile only) -> Auth -> "Please authorize" screen (if bridge not linked via OAuth) -> Lamps
 
 ## Server choose screen
 
@@ -42,17 +42,17 @@ The prompt has to store URL somewhere locally. Password has to be stored, too.
 
 Should prompt only for password. The password is stored in the .env file.
 
-## Bridge Pairing (OAuth2)
+## Bridge Authorization (OAuth2)
 
-Bridge pairing is done via Philips Hue Remote API (OAuth2). The server connects to the bridge through Philips Cloud, so no local network access or port forwarding is required.
+Bridge authorization is done via Philips Hue Remote API (OAuth2). The server connects to the bridge through Philips Cloud, so no local network access or port forwarding is required.
 
-To pair:
+To authorize:
 1. User visits `/api/hue/authorize` endpoint in browser
 2. User logs in with their Philips Hue account
 3. User presses the link button on their bridge when prompted
 4. User clicks "Complete Setup" in the browser
 
-The UI shows a "Please pair" screen with these instructions when the bridge is not linked.
+The UI shows a "Please authorize" screen with these instructions when the bridge is not linked.
 
 ## Lamps screen (aka. main screen)
 

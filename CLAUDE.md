@@ -50,7 +50,7 @@ A Philips Hue lamp management system with:
 - `composeApp/.../ui/MainScreen.kt` - Full lamp control interface
 - `composeApp/.../ui/LampCard.kt` - Individual lamp card with toggle, brightness slider
 - `composeApp/.../ui/ServerConnectScreen.kt` - Server URL input and validation
-- `composeApp/.../ui/PleasePairScreen.kt` - OAuth2 pairing instructions
+- `composeApp/.../ui/PleaseAuthorizeScreen.kt` - OAuth2 authorization instructions
 
 **Tech Stack:**
 - Kotlin 2.3.0
@@ -70,7 +70,7 @@ Client (composeApp) <--HTTP--> Server (Ktor on VDS) <--OAuth2/REST--> Philips Cl
 **Bridge Connection via OAuth2:**
 The server connects to the Hue bridge through Philips Cloud using OAuth2. No local network access, port forwarding, or VPN is required.
 
-**OAuth2 Pairing Flow:**
+**OAuth2 Authorization Flow:**
 1. User visits `/api/hue/authorize` endpoint in browser
 2. User is redirected to Philips Hue login page
 3. User logs in with their Philips Hue account
@@ -114,7 +114,7 @@ KEYSTORE_PASSWORD=<for HTTPS>
 ### Authentication
 - `POST /api/session` - Login with password
 
-### OAuth2 (Bridge Pairing)
+### OAuth2 (Bridge Authorization)
 - `GET /api/hue/authorize` - Start OAuth2 flow (returns authorization URL)
 - `GET /api/hue/callback` - OAuth2 callback (handles token exchange)
 - `POST /api/hue/link` - Complete bridge linking after OAuth

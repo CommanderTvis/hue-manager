@@ -29,9 +29,9 @@ graph LR
     style Bridge fill:#ffe1f5
 ```
 
-### Bridge Pairing via OAuth2
+### Bridge Authorization
 
-The server connects to your Hue bridge through Philips Cloud using OAuth2:
+The server connects to your Hue bridge through Philips Cloud:
 
 1. **Register your app** at [developers.meethue.com](https://developers.meethue.com/)
 2. **Configure OAuth credentials** in `.env` (HUE_CLIENT_ID, HUE_CLIENT_SECRET, HUE_APP_ID)
@@ -39,8 +39,6 @@ The server connects to your Hue bridge through Philips Cloud using OAuth2:
 4. **Log in** with your Philips Hue account
 5. **Press the link button** on your bridge when prompted
 6. **Click "Complete Setup"** - server stores tokens automatically
-
-No local network access, port forwarding, or VPN required!
 
 ## Project Structure
 
@@ -92,9 +90,9 @@ HUE_USERNAME=
 docker compose up -d
 ```
 
-### 4. Pair Your Bridge
+### 4. Authorize Your Bridge
 
-1. Open `http://your-server:8080/api/hue/authorize` in a browser
+1. Open `http://your-server:8080/api/hue/authorize` in a browser or use the App UI
 2. Log in with your Philips Hue account
 3. Press the link button on your bridge when prompted
 4. Click "Complete Setup"

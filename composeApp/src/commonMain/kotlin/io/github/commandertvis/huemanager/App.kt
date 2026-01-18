@@ -55,7 +55,7 @@ fun App(
                     val platform = remember { getPlatform() }
                     val scope = rememberCoroutineScope()
                     
-                    // Track bridge pairing status
+                    // Track bridge authorization status
                     var bridgeStatus by remember { mutableStateOf<BridgeStatus?>(null) }
                     
                     // Check bridge status when logged in
@@ -85,7 +85,7 @@ fun App(
                         }
                         
                         bridgeStatus == BridgeStatus.NeedsAuthorization && platform.isWeb -> {
-                            // Web app: show "Please pair" screen
+                            // Web app: show "Please authorize" screen
                             PleaseAuthorizeScreen(
                                 onRetry = {
                                     scope.launch {
@@ -100,7 +100,7 @@ fun App(
                                 },
                                 onStartAuthorizing = {
                                     scope.launch {
-                                        println("[DEBUG_LOG] Start Pairing clicked (Web)")
+                                        println("[DEBUG_LOG] Start Authorizing clicked (Web)")
                                         apiClient.getAuthorizationUrl().onSuccess { url ->
                                             println("[DEBUG_LOG] Received URL (Web): $url")
                                             if (url.isNotEmpty()) {
@@ -133,7 +133,7 @@ fun App(
                                 },
                                 onStartAuthorizing = {
                                     scope.launch {
-                                        println("[DEBUG_LOG] Start Pairing clicked (Desktop/Mobile)")
+                                        println("[DEBUG_LOG] Start Authorizing clicked (Desktop/Mobile)")
                                         apiClient.getAuthorizationUrl().onSuccess { url ->
                                             println("[DEBUG_LOG] Received URL (Desktop/Mobile): $url")
                                             if (url.isNotEmpty()) {
