@@ -41,85 +41,107 @@ class HueRemoteClient(
     
     /**
      * Generate the OAuth2 authorization URL for user to visit.
+     * Per Hue OAuth2 spec: https://developers.meethue.com/develop/hue-api/remote-authentication-oauth/
+     *
+     * Required parameters: client_id, response_type
+     * Recommended: state
+     * Optional: redirect_uri (must match developer portal if included), deviceid, devicename, appid
      */
     fun getAuthorizationUrl(redirectUri: String, state: String): String {
-        // According to Hue Remote API documentation:
-        // appid: The App ID of your application (found in the Hue Developer Portal)
-        // deviceid: A unique identifier for the device (can be anything, but should be consistent)
-        // devicename: A human-readable name for the device
-        
         val baseUrl = "https://api.meethue.com/v2/oauth2/authorize"
-        
-        // Ensure redirect_uri is what Hue expects.
-        // If the user's redirect URI is http://168.119.100.24:8080/api/hue/callback
-        // it must EXACTLY match what's in the developer portal.
-        
-        // IMPORTANT: The "Something went wrong" error often occurs if 'appid' doesn't match 
-        // the AppId registered in the Hue portal, or if 'client_id' is incorrect.
-        // Some users also report that 'deviceid' MUST be provided and 'response_type' must be 'code'.
-        
-        val params = mutableMapOf(
-            "client_id" to clientId,
-            "appid" to appId,
-            "deviceid" to "server",
-            "response_type" to "code",
-            "state" to state
-        )
-        
-        // Some documentation suggests using 'scope' might be helpful
-        // params["scope"] = "bridge"
-        
-        // redirect_uri is mandatory if multiple are defined, but good to have always
-        params["redirect_uri"] = redirectUri
-        
-        // devicename is optional but recommended
-        params["devicename"] = "HueManagerServer"
-        
-        val queryString = listOf("client_id", "appid", "deviceid", "response_type", "state", "redirect_uri", "devicename")
-            .filter { params.containsKey(it) }
-            .joinToString("&") { key ->
-                "$key=${params[key]!!.encodeURLParameter()}"
-            }
-        
+
+        // Build minimal required parameters first
+        // Per docs: "Note that the underscore is not used in the clientid name of this parameter"
+        // means the parameter name IS "client_id" but the value (clientid) has no underscores
+        val params = buildMap {
+            // REQUIRED parameters
+            put("client_id", clientId)
+            put("response_type", "code")
+
+            // RECOMMENDED parameter
+            put("state", state)
+
+            // OPTIONAL: redirect_uri - must EXACTLY match what's in developer portal
+            // According to docs: "can be omitted since Hue currently only supports one redirect uri per application"
+            // However, if included it must be exact and also sent in token request
+            put("redirect_uri", redirectUri)
+
+            // OPTIONAL: deviceid and devicename
+            // Some users report these can cause issues - try without them first
+            put("deviceid", "hue_manager_server")
+            put("devicename", "Hue Manager Server")
+
+            // OPTIONAL: appid (marked as "might be removed in the future" in docs)
+            // Try including it since we have it configured
+            put("appid", appId)
+        }
+
+        val queryString = params.entries.joinToString("&") { (key, value) ->
+            "$key=${value.encodeURLParameter()}"
+        }
+
         val finalUrl = "$baseUrl?$queryString"
-        
-        logger.info("Built auth URL for clientId: $clientId, appId: $appId")
+
+        logger.info("=== Hue OAuth2 Authorization URL ===")
+        logger.info("Client ID: ${clientId.take(10)}...${clientId.takeLast(4)}")
+        logger.info("App ID: ${appId.take(10)}...${appId.takeLast(4)}")
         logger.info("Redirect URI: $redirectUri")
-        logger.info("Full Auth URL: $finalUrl")
-        logger.info("NOTE: If you still see 'Something went wrong', double check that HUE_APP_ID exactly matches your AppId in the Hue Developer Portal.")
+        logger.info("State: ${state.take(8)}...")
+        logger.info("Full URL: $finalUrl")
+        logger.info("=====================================")
+        logger.warn("IMPORTANT: If you get 'Something went wrong' from Hue:")
+        logger.warn("1. Verify HUE_CLIENT_ID exactly matches 'Client Id' in developer portal")
+        logger.warn("2. Verify HUE_APP_ID exactly matches 'AppId' in developer portal")
+        logger.warn("3. Verify HUE_REDIRECT_URI exactly matches registered callback URL (including http/https, port)")
+        logger.warn("4. Check that your app is approved/active in the developer portal")
+
         return finalUrl
     }
     
     /**
      * Exchange authorization code for access and refresh tokens.
+     * Uses Basic Authentication as recommended in Hue OAuth2 spec.
+     *
+     * Per docs: redirect_uri must be included if it was in the /authorize request.
      */
     suspend fun exchangeCodeForTokens(code: String, redirectUri: String): TokenResponse? {
         return try {
+            logger.info("Exchanging authorization code for tokens...")
+            logger.debug("Using redirect_uri: $redirectUri")
+
             val response: HttpResponse = client.post("https://api.meethue.com/v2/oauth2/token") {
                 contentType(ContentType.Application.FormUrlEncoded)
+                // Use Basic Authentication with base64(clientId:clientSecret)
                 basicAuth(clientId, clientSecret)
                 setBody(FormDataContent(Parameters.build {
                     append("grant_type", "authorization_code")
                     append("code", code)
+                    // redirect_uri MUST match the one used in /authorize request
                     append("redirect_uri", redirectUri)
                 }))
             }
-            
+
+            val responseBody = response.bodyAsText()
+            logger.debug("Token exchange response status: ${response.status}")
+            logger.debug("Token exchange response body: ${responseBody.take(200)}")
+
             if (response.status.isSuccess()) {
-                val tokenResponse: TokenResponse = response.body()
+                val tokenResponse: TokenResponse = Json.decodeFromString(responseBody)
                 accessToken = tokenResponse.accessToken
                 refreshToken = tokenResponse.refreshToken
-                
+
                 // Save tokens to .env
                 ConfigLoader.updateHueTokens(
                     tokenResponse.accessToken,
                     tokenResponse.refreshToken ?: ""
                 )
-                
+
                 logger.info("Successfully obtained OAuth2 tokens")
+                logger.info("Access token expires in: ${tokenResponse.expiresIn} seconds")
                 tokenResponse
             } else {
                 logger.error("Failed to exchange code for tokens: ${response.status}")
+                logger.error("Response body: $responseBody")
                 null
             }
         } catch (e: Exception) {

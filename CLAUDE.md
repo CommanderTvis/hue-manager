@@ -17,9 +17,11 @@ A Philips Hue lamp management system with:
   - `.env.example` with configuration structure
   - Environment loading with dotenv-kotlin
   - Ktor HTTP client for Hue Remote API
-  - OAuth2 authentication with Philips Hue
+  - OAuth2 authentication with Philips Hue (configurable redirect URI)
   - Credential storage (updates .env automatically)
   - Basic API endpoints: `/api/status`, `/api/lamps`, `/api/groups`
+  - OAuth2 authorization flow with detailed logging and parameter validation
+  - Platform-specific URL opening for authorization flow
 
 **Server Files:**
 - `server/.../config/Config.kt` - Configuration loading from .env
@@ -28,21 +30,25 @@ A Philips Hue lamp management system with:
 - `server/.../hue/HueService.kt` - Service layer managing Hue connection via Remote API
 - `server/.../hue/RateLimiter.kt` - Token bucket and minimum delay rate limiters
 
-**Shared Models:**
+**Shared Files:**
 - `shared/.../models/Lamp.kt` - Lamp, LampState, ColorMode, LampType
 - `shared/.../models/Group.kt` - Group, GroupType, RoomClass
 - `shared/.../models/Automation.kt` - AutomationState, UserState, LampOverride, SunTimes
 - `shared/.../models/Session.kt` - Session, LoginRequest, LoginResponse
 - `shared/.../api/ApiModels.kt` - API DTOs (StatusResponse, LampsResponse, etc.)
+- `shared/.../network/JsonConfig.kt` - Shared JSON serialization configuration
+- `shared/.../Platform.kt` - Platform-specific utilities (expect/actual pattern)
+- `shared/.../Constants.kt` - Shared constants
 
 **Server API & Auth:**
 - `server/.../auth/SessionManager.kt` - Token-based session management
 - `server/.../automation/AutomationManager.kt` - User state, lamp overrides, heartbeat
 
 **UI Files:**
-- `composeApp/.../network/ApiClient.kt` - Multiplatform Ktor client with all API methods
-- `composeApp/.../auth/SessionStorage.kt` - Persistent session token storage with StateFlow
-- `composeApp/.../storage/ServerUrlStorage.kt` - Platform-specific server URL storage
+- `composeApp/.../network/ApiClient.kt` - Multiplatform Ktor client with all API methods (platform-specific implementations in jvmMain, wasmJsMain)
+- `composeApp/.../network/RateLimiter.kt` - Client-side rate limiting
+- `composeApp/.../auth/SessionStorage.kt` - Persistent session token storage with StateFlow (platform-specific implementations)
+- `composeApp/.../storage/ServerUrlStorage.kt` - Platform-specific server URL storage (JVM, WasmJS implementations)
 - `composeApp/.../viewmodel/AuthViewModel.kt` - Login state management
 - `composeApp/.../viewmodel/LampsViewModel.kt` - Lamp state and control management
 - `composeApp/.../viewmodel/ServerConnectViewModel.kt` - Server URL validation
@@ -56,9 +62,10 @@ A Philips Hue lamp management system with:
 - Kotlin 2.3.0
 - Ktor 3.3.3 (server + client)
 - Compose Multiplatform 1.10.0
-- kotlinx-serialization 1.8.1
-- kotlinx-datetime 0.6.2
-- dotenv-kotlin 6.5.0
+- kotlinx-serialization 1.9.0
+- kotlinx-datetime 0.7.1-0.6.x-compat
+- kotlinx-coroutines 1.10.2
+- dotenv-kotlin 6.5.1
 - Gradle with version catalog
 
 ## Architecture
@@ -71,12 +78,16 @@ Client (composeApp) <--HTTP--> Server (Ktor on VDS) <--OAuth2/REST--> Philips Cl
 The server connects to the Hue bridge through Philips Cloud using OAuth2. No local network access, port forwarding, or VPN is required.
 
 **OAuth2 Authorization Flow:**
-1. User visits `/api/hue/authorize` endpoint in browser
-2. User is redirected to Philips Hue login page
-3. User logs in with their Philips Hue account
-4. User presses the link button on their bridge when prompted
-5. User clicks "Complete Setup" in the browser
-6. Server stores OAuth tokens and can control lamps via Remote API
+1. Configure `HUE_REDIRECT_URI` in `.env` (must match the callback URL registered at developers.meethue.com)
+2. User visits `/api/hue/authorize` endpoint in browser
+3. Server generates authorization URL with proper parameters (client_id, app_id, redirect_uri) and redirects to Philips Hue login page
+4. User logs in with their Philips Hue account
+5. User presses the link button on their bridge when prompted
+6. User completes authorization and is redirected to the callback URL
+7. Server handles callback at `/api/hue/callback`, exchanges code for tokens
+8. Server stores OAuth tokens in `.env` and can control lamps via Remote API
+
+**Note:** Recent fixes ensure proper OAuth2 parameter naming (client_id) and configurable redirect URI support.
 
 The server acts as a persistent process that:
 1. Maintains connection to Hue bridge via Philips Cloud
@@ -99,6 +110,7 @@ TIMEZONE=Europe/Berlin
 HUE_CLIENT_ID=<from developers.meethue.com>
 HUE_CLIENT_SECRET=<from developers.meethue.com>
 HUE_APP_ID=<from developers.meethue.com>
+HUE_REDIRECT_URI=<OAuth2 callback URL, e.g., https://yourdomain.com/api/hue/callback>
 
 # OAuth2 tokens (populated automatically after authorization)
 HUE_ACCESS_TOKEN=
@@ -168,14 +180,33 @@ hue-manager/
 │   └── hue/                 # Hue API clients (Remote + Local)
 ├── shared/src/commonMain/kotlin/io/github/commandertvis/huemanager/
 │   ├── models/              # Data models
-│   └── api/                 # API DTOs
+│   ├── api/                 # API DTOs
+│   ├── network/             # Shared JSON configuration
+│   ├── Platform.kt          # Platform utilities (expect/actual)
+│   └── Constants.kt         # Shared constants
 ├── composeApp/src/commonMain/kotlin/io/github/commandertvis/huemanager/
-│   ├── App.kt               # Main app
+│   ├── App.kt               # Main app entry
 │   ├── ui/                  # UI screens
 │   ├── viewmodel/           # ViewModels
-│   └── network/             # Server API client
+│   ├── network/             # Server API client + rate limiting
+│   ├── auth/                # Session storage
+│   └── storage/             # Server URL storage
+├── composeApp/src/{jvmMain,wasmJsMain}/  # Platform-specific implementations
 ├── androidApp/              # Android entry point
-├── .env.example
-├── Dockerfile
-└── docker-compose.yml
+├── gradle/libs.versions.toml  # Gradle version catalog
+├── .env.example             # Environment configuration template
+├── Dockerfile               # Build image
+├── Dockerfile.runtime       # Runtime image
+└── docker-compose.yml       # Docker deployment config
 ```
+
+## Recent Changes
+
+**Latest Updates (Jan 2026):**
+- Fixed OAuth2 parameter naming: corrected `clientid` to `client_id` in Hue authorization flow
+- Added support for configurable `HUE_REDIRECT_URI` in environment variables
+- Implemented `PleaseAuthorizeScreen` for OAuth2 authorization instructions
+- Standardized terminology: "pairing" → "authorization", improved consistency across codebase
+- Enhanced OAuth2 authorization URL generation with detailed logging and parameter validation
+- Added platform-specific URL opening functionality for authorization flow
+- Updated dependency versions (kotlinx-serialization 1.9.0, kotlinx-datetime 0.7.1, kotlinx-coroutines 1.10.2)

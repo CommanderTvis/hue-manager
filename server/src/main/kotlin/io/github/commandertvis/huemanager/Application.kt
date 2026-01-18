@@ -130,23 +130,62 @@ fun Application.module(
         }
         
         get("/api/hue/callback") {
+            // OAuth2 callback from Philips Hue
+            // Expected parameters: code, state, and optionally pkce
             val code = call.parameters["code"]
+            val state = call.parameters["state"]
+            val pkce = call.parameters["pkce"]
             val error = call.parameters["error"]
-            
+            val errorDescription = call.parameters["error_description"]
+
+            logger.info("Received OAuth2 callback")
+            logger.debug("Callback parameters: code=${code?.take(10)}..., state=${state?.take(8)}..., pkce=$pkce")
+
             if (error != null) {
-                call.respondText("Authorization failed: $error", status = HttpStatusCode.BadRequest)
+                logger.error("OAuth2 authorization failed: $error - $errorDescription")
+                call.respondText("""
+                    <!DOCTYPE html>
+                    <html>
+                    <head><title>Hue Authorization Failed</title></head>
+                    <body>
+                        <h1>Authorization Failed</h1>
+                        <p>Error: $error</p>
+                        ${errorDescription?.let { "<p>Description: $it</p>" } ?: ""}
+                        <p><a href="/api/hue/authorize">Try Again</a></p>
+                    </body>
+                    </html>
+                """.trimIndent(), ContentType.Text.Html, status = HttpStatusCode.BadRequest)
                 return@get
             }
-            
+
             if (code == null) {
-                call.respondText("Missing authorization code", status = HttpStatusCode.BadRequest)
+                logger.error("OAuth2 callback missing authorization code")
+                call.respondText("""
+                    <!DOCTYPE html>
+                    <html>
+                    <head><title>Hue Authorization Failed</title></head>
+                    <body>
+                        <h1>Authorization Failed</h1>
+                        <p>Missing authorization code in callback</p>
+                        <p><a href="/api/hue/authorize">Try Again</a></p>
+                    </body>
+                    </html>
+                """.trimIndent(), ContentType.Text.Html, status = HttpStatusCode.BadRequest)
                 return@get
             }
-            
+
+            // PKCE is optional - log it if present
+            if (pkce != null) {
+                logger.debug("PKCE extension used: $pkce")
+            }
+
             val redirectUri = call.resolveHueRedirectUri(config)
+            logger.debug("Using redirect_uri for token exchange: $redirectUri")
+
             val success = hueService.handleOAuthCallback(code, redirectUri)
-            
+
             if (success) {
+                logger.info("Successfully exchanged authorization code for tokens")
                 // After getting tokens, we need to link to the bridge
                 call.respondText("""
                     <!DOCTYPE html>
@@ -173,7 +212,19 @@ fun Application.module(
                     </html>
                 """.trimIndent(), ContentType.Text.Html)
             } else {
-                call.respondText("Failed to exchange authorization code for tokens", status = HttpStatusCode.InternalServerError)
+                logger.error("Failed to exchange authorization code for tokens")
+                call.respondText("""
+                    <!DOCTYPE html>
+                    <html>
+                    <head><title>Hue Authorization Failed</title></head>
+                    <body>
+                        <h1>Token Exchange Failed</h1>
+                        <p>Failed to exchange authorization code for access tokens.</p>
+                        <p>Check server logs for details.</p>
+                        <p><a href="/api/hue/authorize">Try Again</a></p>
+                    </body>
+                    </html>
+                """.trimIndent(), ContentType.Text.Html, status = HttpStatusCode.InternalServerError)
             }
         }
         
