@@ -59,7 +59,7 @@ class HueRemoteClient(
         // Some users also report that 'deviceid' MUST be provided and 'response_type' must be 'code'.
         
         val params = mutableMapOf(
-            "client_id" to clientId,
+            "clientid" to clientId,
             "appid" to appId,
             "deviceid" to "server",
             "response_type" to "code",
@@ -75,7 +75,7 @@ class HueRemoteClient(
         // devicename is optional but recommended
         params["devicename"] = "HueManagerServer"
         
-        val queryString = listOf("client_id", "appid", "deviceid", "response_type", "state", "redirect_uri", "devicename")
+        val queryString = listOf("clientid", "appid", "deviceid", "response_type", "state", "redirect_uri", "devicename")
             .filter { params.containsKey(it) }
             .joinToString("&") { key ->
                 "$key=${params[key]!!.encodeURLParameter()}"
