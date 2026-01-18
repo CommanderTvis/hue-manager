@@ -128,8 +128,8 @@ fun App(
                                 uiState = pairingUiState,
                                 onDiscoverBridges = { bridgePairingViewModel.discoverBridges() },
                                 onSelectBridge = { ip -> bridgePairingViewModel.selectBridge(ip) },
-                                onStartLinking = { bridgePairingViewModel.startLinking() },
-                                onRetry = { bridgePairingViewModel.retry() }
+                                onRetry = { bridgePairingViewModel.retry() },
+                                onSubmitPublicIp = { publicIp -> bridgePairingViewModel.submitPublicIp(publicIp) }
                             )
                         }
                         

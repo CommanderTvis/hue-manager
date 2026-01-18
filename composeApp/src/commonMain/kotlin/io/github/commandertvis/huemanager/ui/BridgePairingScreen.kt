@@ -16,8 +16,8 @@ fun BridgePairingScreen(
     uiState: BridgePairingUiState,
     onDiscoverBridges: () -> Unit,
     onSelectBridge: (String) -> Unit,
-    onStartLinking: () -> Unit,
-    onRetry: () -> Unit
+    onRetry: () -> Unit,
+    onSubmitPublicIp: (String) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -33,6 +33,44 @@ fun BridgePairingScreen(
         )
 
         when {
+            uiState.needsPublicIp -> {
+                var publicIp by remember { mutableStateOf("") }
+                
+                Text(
+                    text = "Bridge Linked Successfully!",
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+                
+                Text(
+                    text = "The bridge was paired on your local network (${uiState.selectedBridgeIp}).",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                
+                Text(
+                    text = "Now enter the PUBLIC IP address or VPN address where the server can reach your bridge:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+                
+                OutlinedTextField(
+                    value = publicIp,
+                    onValueChange = { publicIp = it },
+                    label = { Text("Public Bridge IP") },
+                    placeholder = { Text("e.g., 203.0.113.45 or vpn.home.local") },
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                    singleLine = true
+                )
+                
+                Button(
+                    onClick = { onSubmitPublicIp(publicIp) },
+                    enabled = publicIp.isNotBlank()
+                ) {
+                    Text("Configure Server")
+                }
+            }
+            
             uiState.isDiscovering -> {
                 CircularProgressIndicator()
                 Text(
@@ -116,15 +154,6 @@ fun BridgePairingScreen(
             }
         }
 
-        if (uiState.selectedBridgeIp != null && !uiState.isLinking && uiState.errorMessage == null) {
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                onClick = onStartLinking,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Start Pairing")
-            }
-        }
     }
 }
 
@@ -135,5 +164,7 @@ data class BridgePairingUiState(
     val isLinking: Boolean = false,
     val linkingAttempt: Int = 0,
     val errorMessage: String? = null,
-    val isComplete: Boolean = false
+    val isComplete: Boolean = false,
+    val linkedUsername: String? = null,
+    val needsPublicIp: Boolean = false
 )

@@ -58,9 +58,10 @@ class BridgePairingViewModel(
 
     fun selectBridge(bridgeIp: String) {
         _uiState.update { it.copy(selectedBridgeIp = bridgeIp) }
+        startLinking()
     }
 
-    fun startLinking() {
+    private fun startLinking() {
         val bridgeIp = _uiState.value.selectedBridgeIp ?: return
 
         viewModelScope.launch {
@@ -80,29 +81,14 @@ class BridgePairingViewModel(
 
                     when (val result = bridgeClient.createUser()) {
                         is LinkResult.Success -> {
-                            // Successfully linked! Now send credentials to server
-                            val configResult = apiClient.configureBridge(
-                                BridgeConfigRequest(
-                                    bridgeIp = bridgeIp,
-                                    username = result.username
+                            // Successfully linked locally! Now ask for public IP
+                            _uiState.update {
+                                it.copy(
+                                    isLinking = false,
+                                    linkedUsername = result.username,
+                                    needsPublicIp = true,
+                                    errorMessage = null
                                 )
-                            )
-
-                            configResult.onSuccess { response ->
-                                _uiState.update {
-                                    it.copy(
-                                        isLinking = false,
-                                        isComplete = true,
-                                        errorMessage = null
-                                    )
-                                }
-                            }.onFailure { error ->
-                                _uiState.update {
-                                    it.copy(
-                                        isLinking = false,
-                                        errorMessage = "Linked to bridge but failed to configure server: ${error.message}"
-                                    )
-                                }
                             }
                             return@launch
                         }
@@ -133,6 +119,39 @@ class BridgePairingViewModel(
                 }
             } finally {
                 bridgeClient.close()
+            }
+        }
+    }
+
+    fun submitPublicIp(publicIp: String) {
+        val username = _uiState.value.linkedUsername ?: return
+        
+        viewModelScope.launch {
+            _uiState.update { it.copy(needsPublicIp = false, isLinking = true, errorMessage = null) }
+            
+            val configResult = apiClient.configureBridge(
+                BridgeConfigRequest(
+                    bridgeIp = publicIp,
+                    username = username
+                )
+            )
+            
+            configResult.onSuccess { response ->
+                _uiState.update {
+                    it.copy(
+                        isLinking = false,
+                        isComplete = true,
+                        errorMessage = null
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        isLinking = false,
+                        needsPublicIp = true,
+                        errorMessage = "Failed to configure server: ${error.message}"
+                    )
+                }
             }
         }
     }
