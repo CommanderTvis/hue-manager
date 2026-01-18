@@ -16,7 +16,7 @@ expect fun createHttpClient(): HttpClient
 
 class ApiClient(
     private val baseUrl: String = "http://localhost:$SERVER_PORT"
-) {
+) : AutoCloseable {
     private val client = createHttpClient()
     private var authToken: String? = null
 
@@ -273,9 +273,7 @@ class ApiClient(
         }
     }
 
-    fun close() {
-        client.close()
-    }
+    override fun close() = client.close()
 }
 
 class ApiException(message: String) : Exception(message)

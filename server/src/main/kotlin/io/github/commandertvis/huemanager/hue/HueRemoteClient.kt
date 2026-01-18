@@ -26,7 +26,7 @@ class HueRemoteClient(
     private var accessToken: String?,
     private var refreshToken: String?,
     private var username: String?
-) {
+) : AutoCloseable {
     private val logger = LoggerFactory.getLogger(HueRemoteClient::class.java)
     
     private val client = HttpClient(CIO) {
@@ -47,33 +47,40 @@ class HueRemoteClient(
      * Recommended: state
      * Optional: redirect_uri (must match developer portal if included), deviceid, devicename, appid
      */
-    fun getAuthorizationUrl(redirectUri: String, state: String): String {
+    fun getAuthorizationUrl(redirectUri: String, state: String, minimal: Boolean = false): String {
         val baseUrl = "https://api.meethue.com/v2/oauth2/authorize"
 
-        // Build minimal required parameters first
-        // Per docs: "Note that the underscore is not used in the clientid name of this parameter"
-        // means the parameter name IS "client_id" but the value (clientid) has no underscores
-        val params = buildMap {
-            // REQUIRED parameters
-            put("client_id", clientId)
-            put("response_type", "code")
+        val params = if (minimal) {
+            // MINIMAL - Only required parameters as per Hue OAuth2 spec sample
+            buildMap {
+                put("client_id", clientId)
+                put("response_type", "code")
+                put("state", state)
+            }
+        } else {
+            // FULL - Include all optional parameters
+            buildMap {
+                // REQUIRED parameters
+                put("client_id", clientId)
+                put("response_type", "code")
 
-            // RECOMMENDED parameter
-            put("state", state)
+                // RECOMMENDED parameter
+                put("state", state)
 
-            // OPTIONAL: redirect_uri - must EXACTLY match what's in developer portal
-            // According to docs: "can be omitted since Hue currently only supports one redirect uri per application"
-            // However, if included it must be exact and also sent in token request
-            put("redirect_uri", redirectUri)
+                // OPTIONAL: redirect_uri - must EXACTLY match what's in developer portal
+                // According to docs: "can be omitted since Hue currently only supports one redirect uri per application"
+                // However, if included it must be exact and also sent in token request
+                put("redirect_uri", redirectUri)
 
-            // OPTIONAL: deviceid and devicename
-            // Some users report these can cause issues - try without them first
-            put("deviceid", "hue_manager_server")
-            put("devicename", "Hue Manager Server")
+                // OPTIONAL: deviceid and devicename
+                // Some users report these can cause issues - try without them first
+                put("deviceid", "hue_manager_server")
+                put("devicename", "Hue Manager Server")
 
-            // OPTIONAL: appid (marked as "might be removed in the future" in docs)
-            // Try including it since we have it configured
-            put("appid", appId)
+                // OPTIONAL: appid (marked as "might be removed in the future" in docs)
+                // Try including it since we have it configured
+                put("appid", appId)
+            }
         }
 
         val queryString = params.entries.joinToString("&") { (key, value) ->
@@ -82,18 +89,20 @@ class HueRemoteClient(
 
         val finalUrl = "$baseUrl?$queryString"
 
-        logger.info("=== Hue OAuth2 Authorization URL ===")
-        logger.info("Client ID: ${clientId.take(10)}...${clientId.takeLast(4)}")
-        logger.info("App ID: ${appId.take(10)}...${appId.takeLast(4)}")
+        logger.info("=== Hue OAuth2 Authorization URL (${if (minimal) "MINIMAL" else "FULL"}) ===")
+        logger.info("Client ID: $clientId")
+        logger.info("App ID: $appId")
         logger.info("Redirect URI: $redirectUri")
         logger.info("State: ${state.take(8)}...")
+        logger.info("Parameters: ${params.keys.joinToString(", ")}")
         logger.info("Full URL: $finalUrl")
-        logger.info("=====================================")
+        logger.info("=".repeat(50))
         logger.warn("IMPORTANT: If you get 'Something went wrong' from Hue:")
         logger.warn("1. Verify HUE_CLIENT_ID exactly matches 'Client Id' in developer portal")
-        logger.warn("2. Verify HUE_APP_ID exactly matches 'AppId' in developer portal")
-        logger.warn("3. Verify HUE_REDIRECT_URI exactly matches registered callback URL (including http/https, port)")
+        logger.warn("2. Verify HUE_APP_ID exactly matches 'AppId' in developer portal (NOT 'Application Id')")
+        logger.warn("3. Verify HUE_REDIRECT_URI exactly matches registered callback URL")
         logger.warn("4. Check that your app is approved/active in the developer portal")
+        logger.warn("5. AppId looks short ('$appId') - verify this is correct")
 
         return finalUrl
     }
@@ -350,9 +359,7 @@ class HueRemoteClient(
         }
     }
     
-    fun close() {
-        client.close()
-    }
+    override fun close() = client.close()
     
     companion object {
         fun fromConfig(config: Config): HueRemoteClient? {

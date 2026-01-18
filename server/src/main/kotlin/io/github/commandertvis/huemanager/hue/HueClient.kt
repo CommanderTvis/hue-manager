@@ -16,7 +16,7 @@ import kotlin.time.Duration.Companion.seconds
 class HueClient(
     private val bridgeIp: String,
     private val username: String
-) {
+) : AutoCloseable {
     private val baseUrl = "https://$bridgeIp/api/$username"
 
     // Hue bridge rate limits (shared across all connected apps):
@@ -96,9 +96,7 @@ class HueClient(
         }
     }
 
-    fun close() {
-        client.close()
-    }
+    override fun close() = client.close()
 }
 
 @Serializable

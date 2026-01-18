@@ -38,30 +38,27 @@ fun main() {
         return
     }
 
-    val hueService = HueService(config)
-    val sessionManager = SessionManager(config)
-    val automationManager = AutomationManager(config, hueService)
+    HueService(config).use { hueService ->
+        val sessionManager = SessionManager(config)
 
-    runBlocking {
-        val initialized = hueService.initialize()
-        if (initialized) {
-            // Set all discovered lamps as automated by default
-            val lamps = hueService.getLights()
-            automationManager.setAutomatedLamps(lamps.keys)
-            logger.info("Connected to Philips Hue with ${lamps.size} lamps")
-        } else {
-            logger.info("Philips Hue not configured. Use the web UI or API to configure connection.")
+        AutomationManager(config, hueService).use { automationManager ->
+            runBlocking {
+                val initialized = hueService.initialize()
+                if (initialized) {
+                    // Set all discovered lamps as automated by default
+                    val lamps = hueService.getLights()
+                    automationManager.setAutomatedLamps(lamps.keys)
+                    logger.info("Connected to Philips Hue with ${lamps.size} lamps")
+                } else {
+                    logger.info("Philips Hue not configured. Use the web UI or API to configure connection.")
+                }
+            }
+
+            embeddedServer(Netty, port = SERVER_PORT, host = "0.0.0.0") {
+                module(config, hueService, sessionManager, automationManager)
+            }.start(wait = true)
         }
     }
-
-    Runtime.getRuntime().addShutdownHook(Thread {
-        automationManager.shutdown()
-        hueService.close()
-    })
-
-    embeddedServer(Netty, port = SERVER_PORT, host = "0.0.0.0") {
-        module(config, hueService, sessionManager, automationManager)
-    }.start(wait = true)
 }
 
 fun Application.module(
@@ -115,20 +112,29 @@ fun Application.module(
 
         // --- OAuth2 for Philips Hue Remote API ---
         get("/api/hue/authorize") {
+            val minimal = call.request.queryParameters["minimal"]?.toBoolean() ?: false
             val redirectUri = call.resolveHueRedirectUri(config)
             val state = java.util.UUID.randomUUID().toString()
-            
-            logger.info("Generating authorization URL for redirectUri: $redirectUri")
-            val authUrl = hueService.getAuthorizationUrl(redirectUri, state)
+
+            logger.info("Generating authorization URL (minimal=$minimal) for redirectUri: $redirectUri")
+            val authUrl = hueService.getAuthorizationUrl(redirectUri, state, minimal)
             if (authUrl != null) {
                 logger.info("Generated URL: $authUrl")
-                call.respond(mapOf("authorizationUrl" to authUrl, "state" to state))
+                call.respond(mapOf(
+                    "authorizationUrl" to authUrl,
+                    "state" to state,
+                    "minimal" to minimal,
+                    "note" to if (minimal) "Using MINIMAL parameters (client_id, response_type, state only)" else "Using FULL parameters (includes redirect_uri, deviceid, devicename, appid)"
+                ))
             } else {
                 logger.warn("Failed to generate authorization URL - HueService returned null")
-                call.respond(HttpStatusCode.ServiceUnavailable, ApiError("OAuth2 not configured. Set HUE_CLIENT_ID, HUE_CLIENT_SECRET, and HUE_APP_ID in .env", 503))
+                call.respond(
+                    HttpStatusCode.ServiceUnavailable,
+                    ApiError("OAuth2 not configured. Set HUE_CLIENT_ID, HUE_CLIENT_SECRET, and HUE_APP_ID in .env", 503)
+                )
             }
         }
-        
+
         get("/api/hue/callback") {
             // OAuth2 callback from Philips Hue
             // Expected parameters: code, state, and optionally pkce
@@ -143,7 +149,8 @@ fun Application.module(
 
             if (error != null) {
                 logger.error("OAuth2 authorization failed: $error - $errorDescription")
-                call.respondText("""
+                call.respondText(
+                    """
                     <!DOCTYPE html>
                     <html>
                     <head><title>Hue Authorization Failed</title></head>
@@ -160,7 +167,8 @@ fun Application.module(
 
             if (code == null) {
                 logger.error("OAuth2 callback missing authorization code")
-                call.respondText("""
+                call.respondText(
+                    """
                     <!DOCTYPE html>
                     <html>
                     <head><title>Hue Authorization Failed</title></head>
@@ -170,7 +178,8 @@ fun Application.module(
                         <p><a href="/api/hue/authorize">Try Again</a></p>
                     </body>
                     </html>
-                """.trimIndent(), ContentType.Text.Html, status = HttpStatusCode.BadRequest)
+                """.trimIndent(), ContentType.Text.Html, status = HttpStatusCode.BadRequest
+                )
                 return@get
             }
 
@@ -187,7 +196,8 @@ fun Application.module(
             if (success) {
                 logger.info("Successfully exchanged authorization code for tokens")
                 // After getting tokens, we need to link to the bridge
-                call.respondText("""
+                call.respondText(
+                    """
                     <!DOCTYPE html>
                     <html>
                     <head><title>Hue Authorization</title></head>
@@ -210,10 +220,12 @@ fun Application.module(
                         </script>
                     </body>
                     </html>
-                """.trimIndent(), ContentType.Text.Html)
+                """.trimIndent(), ContentType.Text.Html
+                )
             } else {
                 logger.error("Failed to exchange authorization code for tokens")
-                call.respondText("""
+                call.respondText(
+                    """
                     <!DOCTYPE html>
                     <html>
                     <head><title>Hue Authorization Failed</title></head>
@@ -224,10 +236,11 @@ fun Application.module(
                         <p><a href="/api/hue/authorize">Try Again</a></p>
                     </body>
                     </html>
-                """.trimIndent(), ContentType.Text.Html, status = HttpStatusCode.InternalServerError)
+                """.trimIndent(), ContentType.Text.Html, status = HttpStatusCode.InternalServerError
+                )
             }
         }
-        
+
         post("/api/hue/link") {
             when (val result = hueService.linkRemoteBridge()) {
                 is LinkResult.Success -> {
@@ -235,11 +248,18 @@ fun Application.module(
                     automationManager.setAutomatedLamps(lamps.keys)
                     call.respond(mapOf("success" to true, "message" to "Linked! Found ${lamps.size} lamps"))
                 }
+
                 is LinkResult.Error -> {
                     call.respond(mapOf("success" to false, "message" to result.message))
                 }
+
                 LinkResult.LinkButtonNotPressed -> {
-                    call.respond(mapOf("success" to false, "message" to "Press the link button on your Hue Bridge first"))
+                    call.respond(
+                        mapOf(
+                            "success" to false,
+                            "message" to "Press the link button on your Hue Bridge first"
+                        )
+                    )
                 }
             }
         }

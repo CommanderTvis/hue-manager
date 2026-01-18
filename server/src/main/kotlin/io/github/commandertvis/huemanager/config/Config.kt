@@ -16,10 +16,10 @@ data class Config(
     val timezone: String,
     val keystorePassword: String?,
     val hueUsername: String?,
-    // Philips Hue Remote API (OAuth2)
-    val hueClientId: String?,
-    val hueClientSecret: String?,
-    val hueAppId: String?,
+    // Philips Hue Remote API (OAuth2) - Required for operation
+    val hueClientId: String,
+    val hueClientSecret: String,
+    val hueAppId: String,
     val hueRedirectUri: String?,
     val hueAccessToken: String?,
     val hueRefreshToken: String?
@@ -56,9 +56,14 @@ object ConfigLoader {
 
         val hueUsername = env["HUE_USERNAME"]?.takeIf { it.isNotBlank() }
 
+        // OAuth2 credentials - REQUIRED for app operation
         val hueClientId = env["HUE_CLIENT_ID"]?.trim()?.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("HUE_CLIENT_ID is required in .env for OAuth2 authentication")
         val hueClientSecret = env["HUE_CLIENT_SECRET"]?.trim()?.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("HUE_CLIENT_SECRET is required in .env for OAuth2 authentication")
         val hueAppId = env["HUE_APP_ID"]?.trim()?.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("HUE_APP_ID is required in .env for OAuth2 authentication")
+
         val hueRedirectUri = env["HUE_REDIRECT_URI"]?.trim()?.takeIf { it.isNotBlank() }
         val hueAccessToken = env["HUE_ACCESS_TOKEN"]?.trim()?.takeIf { it.isNotBlank() }
         val hueRefreshToken = env["HUE_REFRESH_TOKEN"]?.trim()?.takeIf { it.isNotBlank() }

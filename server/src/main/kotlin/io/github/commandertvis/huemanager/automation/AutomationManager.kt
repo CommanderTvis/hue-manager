@@ -26,7 +26,7 @@ data class LampOverride(
 class AutomationManager(
     private val config: Config,
     private val hueService: HueService
-) {
+) : AutoCloseable {
     private val logger = LoggerFactory.getLogger(AutomationManager::class.java)
 
     private var userState: UserState = UserState.ASLEEP
@@ -258,7 +258,7 @@ class AutomationManager(
         }
     }
 
-    fun shutdown() {
+    override fun close() {
         scope.cancel()
     }
 }

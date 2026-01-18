@@ -3,7 +3,7 @@ package io.github.commandertvis.huemanager.hue
 import io.github.commandertvis.huemanager.config.Config
 import org.slf4j.LoggerFactory
 
-class HueService(private var config: Config) {
+class HueService(private var config: Config) : AutoCloseable {
     private val logger = LoggerFactory.getLogger(HueService::class.java)
 
     // Remote API client (cloud connection via OAuth2)
@@ -15,11 +15,8 @@ class HueService(private var config: Config) {
     val needsLinking: Boolean
         get() = remoteClient?.isConfigured != true
     
-    val needsOAuth: Boolean
-        get() = config.hueClientId != null && remoteClient?.isConfigured != true
-    
-    fun getAuthorizationUrl(redirectUri: String, state: String): String? {
-        return remoteClient?.getAuthorizationUrl(redirectUri, state)
+    fun getAuthorizationUrl(redirectUri: String, state: String, minimal: Boolean = false): String? {
+        return remoteClient?.getAuthorizationUrl(redirectUri, state, minimal)
     }
     
     suspend fun handleOAuthCallback(code: String, redirectUri: String): Boolean {
@@ -42,17 +39,12 @@ class HueService(private var config: Config) {
         return false
     }
 
-    suspend fun getLights(): Map<String, HueLight> {
-        return remoteClient?.getLights() ?: emptyMap()
-    }
+    suspend fun getLights(): Map<String, HueLight> = remoteClient?.getLights() ?: emptyMap()
 
-    suspend fun getLight(id: String): HueLight? {
-        return remoteClient?.getLight(id)
-    }
+    suspend fun getLight(id: String): HueLight? = remoteClient?.getLight(id)
 
-    suspend fun setLightState(id: String, state: HueLightStateUpdate): Boolean {
-        return remoteClient?.setLightState(id, state) ?: false
-    }
+    suspend fun setLightState(id: String, state: HueLightStateUpdate): Boolean =
+        remoteClient?.setLightState(id, state) ?: false
 
     suspend fun setAllLightsState(state: HueLightStateUpdate): Boolean {
         val lights = getLights()
@@ -65,17 +57,11 @@ class HueService(private var config: Config) {
         return success
     }
 
-    suspend fun getGroups(): Map<String, HueGroup> {
-        return remoteClient?.getGroups() ?: emptyMap()
-    }
+    suspend fun getGroups(): Map<String, HueGroup> = remoteClient?.getGroups() ?: emptyMap()
 
-    suspend fun getEntertainmentGroups(): Map<String, HueGroup> {
-        return getGroups().filter { it.value.type == "Entertainment" }
-    }
+    suspend fun getEntertainmentGroups(): Map<String, HueGroup> = getGroups().filter { it.value.type == "Entertainment" }
 
-    fun getConfig(): Config = config
-
-    fun close() {
+    override fun close() {
         remoteClient?.close()
     }
 }
