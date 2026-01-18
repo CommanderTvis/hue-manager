@@ -21,10 +21,11 @@ import io.ktor.server.plugins.cors.routing.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import java.io.File
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
+import kotlin.io.path.Path
+import kotlin.io.path.isDirectory
 
 private val logger = LoggerFactory.getLogger("Application")
 
@@ -90,11 +91,10 @@ fun Application.module(
 
     routing {
         // --- Static Web UI ---
-        val webDir = File("web")
-        if (webDir.exists() && webDir.isDirectory) {
+        val webDir = Path("web")
+        if (webDir.isDirectory()) {
             singlePageApplication {
                 filesPath = "web"
-                defaultPage = "index.html"
             }
         } else {
             get("/") {

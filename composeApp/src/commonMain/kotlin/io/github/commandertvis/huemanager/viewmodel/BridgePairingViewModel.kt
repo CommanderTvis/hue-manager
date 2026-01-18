@@ -23,35 +23,36 @@ class BridgePairingViewModel(
     fun discoverBridges() {
         viewModelScope.launch {
             _uiState.update { it.copy(isDiscovering = true, errorMessage = null) }
-            
-            apiClient.discoverBridges()
-                .onSuccess { bridges ->
-                    if (bridges.isEmpty()) {
-                        _uiState.update {
-                            it.copy(
-                                isDiscovering = false,
-                                discoveredBridges = emptyList(),
-                                errorMessage = "No Hue bridges found on your network."
-                            )
-                        }
-                    } else {
-                        _uiState.update {
-                            it.copy(
-                                isDiscovering = false,
-                                discoveredBridges = bridges,
-                                errorMessage = null
-                            )
-                        }
-                    }
-                }
-                .onFailure { error ->
+
+            try {
+                // Use local network scanning instead of Philips cloud API
+                val bridges = HueBridgeClient.discoverBridgesOnLocalNetwork()
+
+                if (bridges.isEmpty()) {
                     _uiState.update {
                         it.copy(
                             isDiscovering = false,
-                            errorMessage = "Failed to discover bridges: ${error.message}"
+                            discoveredBridges = emptyList(),
+                            errorMessage = "No Hue bridges found on your network. Make sure your bridge is powered on and connected."
+                        )
+                    }
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            isDiscovering = false,
+                            discoveredBridges = bridges,
+                            errorMessage = null
                         )
                     }
                 }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isDiscovering = false,
+                        errorMessage = "Failed to scan network: ${e.message}"
+                    )
+                }
+            }
         }
     }
 

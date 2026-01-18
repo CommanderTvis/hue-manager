@@ -1,10 +1,17 @@
 package io.github.commandertvis.huemanager.hue
 
+import io.github.commandertvis.huemanager.api.DiscoveredBridge
 import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Create a platform-specific HTTP client for Hue bridge communication.
@@ -84,6 +91,77 @@ class HueBridgeClient(
     fun close() {
         if (shouldCloseClient) {
             client.close()
+        }
+    }
+
+    companion object {
+        /**
+         * Discover Hue bridges on the local network by scanning common IP ranges.
+         * This method scans the local network (192.168.x.x and 10.0.x.x ranges) for Hue bridges.
+         * 
+         * @param httpClient Optional HTTP client to use for discovery
+         * @param ipRanges List of IP ranges to scan (default: common home network ranges)
+         * @return List of discovered bridges
+         */
+        suspend fun discoverBridgesOnLocalNetwork(
+            httpClient: HttpClient? = null,
+            ipRanges: List<String> = listOf(
+                "192.168.1", "192.168.0", "192.168.2", 
+                "10.0.0", "10.0.1"
+            )
+        ): List<DiscoveredBridge> = coroutineScope {
+            val client = httpClient ?: createHueBridgeHttpClient()
+            val shouldClose = httpClient == null
+            
+            try {
+                val bridges = mutableListOf<DiscoveredBridge>()
+                
+                // Scan each IP range
+                for (range in ipRanges) {
+                    val jobs = (1..254).map { lastOctet ->
+                        async {
+                            val ip = "$range.$lastOctet"
+                            try {
+                                // Try to get bridge config with a short timeout
+                                val response: HttpResponse = client.get("http://$ip/api/config")
+                                
+                                if (response.status.isSuccess()) {
+                                    val body = response.bodyAsText()
+                                    val json = Json.parseToJsonElement(body).jsonObject
+                                    
+                                    // Check if this is a Hue bridge by looking for bridgeid
+                                    val bridgeId = json["bridgeid"]?.jsonPrimitive?.content
+                                    if (bridgeId != null) {
+                                        DiscoveredBridge(
+                                            id = bridgeId,
+                                            internalipaddress = ip,
+                                            port = 80
+                                        )
+                                    } else null
+                                } else null
+                            } catch (e: Exception) {
+                                // Ignore connection failures (expected for non-bridge IPs)
+                                null
+                            }
+                        }
+                    }
+                    
+                    // Wait for all scans in this range to complete
+                    val rangeResults = jobs.awaitAll().filterNotNull()
+                    bridges.addAll(rangeResults)
+                    
+                    // If we found bridges, we can stop scanning other ranges
+                    if (bridges.isNotEmpty()) {
+                        break
+                    }
+                }
+                
+                bridges
+            } finally {
+                if (shouldClose) {
+                    client.close()
+                }
+            }
         }
     }
 }

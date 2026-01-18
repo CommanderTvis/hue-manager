@@ -3,7 +3,10 @@ package io.github.commandertvis.huemanager.config
 import io.github.cdimascio.dotenv.Dotenv
 import io.github.cdimascio.dotenv.dotenv
 import kotlinx.serialization.Serializable
-import java.io.File
+import kotlin.io.path.Path
+import kotlin.io.path.exists
+import kotlin.io.path.readText
+import kotlin.io.path.writeText
 
 @Serializable
 data class Config(
@@ -23,7 +26,7 @@ data class GeoLocation(
 )
 
 object ConfigLoader {
-    private val envFile = File(".env")
+    private val envFile = Path(".env")
     private var dotenv: Dotenv? = null
 
     fun load(): Config {
@@ -63,7 +66,7 @@ object ConfigLoader {
         val currentContent = if (envFile.exists()) {
             envFile.readText()
         } else {
-            File(".env.example").readText()
+            Path(".env.example").readText()
         }
 
         val lines = currentContent.lines().toMutableList()
