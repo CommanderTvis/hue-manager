@@ -43,16 +43,51 @@ class HueRemoteClient(
      * Generate the OAuth2 authorization URL for user to visit.
      */
     fun getAuthorizationUrl(redirectUri: String, state: String): String {
-        val url = "https://api.meethue.com/v2/oauth2/authorize?" +
-            "client_id=$clientId&" +
-            "appid=$appId&" +
-            "deviceid=server&" +
-            "devicename=HueManagerServer&" +
-            "response_type=code&" +
-            "state=$state&" +
-            "redirect_uri=${redirectUri.encodeURLParameter()}"
-        logger.info("Built auth URL with clientId: $clientId, appId: $appId, and redirectUri: $redirectUri")
-        return url
+        // According to Hue Remote API documentation:
+        // appid: The App ID of your application (found in the Hue Developer Portal)
+        // deviceid: A unique identifier for the device (can be anything, but should be consistent)
+        // devicename: A human-readable name for the device
+        
+        val baseUrl = "https://api.meethue.com/v2/oauth2/authorize"
+        
+        // Ensure redirect_uri is what Hue expects.
+        // If the user's redirect URI is http://168.119.100.24:8080/api/hue/callback
+        // it must EXACTLY match what's in the developer portal.
+        
+        // IMPORTANT: The "Something went wrong" error often occurs if 'appid' doesn't match 
+        // the AppId registered in the Hue portal, or if 'client_id' is incorrect.
+        // Some users also report that 'deviceid' MUST be provided and 'response_type' must be 'code'.
+        
+        val params = mutableMapOf(
+            "client_id" to clientId,
+            "appid" to appId,
+            "deviceid" to "server",
+            "response_type" to "code",
+            "state" to state
+        )
+        
+        // Some documentation suggests using 'scope' might be helpful
+        // params["scope"] = "bridge"
+        
+        // redirect_uri is mandatory if multiple are defined, but good to have always
+        params["redirect_uri"] = redirectUri
+        
+        // devicename is optional but recommended
+        params["devicename"] = "HueManagerServer"
+        
+        val queryString = listOf("client_id", "appid", "deviceid", "response_type", "state", "redirect_uri", "devicename")
+            .filter { params.containsKey(it) }
+            .joinToString("&") { key ->
+                "$key=${params[key]!!.encodeURLParameter()}"
+            }
+        
+        val finalUrl = "$baseUrl?$queryString"
+        
+        logger.info("Built auth URL for clientId: $clientId, appId: $appId")
+        logger.info("Redirect URI: $redirectUri")
+        logger.info("Full Auth URL: $finalUrl")
+        logger.info("NOTE: If you still see 'Something went wrong', double check that HUE_APP_ID exactly matches your AppId in the Hue Developer Portal.")
+        return finalUrl
     }
     
     /**
