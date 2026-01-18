@@ -7,10 +7,5 @@ import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.Json
 
 actual fun createHttpClient(): HttpClient = HttpClient(Js) {
-    install(ContentNegotiation) {
-        json(Json {
-            ignoreUnknownKeys = true
-            isLenient = true
-        })
-    }
+    configureJson()
 }

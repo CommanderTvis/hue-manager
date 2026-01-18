@@ -1,20 +1,14 @@
 package io.github.commandertvis.huemanager.hue
 
 import io.ktor.client.*
-import io.ktor.client.call.*
-import io.ktor.client.engine.*
-import io.ktor.client.plugins.*
-import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
-import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 
 /**
  * Create a platform-specific HTTP client for Hue bridge communication.
- * On some platforms, this may disable SSL verification for self-signed certificates.
+ * Platform implementations should use configureJson() from network.JsonConfig.
  */
 expect fun createHueBridgeHttpClient(): HttpClient
 
