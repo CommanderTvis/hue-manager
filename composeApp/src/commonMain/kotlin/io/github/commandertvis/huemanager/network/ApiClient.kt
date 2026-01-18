@@ -7,12 +7,9 @@ import io.github.commandertvis.huemanager.models.LoginRequest
 import io.github.commandertvis.huemanager.models.LoginResponse
 import io.ktor.client.*
 import io.ktor.client.call.*
-import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
-import io.ktor.serialization.kotlinx.json.*
-import kotlinx.serialization.json.Json
 import kotlin.time.Duration.Companion.seconds
 
 expect fun createHttpClient(): HttpClient
