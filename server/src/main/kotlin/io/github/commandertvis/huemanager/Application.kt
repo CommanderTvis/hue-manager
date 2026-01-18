@@ -206,7 +206,10 @@ fun Application.module(
                     needsLinking = hueService.needsLinking,
                     automationState = userState,
                     entertainmentActive = automationManager.isEntertainmentActive()
-                )
+                ).also {
+                    // For debugging OAuth URL issues
+                    logger.debug("StatusResponse: connected=${it.connected}, needsLinking=${it.needsLinking}")
+                }
             )
         }
 

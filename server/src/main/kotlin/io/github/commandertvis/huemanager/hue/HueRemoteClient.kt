@@ -45,10 +45,13 @@ class HueRemoteClient(
     fun getAuthorizationUrl(redirectUri: String, state: String): String {
         val url = "https://api.meethue.com/v2/oauth2/authorize?" +
             "client_id=$clientId&" +
+            "appid=$appId&" +
+            "deviceid=server&" +
+            "devicename=HueManagerServer&" +
             "response_type=code&" +
             "state=$state&" +
             "redirect_uri=${redirectUri.encodeURLParameter()}"
-        logger.info("Built auth URL with clientId: $clientId and redirectUri: $redirectUri")
+        logger.info("Built auth URL with clientId: $clientId, appId: $appId, and redirectUri: $redirectUri")
         return url
     }
     
