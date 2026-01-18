@@ -58,10 +58,6 @@ fun main() {
         hueService.close()
     })
 
-    // TODO: Implement HTTPS support using keystore (requires Ktor 3.x API adjustment for applicationEngineEnvironment)
-    // val keystoreFile = File("keystore.jks")
-    // if (keystoreFile.exists() && config.keystorePassword != null) { ... }
-
     embeddedServer(Netty, port = SERVER_PORT, host = "0.0.0.0") {
         module(config, hueService, sessionManager, automationManager)
     }.start(wait = true)

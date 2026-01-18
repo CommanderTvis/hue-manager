@@ -104,8 +104,6 @@ TODO, forget about it for now.
 
 The server has to be fully buildable + deployable with Dockerfile. Meaning that I can just do `git clone ... && cd hue-manager` and `docker compose up -d --build` right in the root directory to run the server.
 
-Use and auto-manage HTTPS automatically with Let's Encrypt certbot on compatible servers (if certbot is not installed, then forget about HTTPS and fallback to HTTP, that will be fine for debugging).
-
 Configure GitHub Actions to build snapshots from master. Images have to be tagged by commit hash, we don't need versions currently. The visibilty of pushed containers has to be private. Also, make sure the workflow caches the Docker layers properly.
 
 Authentication session has to be secure, I don't know exactly how. Anyway, be vigilant because it's a private home management system.
