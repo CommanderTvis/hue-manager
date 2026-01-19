@@ -1,0 +1,37 @@
+# Caddyfile for Hue Manager
+#
+# This file configures Caddy as a reverse proxy with automatic HTTPS.
+# Caddy will automatically obtain and renew Let's Encrypt SSL certificates.
+#
+# Usage:
+# 1. Copy this file: cp Caddyfile.example Caddyfile
+# 2. Replace 'yourdomain.com' with your actual domain name
+# 3. Make sure your domain's DNS A/AAAA record points to your server's IP
+# 4. Ensure ports 80 and 443 are open in your firewall
+# 5. Deploy with docker compose up -d
+
+# Replace with your actual domain
+yourdomain.com {
+    # Reverse proxy to hue-manager container
+    reverse_proxy hue-manager:8080
+
+    # Enable gzip compression
+    encode gzip
+
+    # Optional: Add security headers
+    header {
+        # Enable HSTS
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        # Prevent clickjacking
+        X-Frame-Options "SAMEORIGIN"
+        # Prevent MIME type sniffing
+        X-Content-Type-Options "nosniff"
+        # XSS protection
+        X-XSS-Protection "1; mode=block"
+    }
+
+    # Optional: Add access logging
+    # log {
+    #     output file /var/log/caddy/access.log
+    # }
+}

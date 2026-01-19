@@ -1,20 +1,32 @@
 services:
   hue-manager:
+    # For local development: build from source
     build: .
+
+    # For production: use pre-built image from GHCR
+    # image: ghcr.io/commandertvis/hue-manager:sha-<commit-hash>
+
     container_name: hue-manager
     restart: unless-stopped
+
+    # Local development: expose port directly
     ports:
       - "8080:8080"
+
+    # Production: use internal exposure only (behind Caddy)
+    # expose:
+    #   - "8080"
+
     env_file:
       - .env
+
+    # Production: also mount .env at root for Docker environment
+    # volumes:
+    #   - ./.env:/.env
+
     environment:
-      # Override or provide defaults here if needed
-      - TZ=UTC
-    # Required for Hue bridge discovery on local network
-    network_mode: host
-    # Alternative: use bridge mode with explicit port mapping
-    # networks:
-    #   - hue-network
+      - TZ=Europe/Berlin
+
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/status"]
       interval: 30s
@@ -22,7 +34,34 @@ services:
       retries: 3
       start_period: 10s
 
-# Uncomment if not using host network mode
+    # Local development: simple setup without network
+    # Production: use bridge network with Caddy
+    # networks:
+    #   - hue-network
+
+  # Production only: Caddy reverse proxy for HTTPS
+  # caddy:
+  #   image: caddy:latest
+  #   container_name: hue-caddy
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./Caddyfile:/etc/caddy/Caddyfile
+  #     - caddy_data:/data
+  #     - caddy_config:/config
+  #   networks:
+  #     - hue-network
+  #   depends_on:
+  #     - hue-manager
+
+# Production only: network for service communication
 # networks:
 #   hue-network:
 #     driver: bridge
+
+# Production only: Caddy persistent storage
+# volumes:
+#   caddy_data:
+#   caddy_config:

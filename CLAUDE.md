@@ -8,6 +8,10 @@ A Philips Hue lamp management system with:
 - **androidApp/**: Android application module (depends on composeApp)
 - **shared/**: Shared data models and constants
 
+**Deployment:** Self-hosted on VDS with Docker + Caddy reverse proxy for HTTPS.
+
+**IMPORTANT:** Philips Hue OAuth2 requires HTTPS and a valid domain name. The redirect URI must be publicly accessible over HTTPS.
+
 ## Current State
 
 **Implemented:**
@@ -78,14 +82,24 @@ Client (composeApp) <--HTTP--> Server (Ktor on VDS) <--OAuth2/REST--> Philips Cl
 The server connects to the Hue bridge through Philips Cloud using OAuth2. No local network access, port forwarding, or VPN is required.
 
 **OAuth2 Authorization Flow:**
-1. Configure `HUE_REDIRECT_URI` in `.env` (must match the callback URL registered at developers.meethue.com)
-2. User visits `/api/hue/authorize` endpoint in browser
-3. Server generates authorization URL with proper parameters (client_id, app_id, redirect_uri) and redirects to Philips Hue login page
-4. User logs in with their Philips Hue account
-5. User presses the link button on their bridge when prompted
-6. User completes authorization and is redirected to the callback URL
-7. Server handles callback at `/api/hue/callback`, exchanges code for tokens
-8. Server stores OAuth tokens in `.env` and can control lamps via Remote API
+1. Configure `HUE_REDIRECT_URI` in `.env` (must be HTTPS with a valid domain - e.g., `https://yourdomain.com/api/hue/callback`)
+2. User clicks "Start Authorizing" in the app or visits `/api/hue/authorize` endpoint
+3. Server generates authorization URL with proper parameters (client_id, app_id, redirect_uri)
+4. App opens the URL in browser (platform-specific implementation):
+   - **Desktop**: Uses `Desktop.browse()` to open system browser
+   - **Android**: Uses Intent with `ACTION_VIEW` to open default browser
+   - **Web**: Opens new tab/window
+5. User logs in with their Philips Hue account in the browser
+6. User presses the link button on their bridge when prompted
+7. User completes authorization - Philips redirects to `/api/hue/callback`
+8. Server handles callback, exchanges code for tokens, and stores them in `.env`
+9. User returns to the app and clicks "Check Again" to verify connection
+
+**IMPORTANT OAuth2 Requirements:**
+- **HTTPS is mandatory** - Philips Hue OAuth2 will not work with HTTP-only redirect URIs
+- **Valid domain required** - Cannot use IP addresses or localhost for production
+- **Publicly accessible** - The redirect URI must be reachable from Philips Cloud servers
+- Use Caddy or similar reverse proxy to provide HTTPS with automatic Let's Encrypt certificates
 
 **Note:** Recent fixes ensure proper OAuth2 parameter naming (client_id) and configurable redirect URI support.
 
@@ -107,9 +121,9 @@ PSEUDO_SUNSET=21:05
 TIMEZONE=Europe/Berlin
 
 # Philips Hue Remote API (OAuth2) - REQUIRED
-HUE_CLIENT_ID=<from developers.meethue.com>
-HUE_CLIENT_SECRET=<from developers.meethue.com>
-HUE_APP_ID=<from developers.meethue.com>
+HUE_CLIENT_ID=<from developers.meethue.com/add-new-hue-remote-api-app/>
+HUE_CLIENT_SECRET=<from developers.meethue.com/add-new-hue-remote-api-app/>
+HUE_APP_ID=<from developers.meethue.com/add-new-hue-remote-api-app/>
 HUE_REDIRECT_URI=<OAuth2 callback URL, e.g., https://yourdomain.com/api/hue/callback>
 
 # OAuth2 tokens (populated automatically after authorization)
@@ -195,10 +209,49 @@ hue-manager/
 ├── androidApp/              # Android entry point
 ├── gradle/libs.versions.toml  # Gradle version catalog
 ├── .env.example             # Environment configuration template
-├── Dockerfile               # Build image
-├── Dockerfile.runtime       # Runtime image
-└── docker-compose.yml       # Docker deployment config
+├── Dockerfile               # Multi-stage build for local docker compose
+├── Dockerfile.runtime       # Runtime-only image for CI/CD (uses pre-built artifacts)
+├── docker-compose.yml       # Docker deployment config (template)
+└── Caddyfile.example        # Caddy reverse proxy config (HTTPS)
 ```
+
+## Production Deployment
+
+**Two Deployment Methods:**
+
+### Method 1: Local Build (`docker compose up`)
+- Uses `Dockerfile` (multi-stage build)
+- Builds from source during `docker compose up --build`
+- Good for: Local development, testing, small deployments
+- Configuration: Edit `docker-compose.yml` to use `build: .`
+
+### Method 2: CI/CD with Pre-built Images (Production)
+- Uses `Dockerfile.runtime` (runtime-only)
+- GitHub Actions builds artifacts and creates Docker image
+- Published to GitHub Container Registry (GHCR)
+- Tagged with commit hash (e.g., `ghcr.io/commandertvis/hue-manager:sha-abc1234`)
+- Good for: Production deployments, faster deploys, reproducible builds
+
+**Production Setup (Method 2):**
+1. Clone repository to server
+2. Copy `.env.example` to `.env` and configure
+3. Copy `Caddyfile.example` to `Caddyfile` and set domain
+4. Update `docker-compose.yml` to use GHCR image
+5. Run `docker compose up -d`
+
+**Production docker-compose.yml structure:**
+- Uses pre-built GHCR image (not local build)
+- Caddy reverse proxy for HTTPS with automatic Let's Encrypt certificates
+- Bridge network for service communication
+- Volume mounts for `.env` file (both `/.env` for Docker, `./.env` for local)
+- Health checks for both services
+- Named volumes for Caddy data persistence
+
+**Key differences from template:**
+- Template: `build: .` → Production: `image: ghcr.io/commandertvis/hue-manager:sha-<hash>`
+- Template: `ports: 8080:8080` → Production: `expose: 8080` (internal only)
+- Template: `network_mode: host` (commented) → Production: `networks: hue-network`
+- Production adds Caddy service with ports 80/443 exposed
 
 ## Recent Changes
 
@@ -208,5 +261,12 @@ hue-manager/
 - Implemented `PleaseAuthorizeScreen` for OAuth2 authorization instructions
 - Standardized terminology: "pairing" → "authorization", improved consistency across codebase
 - Enhanced OAuth2 authorization URL generation with detailed logging and parameter validation
-- Added platform-specific URL opening functionality for authorization flow
+- Added platform-specific URL opening functionality for authorization flow:
+  - Desktop (JVM): Opens URLs using `java.awt.Desktop.browse()`
+  - Android: Opens URLs using Intent with `ACTION_VIEW`
+  - Web: Opens URLs using `window.open()`
+- Fixed Android platform `openUrl()` implementation to properly launch browser
 - Updated dependency versions (kotlinx-serialization 1.9.0, kotlinx-datetime 0.7.1, kotlinx-coroutines 1.10.2)
+- Documented HTTPS/domain requirement for OAuth2 across all documentation files
+- Created `Caddyfile.example` for easy HTTPS setup with automatic Let's Encrypt certificates
+- Updated `docker-compose.yml` to include production deployment configuration with Caddy

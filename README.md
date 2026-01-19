@@ -4,11 +4,11 @@ A Philips Hue lamp management system with intelligent daylight automation, built
 
 ## Features
 
-- **Daylight Simulation**: Automatically adjusts lamp brightness and color temperature throughout the day based on sunrise/sunset times
-- **Wake/Sleep Modes**: One-tap "I woke up!" and "I'm asleep!" actions
-- **Multi-Platform Clients**: Desktop (JVM), Web (JS/WasmJS), and Android apps
-- **Entertainment Area Detection**: Automatically pauses automation when Hue Sync is active
-- **Manual Override**: Temporarily disable automation when you manually adjust a lamp
+- Daylight simulation - automatically adjusts lamp brightness and color temperature throughout the day based on sunrise/sunset times
+- Wake/sleep modes - one-tap "I woke up!" and "I'm asleep!" actions
+- Multi-platform clients - Desktop (JVM), Web (JS/WasmJS), and Android apps
+- Entertainment area detection - automatically pauses automation when Hue Sync is active
+- Manual override - temporarily disable automation when you manually adjust a lamp
 
 ## Architecture
 
@@ -31,14 +31,25 @@ graph LR
 
 ### Bridge Authorization
 
-The server connects to your Hue bridge through Philips Cloud:
+The server connects to your Hue bridge through Philips Cloud using OAuth2.
 
-1. **Register your app** at [developers.meethue.com](https://developers.meethue.com/)
-2. **Configure OAuth credentials** in `.env` (HUE_CLIENT_ID, HUE_CLIENT_SECRET, HUE_APP_ID)
-3. **Visit** `/api/hue/authorize` in your browser
-4. **Log in** with your Philips Hue account
-5. **Press the link button** on your bridge when prompted
-6. **Click "Complete Setup"** - server stores tokens automatically
+As far as I know, Philips Hue OAuth2 requires HTTPS and a valid domain name. You cannot use HTTP-only URLs or IP addresses for the redirect URI in production.
+
+Authorization steps:
+
+1. Register your app at [developers.meethue.com/add-new-hue-remote-api-app](https://developers.meethue.com/add-new-hue-remote-api-app/)
+2. Configure OAuth credentials in `.env`:
+   - `HUE_CLIENT_ID`, `HUE_CLIENT_SECRET`, `HUE_APP_ID` (from developer portal)
+   - `HUE_REDIRECT_URI` - must be HTTPS (e.g., `https://yourdomain.com/api/hue/callback`)
+3. Set up HTTPS using Caddy or similar reverse proxy (see Deployment section)
+4. Start authorization:
+   - Desktop/Android apps: Click "Start Authorizing" - opens your browser automatically
+   - Web app: Click "Start Authorizing" - opens authorization page in new tab
+   - Manual: Visit `https://yourdomain.com/api/hue/authorize` directly
+5. Log in with your Philips Hue account in the browser
+6. Press the link button on your bridge when prompted
+7. Click "Complete Setup" in the browser - server stores tokens automatically
+8. Return to the app (Desktop/Android) and click "Check Again"
 
 ## Project Structure
 
@@ -53,9 +64,9 @@ The server connects to your Hue bridge through Philips Cloud:
 
 ### 1. Register at Philips Hue Developer Portal
 
-1. Go to [developers.meethue.com](https://developers.meethue.com/)
+1. Go to [developers.meethue.com/add-new-hue-remote-api-app](https://developers.meethue.com/add-new-hue-remote-api-app/)
 2. Create an account and register your application
-3. Note your **Client ID**, **Client Secret**, and **App ID**
+3. Note your Client ID, Client Secret, and App ID
 
 ### 2. Configure Environment
 
@@ -67,10 +78,11 @@ REGION=52.52,13.405  # latitude,longitude for sunrise/sunset calculation
 PSEUDO_SUNSET=21:00  # when evening mode starts
 TIMEZONE=Europe/Berlin
 
-# Philips Hue Remote API (OAuth2) - REQUIRED
+# Hue Remote API app details (OAuth2)
 HUE_CLIENT_ID=your_client_id
 HUE_CLIENT_SECRET=your_client_secret
 HUE_APP_ID=your_app_id
+HUE_REDIRECT_URI=https://yourdomain.com/api/hue/callback
 
 # OAuth2 tokens (auto-populated after authorization)
 HUE_ACCESS_TOKEN=
@@ -80,12 +92,12 @@ HUE_USERNAME=
 
 ### 3. Run the Server
 
-**Local development:**
+Local development:
 ```bash
 ./gradlew :server:run
 ```
 
-**Docker:**
+Docker:
 ```bash
 docker compose up -d
 ```
@@ -99,7 +111,7 @@ docker compose up -d
 
 ### 5. Run a Client
 
-**Desktop:**
+Desktop:
 ```bash
 ./gradlew :composeApp:run
 ```
@@ -108,40 +120,65 @@ On first launch:
 - Enter server URL (e.g., `http://localhost:8080`)
 - Login with password from `.env`
 
-**Web (Wasm):**
+Web (Wasm):
 ```bash
 ./gradlew :composeApp:wasmJsBrowserDevelopmentRun
 ```
 
-**Android:**
+Android:
 ```bash
 ./gradlew :androidApp:assembleDebug
 ```
 
 ## Docker Deployment
 
+There are two deployment methods available:
+
+### Method 1: Local Build (Development/Testing)
+
+Builds from source using the multi-stage `Dockerfile`:
+
+```bash
+docker compose up -d --build
+```
+
+This is suitable for local development and testing. The template `docker-compose.yml` is configured for local builds.
+
+### Method 2: Production Deployment with HTTPS
+
+For production, use pre-built images from GitHub Container Registry with Caddy for HTTPS.
+
+Copy and configure Caddyfile:
+```bash
+cp Caddyfile.example Caddyfile
+# Edit Caddyfile and replace 'yourdomain.com' with your actual domain
+```
+
+Update docker-compose.yml:
+```yaml
+services:
+  hue-manager:
+    image: ghcr.io/commandertvis/hue-manager:sha-<commit-hash>
+    # ... rest of config
+
+  caddy:
+    image: caddy:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+```
+
+Deploy:
 ```bash
 docker compose up -d
 ```
 
-For production, configure via `docker-compose.yml`:
-```yaml
-environment:
-  PASSWORD: ${PASSWORD}
-  REGION: ${REGION}
-  PSEUDO_SUNSET: ${PSEUDO_SUNSET}
-  TIMEZONE: ${TIMEZONE}
-  HUE_CLIENT_ID: ${HUE_CLIENT_ID}
-  HUE_CLIENT_SECRET: ${HUE_CLIENT_SECRET}
-  HUE_APP_ID: ${HUE_APP_ID}
-```
-
-### GitHub Actions CI/CD
-
-Docker images are automatically built and pushed to GitHub Container Registry:
-- Tagged with commit hash (e.g., `ghcr.io/you/hue-manager:abc1234`)
-- Layer caching enabled for faster builds
-- Set container visibility to Private in repository settings
+Caddy will automatically provision Let's Encrypt SSL certificates for your domain.
 
 ## API Endpoints
 
@@ -184,4 +221,4 @@ The automation engine simulates natural daylight patterns based on your location
 
 - **Kotlin/Multiplatform**
 - **Ktor**
-- **Compose Multiplatform**
+- **Jetpack Compose and Compose Multiplatform**
