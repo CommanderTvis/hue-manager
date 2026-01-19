@@ -112,19 +112,16 @@ fun Application.module(
 
         // --- OAuth2 for Philips Hue Remote API ---
         get("/api/hue/authorize") {
-            val minimal = call.request.queryParameters["minimal"]?.toBoolean() ?: false
             val redirectUri = call.resolveHueRedirectUri(config)
             val state = java.util.UUID.randomUUID().toString()
 
-            logger.info("Generating authorization URL (minimal=$minimal) for redirectUri: $redirectUri")
-            val authUrl = hueService.getAuthorizationUrl(redirectUri, state, minimal)
+            logger.info("Generating authorization URL for redirectUri: $redirectUri")
+            val authUrl = hueService.getAuthorizationUrl(redirectUri, state)
             if (authUrl != null) {
                 logger.info("Generated URL: $authUrl")
                 call.respond(mapOf(
                     "authorizationUrl" to authUrl,
-                    "state" to state,
-                    "mode" to if (minimal) "minimal" else "full",
-                    "note" to if (minimal) "Using MINIMAL parameters (client_id, response_type, state only)" else "Using FULL parameters (includes redirect_uri, deviceid, devicename, appid)"
+                    "state" to state
                 ))
             } else {
                 logger.warn("Failed to generate authorization URL - HueService returned null")

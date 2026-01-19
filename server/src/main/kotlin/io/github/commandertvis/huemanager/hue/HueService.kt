@@ -15,8 +15,8 @@ class HueService(private var config: Config) : AutoCloseable {
     val needsLinking: Boolean
         get() = remoteClient?.isConfigured != true
     
-    fun getAuthorizationUrl(redirectUri: String, state: String, minimal: Boolean = false): String? {
-        return remoteClient?.getAuthorizationUrl(redirectUri, state, minimal)
+    fun getAuthorizationUrl(redirectUri: String, state: String): String? {
+        return remoteClient?.getAuthorizationUrl(redirectUri, state)
     }
     
     suspend fun handleOAuthCallback(code: String, redirectUri: String): Boolean {

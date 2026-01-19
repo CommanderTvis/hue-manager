@@ -4,9 +4,9 @@
             <pattern>%d{YYYY-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
-    <root level="info">
+    <root level="trace">
         <appender-ref ref="STDOUT"/>
     </root>
     <logger name="io.ktor.client" level="INFO"/>
-    <logger name="io.github.commandertvis.huemanager" level="DEBUG"/>
+    <logger name="io.netty" level="INFO"/>
 </configuration>
