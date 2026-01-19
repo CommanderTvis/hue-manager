@@ -273,6 +273,7 @@ hue-manager/
     - Color changes are immediate (no "Set" button required)
     - Hex input validates characters (only 0-9, a-f, A-F allowed) and limits to 6 characters
     - Typing a valid 6-character hex code immediately applies the color
+    - Color picker preview square reflects changes from the hex input
     - Dragging the color picker immediately updates the lamp color
   - Added per-lamp loading state to prevent messy UX during API calls
     - Controls (switch, sliders, color picker, buttons) gray out while changes are being applied

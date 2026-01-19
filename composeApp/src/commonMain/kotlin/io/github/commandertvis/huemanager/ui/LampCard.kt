@@ -209,9 +209,8 @@ fun LampCard(
                                 if (filtered.length == 6) {
                                     try {
                                         val (r, g, b) = hexToRgb(filtered)
-                                        val (hue, sat) = rgbToHueApiValues(r, g, b)
-                                        onColorChange(hue, sat)
-                                    } catch (e: Exception) {
+                                        controller.selectByColor(Color(r, g, b), true)
+                                    } catch (_: IllegalArgumentException) {
                                         // Invalid hex, ignore
                                     }
                                 }
