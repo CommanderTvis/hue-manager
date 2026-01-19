@@ -56,6 +56,7 @@ composeMaterial3 = { module = "org.jetbrains.compose.material3:material3", versi
 composeUi = { module = "org.jetbrains.compose.ui:ui", version.ref = "composeMultiplatform" }
 composeComponentsResources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "composeMultiplatform" }
 composeUiToolingPreview = { module = "org.jetbrains.compose.ui:ui-tooling-preview", version.ref = "composeMultiplatform" }
+composeMaterialIconsExtended = { module = "org.jetbrains.compose.material:material-icons-extended", version = "1.7.3" }
 composeDesktopCurrentOs = { module = "org.jetbrains.compose.desktop:desktop", version.ref = "composeMultiplatform" }
 
 ktor-kmpClient-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
