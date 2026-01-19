@@ -31,7 +31,7 @@ data class GeoLocation(
 )
 
 object ConfigLoader {
-    private val envFile = Path(".env")
+    private val envFile = if (Path("/.env").exists()) Path("/.env") else Path(".env")
     private var dotenv: Dotenv? = null
 
     fun load(): Config {
@@ -87,7 +87,8 @@ object ConfigLoader {
         val currentContent = if (envFile.exists()) {
             envFile.readText()
         } else {
-            Path(".env.example").readText()
+            // If .env doesn't exist, create it with empty content
+            ""
         }
 
         val lines = currentContent.lines().toMutableList()
