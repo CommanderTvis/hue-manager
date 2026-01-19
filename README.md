@@ -213,12 +213,12 @@ The automation engine simulates natural daylight patterns based on your location
 
 ### Smart Features
 
-- **Manual Override**: Adjusting a lamp manually disables automation for 1 hour
-- **Entertainment Mode**: Automation pauses for lamps in active Hue Sync sessions
-- **Heartbeat**: 10-minute polling restores automation if lamps are turned back on
+- Adjusting a lamp manually disables automation for 1 hour
+- Automation pauses for lamps in active Hue Sync sessions
+- 10-minute polling restores automation if lamps are turned back on
 
 ## Tech Stack
 
-- **Kotlin/Multiplatform**
-- **Ktor**
-- **Jetpack Compose and Compose Multiplatform**
+- Kotlin/Multiplatform
+- Ktor
+- Jetpack Compose and Compose Multiplatform
