@@ -187,17 +187,6 @@ constructor(
   /**
    * Select a specific point by coordinates and update a selected color.
    *
-   * @param x x-coordinate to extract a pixel color.
-   * @param y y-coordinate to extract a pixel color.
-   * @param fromUser Represents this event is triggered by user or not.
-   */
-  public fun selectByCoordinate(x: Float, y: Float, fromUser: Boolean) {
-    selectByCoordinate(Offset(x, y), fromUser)
-  }
-
-  /**
-   * Select a specific point by coordinates and update a selected color.
-   *
    * @param point coordinate to extract a pixel color.
    * @param fromUser Represents this event is triggered by user or not.
    */
@@ -206,15 +195,6 @@ constructor(
       // notify color changes to the listeners.
       notifyColorChanged(fromUser)
     }
-  }
-
-  /**
-   * Select center point of the palette.
-   *
-   * @param fromUser Represents this event is triggered by user or not.
-   */
-  public fun selectCenter(fromUser: Boolean) {
-    selectByCoordinate(canvasSize.center, fromUser)
   }
 
   /**
@@ -231,42 +211,17 @@ constructor(
   /**
    * Select a specific color and update with the selected color.
    *
-   * @param hsv A float array that represents hsv color code.
-   * @param alpha An alpha value that will be composed with the [hsv] color code.
-   * @param fromUser Represents this event is triggered by user or not.
-   */
-  public fun selectByHsv(hsv: FloatArray, alpha: Float, fromUser: Boolean) {
-    selectByHsv(hsv[0], hsv[1], hsv[2], alpha, fromUser)
-  }
-
-  /**
-   * Select a specific color and update with the selected color.
-   *
    * @param h The float value for the hue.
    * @param s The float value for the saturation.
    * @param v The float value for the value.
    * @param alpha The float value for the alpha.
    * @param fromUser Represents this event is triggered by user or not.
    */
-  public fun selectByHsv(h: Float, s: Float, v: Float, alpha: Float, fromUser: Boolean) {
+  private fun selectByHsv(h: Float, s: Float, v: Float, alpha: Float, fromUser: Boolean) {
     var changed = selectByCoordinate(hsvToCoord(h, s, canvasSize.center))
     changed = setAlpha(alpha) || changed
     changed = setBrightness(v) || changed
     if (changed) {
-      notifyColorChanged(fromUser)
-    }
-  }
-
-  /** Combine the alpha value to the selected pure color. */
-  public fun setAlpha(alpha: Float, fromUser: Boolean) {
-    if (setAlpha(alpha)) {
-      notifyColorChanged(fromUser)
-    }
-  }
-
-  /** Combine the brightness value to the selected pure color. */
-  public fun setBrightness(brightness: Float, fromUser: Boolean) {
-    if (setBrightness(brightness)) {
       notifyColorChanged(fromUser)
     }
   }
@@ -321,18 +276,6 @@ constructor(
     val (h, s, v) = color.toHSV()
     val actualV = if (isAttachedBrightnessSlider) brightness.value else v
     return Color.hsv(h, s, actualV, if (isAttachedAlphaSlider) alpha.value else 1f)
-  }
-
-  /** Set an [ImageBitmap] to draw on the canvas as a palette. */
-  public fun setPaletteImageBitmap(imageBitmap: ImageBitmap) {
-    val targetSize = imageBitmap.takeIf { it.width != 0 && it.height != 0 }
-      ?: throw RuntimeException(
-        "Can't set an ImageBitmap before initializing the canvas",
-      )
-    canvasSize = Size(targetSize.width.toFloat(), targetSize.height.toFloat())
-    _paletteBitmap.value = imageBitmap
-    selectCenter(fromUser = false)
-    reviseTick.intValue++
   }
 
   internal fun releaseBitmap() {

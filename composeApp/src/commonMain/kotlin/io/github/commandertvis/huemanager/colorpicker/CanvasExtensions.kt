@@ -33,8 +33,4 @@ internal fun Canvas.drawRect(size: IntSize, paint: Paint) {
   drawRect(0f, 0f, size.width.toFloat(), size.height.toFloat(), paint)
 }
 
-internal fun Canvas.drawRoundRect(size: IntSize, radius: Float, paint: Paint) {
-  drawRoundRect(0f, 0f, size.width.toFloat(), size.height.toFloat(), radius, radius, paint)
-}
-
 internal val emptyPaint = Paint()
