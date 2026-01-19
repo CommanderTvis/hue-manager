@@ -6,7 +6,13 @@ import kotlin.time.Instant
 import java.security.SecureRandom
 import java.util.*
 import kotlin.time.Duration.Companion.days
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import org.slf4j.LoggerFactory
+import java.io.File
 
+@Serializable
 data class UserSession(
     val token: String,
     val createdAt: Instant,
@@ -14,8 +20,14 @@ data class UserSession(
 )
 
 class SessionManager(private val config: Config) {
+    private val logger = LoggerFactory.getLogger(SessionManager::class.java)
     private val sessions = mutableMapOf<String, UserSession>()
     private val sessionDuration = 7.days
+    private val sessionFile = File("sessions.json")
+
+    init {
+        loadSessions()
+    }
 
     fun authenticate(password: String): UserSession? {
         if (password != config.password) {
@@ -32,6 +44,7 @@ class SessionManager(private val config: Config) {
 
         sessions[token] = session
         cleanExpiredSessions()
+        saveSessions()
 
         return session
     }
@@ -44,6 +57,7 @@ class SessionManager(private val config: Config) {
 
         if (now > session.expiresAt) {
             sessions.remove(token)
+            saveSessions()
             return false
         }
 
@@ -52,6 +66,7 @@ class SessionManager(private val config: Config) {
 
     fun invalidateSession(token: String) {
         sessions.remove(token)
+        saveSessions()
     }
 
     private fun generateToken(): String {
@@ -63,6 +78,48 @@ class SessionManager(private val config: Config) {
 
     private fun cleanExpiredSessions() {
         val now = Clock.System.now()
-        sessions.entries.removeIf { it.value.expiresAt < now }
+        val removed = sessions.entries.removeIf { it.value.expiresAt < now }
+        if (removed) {
+            saveSessions()
+        }
+    }
+
+    private fun saveSessions() {
+        try {
+            val json = Json.encodeToString(sessions.values.toList())
+            sessionFile.writeText(json)
+            logger.debug("Saved ${sessions.size} sessions to ${sessionFile.absolutePath}")
+        } catch (e: Exception) {
+            logger.error("Failed to save sessions: ${e.message}")
+        }
+    }
+
+    private fun loadSessions() {
+        if (!sessionFile.exists()) {
+            logger.info("No existing sessions file found")
+            return
+        }
+
+        try {
+            val json = sessionFile.readText()
+            val loadedSessions = Json.decodeFromString<List<UserSession>>(json)
+            val now = Clock.System.now()
+
+            // Only load non-expired sessions
+            loadedSessions.forEach { session ->
+                if (now <= session.expiresAt) {
+                    sessions[session.token] = session
+                }
+            }
+
+            logger.info("Loaded ${sessions.size} valid sessions from ${sessionFile.absolutePath}")
+
+            // Clean up any expired sessions we loaded
+            if (sessions.size < loadedSessions.size) {
+                saveSessions()
+            }
+        } catch (e: Exception) {
+            logger.error("Failed to load sessions: ${e.message}")
+        }
     }
 }

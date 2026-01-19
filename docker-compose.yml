@@ -21,7 +21,8 @@ services:
       - .env
 
     # Production: also mount .env at root for Docker environment
-    # volumes:
+    volumes:
+      - ./sessions.json:/app/sessions.json
     #   - ./.env:/.env
 
     environment:
