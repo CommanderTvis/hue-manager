@@ -64,7 +64,7 @@ Provide controls to turn on/off individual lamps to change their brightness and 
 
 Changes to color should be immediate right as I click on picker or enter a valid color to text field. There should be no "Set" button or anything like that.
 
-Manual changes should be respected only for 1 hour unless a special control is pressed, then we are going back to automation.
+Manual changes should be respected only for 1 hour unless a special control is pressed, then we are going back to automation. There should be a control to clear manual override. After clicking that control, the lamp should return to the dictated state immediately.
 
 And turn on/off all lamps at once, no matter automation e.g. "I left home" switching to "I am back."
 

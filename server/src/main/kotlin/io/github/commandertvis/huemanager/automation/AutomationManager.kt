@@ -197,9 +197,22 @@ class AutomationManager(
         logger.info("Added override for lamp $lampId until $overrideUntil")
     }
 
-    fun clearLampOverride(lampId: String) {
+    suspend fun clearLampOverride(lampId: String) {
         lampOverrides.remove(lampId)
         logger.info("Cleared override for lamp $lampId")
+
+        // Immediately apply automation state to this lamp if user is awake
+        if (userState == UserState.AWAKE && lampId in automatedLampIds) {
+            val timeZone = TimeZone.of(config.timezone)
+            val localNow = Clock.System.now().toLocalDateTime(timeZone)
+            val desiredState = calculateDesiredState(localNow.time)
+
+            val entertainmentLamps = getActiveEntertainmentLamps()
+            if (!entertainmentLamps.contains(lampId)) {
+                hueService.setLightState(lampId, desiredState)
+                logger.info("Applied automation state to lamp $lampId after clearing override")
+            }
+        }
     }
 
     fun setAutomatedLamps(lampIds: Set<String>) {

@@ -272,6 +272,7 @@ hue-manager/
   - Implemented `getCurrentAutomationMode()` in AutomationManager to determine current automation state
   - Added `getAutomationColor()` to provide color information for UI display
   - Extended API response (`AutomationStatusResponse`) to include automation mode and color data
+  - Improved clear override behavior: lamps now immediately return to automation-dictated state when override is cleared
 
 - **OAuth2 & Authentication:**
   - Fixed OAuth2 parameter naming: corrected `clientid` to `client_id` in Hue authorization flow
