@@ -130,3 +130,9 @@ data class ApiError(
 data class ApiSuccess(
     val message: String
 )
+
+@Serializable
+data class GenericResponse(
+    val success: Boolean,
+    val message: String
+)

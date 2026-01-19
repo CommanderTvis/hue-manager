@@ -243,20 +243,15 @@ fun Application.module(
                 is LinkResult.Success -> {
                     val lamps = hueService.getLights()
                     automationManager.setAutomatedLamps(lamps.keys)
-                    call.respond(mapOf("success" to true, "message" to "Linked! Found ${lamps.size} lamps"))
+                    call.respond(GenericResponse(success = true, message = "Linked! Found ${lamps.size} lamps"))
                 }
 
                 is LinkResult.Error -> {
-                    call.respond(mapOf("success" to false, "message" to result.message))
+                    call.respond(GenericResponse(success = false, message = result.message))
                 }
 
                 LinkResult.LinkButtonNotPressed -> {
-                    call.respond(
-                        mapOf(
-                            "success" to false,
-                            "message" to "Press the link button on your Hue Bridge first"
-                        )
-                    )
+                    call.respond(GenericResponse(success = false, message = "Press the link button on your Hue Bridge first"))
                 }
             }
         }
