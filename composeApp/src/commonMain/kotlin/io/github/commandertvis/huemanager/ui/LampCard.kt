@@ -176,7 +176,7 @@ fun LampCard(
                             modifier = Modifier.fillMaxSize(),
                             controller = controller,
                             onColorChanged = { envelope ->
-                                hexCode = envelope.hexCode
+                                hexCode = envelope.hexCode.rgbHex
 
                                 // Apply color immediately when picker is used
                                 val color = envelope.color
@@ -285,6 +285,9 @@ private fun getLampColor(lamp: Lamp): Color {
 private fun Char.isHexChar(): Boolean {
     return this in '0'..'9' || this in 'a'..'f' || this in 'A'..'F'
 }
+
+private val String.rgbHex: String
+    get() = if (length == 8) substring(2) else this
 
 private fun hexToRgb(hex: String): Triple<Float, Float, Float> {
     require(hex.length == 6) { "Hex must be 6 characters" }
