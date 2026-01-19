@@ -61,6 +61,7 @@ A Philips Hue lamp management system with:
 - `composeApp/.../ui/LampCard.kt` - Individual lamp card with toggle, brightness slider, RGB color picker with hex input
 - `composeApp/.../ui/ServerConnectScreen.kt` - Server URL input and validation
 - `composeApp/.../ui/PleaseAuthorizeScreen.kt` - OAuth2 authorization instructions
+- `composeApp/.../colorpicker/*.kt` - In-house HSV color picker implementation (originally from colorpicker-compose, customized and trimmed)
 
 **Tech Stack:**
 - Kotlin 2.3.0
@@ -71,6 +72,10 @@ A Philips Hue lamp management system with:
 - kotlinx-coroutines 1.10.2
 - dotenv-kotlin 6.5.1
 - Gradle with version catalog
+
+**Build Configuration:**
+- Maven Central and Google repositories only (no JitPack needed)
+- Android context management via shared AndroidContext singleton
 
 ## Architecture
 
@@ -256,6 +261,13 @@ hue-manager/
 ## Recent Changes
 
 **Latest Updates (Jan 2026):**
+- **Build Performance:**
+  - Brought color picker implementation in-house (removed external colorpicker-compose dependency)
+  - Copied core HSV color picker components from skydoves/colorpicker-compose
+  - Removed unused components (sliders, image picker) to reduce code size
+  - Fixed gradient rendering to use standard Compose APIs (replaced applyTo with ShaderBrush.createShader)
+  - Custom package: `io.github.commandertvis.huemanager.colorpicker`
+
 - **UI Enhancements:**
   - Implemented RGB color picker with hex input in LampCard for precise color control
     - Color changes are immediate (no "Set" button required)
@@ -291,3 +303,7 @@ hue-manager/
   - Documented HTTPS/domain requirement for OAuth2 across all documentation files
   - Created `Caddyfile.example` for easy HTTPS setup with automatic Let's Encrypt certificates
   - Updated `docker-compose.yml` to include production deployment configuration with Caddy
+  - **Fixed build performance issue**: Resolved Gradle cache corruption (builds back to normal ~1 minute)
+  - Centralized Android context management in shared module via `AndroidContext.kt` singleton
+  - Confirmed `colorpicker-compose` library is available on Maven Central (no JitPack needed)
+  - **Optimized GitHub Actions CI**: Added dependency pre-download, parallel builds, and build cache to speed up CI builds
