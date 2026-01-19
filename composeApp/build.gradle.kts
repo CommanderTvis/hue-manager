@@ -45,6 +45,7 @@ kotlin {
             implementation(libs.composeUi)
             implementation(libs.composeComponentsResources)
             implementation(libs.composeUiToolingPreview)
+            implementation(compose.materialIconsExtended)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
             implementation(libs.colorpicker.compose)

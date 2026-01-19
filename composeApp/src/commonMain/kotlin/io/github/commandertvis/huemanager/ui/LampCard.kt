@@ -149,7 +149,7 @@ fun LampCard(
             // Color Picker
             if (isColorPickerExpanded && onColorChange != null && lamp.on && lamp.reachable) {
                 Spacer(modifier = Modifier.height(16.dp))
-                Divider()
+                HorizontalDivider()
                 Spacer(modifier = Modifier.height(16.dp))
                 
                 Text("Color Control", style = MaterialTheme.typography.titleSmall)
