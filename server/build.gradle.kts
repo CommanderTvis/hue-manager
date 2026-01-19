@@ -7,9 +7,13 @@ plugins {
 
 application {
     mainClass.set("io.github.commandertvis.huemanager.ApplicationKt")
-    
+
     val isDevelopment: Boolean = project.ext.has("development")
     applicationDefaultJvmArgs = listOf("-Dio.ktor.development=$isDevelopment")
+}
+
+tasks.named<JavaExec>("run") {
+    workingDir = rootProject.projectDir
 }
 
 dependencies {

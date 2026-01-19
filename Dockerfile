@@ -2,14 +2,31 @@
 FROM eclipse-temurin:21-jdk AS build
 WORKDIR /app
 
-# Copy gradle files first for better caching
+# Copy gradle wrapper and configuration files
 COPY gradle gradle
 COPY gradlew .
 COPY gradlew.bat .
+COPY gradle.properties .
+
+RUN chmod +x ./gradlew
+
+# Copy build files for dependency resolution
 COPY build.gradle.kts .
 COPY settings.gradle.kts .
-COPY gradle.properties .
 COPY gradle/libs.versions.toml gradle/
+
+COPY shared/build.gradle.kts shared/
+COPY server/build.gradle.kts server/
+COPY composeApp/build.gradle.kts composeApp/
+COPY androidApp/build.gradle.kts androidApp/
+
+RUN mkdir -p shared/src/commonMain/kotlin \
+    && mkdir -p server/src/main/kotlin \
+    && mkdir -p composeApp/src/commonMain/kotlin \
+    && mkdir -p androidApp/src/main/kotlin
+
+RUN ./gradlew --version --no-daemon && \
+    ./gradlew dependencies --no-daemon || true
 
 # Copy source modules
 COPY shared shared
