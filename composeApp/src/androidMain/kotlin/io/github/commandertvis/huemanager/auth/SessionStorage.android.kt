@@ -3,7 +3,7 @@ package io.github.commandertvis.huemanager.auth
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
-import io.github.commandertvis.huemanager.storage.getApplicationContext
+import io.github.commandertvis.huemanager.getAndroidApplicationContext
 
 private class AndroidSessionStorageBackend(context: Context) : SessionStorageBackend {
     private val prefs: SharedPreferences = context.getSharedPreferences(
@@ -28,4 +28,4 @@ private class AndroidSessionStorageBackend(context: Context) : SessionStorageBac
 }
 
 actual fun createSessionStorageBackend(): SessionStorageBackend =
-    AndroidSessionStorageBackend(getApplicationContext())
+    AndroidSessionStorageBackend(getAndroidApplicationContext())

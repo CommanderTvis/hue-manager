@@ -120,3 +120,4 @@ Use .env (gitignored) and .env.example (to show structure .env) for configuratio
 
 - Philips Hue has tight rate limits, especially for discovery. Make sure to throttle requests.
 - Don't automatically commit changes unless requested in prompt.
+- Avoid using Gradle without daemon.
