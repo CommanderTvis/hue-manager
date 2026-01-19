@@ -230,6 +230,7 @@ fun LampCard(
                                 val sat = (s * 254).toInt()
                                 
                                 onColorChange(hue, sat)
+                                isColorPickerExpanded = false
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
