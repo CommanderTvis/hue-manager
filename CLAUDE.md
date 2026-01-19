@@ -274,10 +274,15 @@ hue-manager/
     - Hex input validates characters (only 0-9, a-f, A-F allowed) and limits to 6 characters
     - Typing a valid 6-character hex code immediately applies the color
     - Dragging the color picker immediately updates the lamp color
+  - Added per-lamp loading state to prevent messy UX during API calls
+    - Controls (switch, sliders, color picker, buttons) gray out while changes are being applied
+    - Loading state tracked individually for each lamp via `loadingLampIds` set in `LampsUiState`
+    - Controls re-enable automatically when server confirms the change
   - Added automation state display in MainScreen showing current mode ("Auto-compensating", "Evening light")
   - Display automation target color and description in MainScreen status bar
   - Changed "Pseudo-sunset" label to "Evening light" for better user understanding
   - Fixed login error messages: 401 errors now show "Incorrect password" instead of "Login failed: 401"
+  - Cleaned up unused code from in-house color picker implementation (removed unused extension functions)
 
 - **Automation Improvements:**
   - Added `AutomationMode` enum with modes: WAKE_UP_COMPENSATION, DAYLIGHT, EVENING_TRANSITION, NIGHT_MODE, USER_ASLEEP

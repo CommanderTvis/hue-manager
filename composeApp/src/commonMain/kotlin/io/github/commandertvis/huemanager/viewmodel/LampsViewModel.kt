@@ -21,7 +21,9 @@ data class LampsUiState(
     val overriddenLampIds: List<String> = emptyList(),
     val pseudoSunset: String = "21:05",
     val automationMode: String = "",
-    val automationColor: AutomationColorInfo? = null
+    val automationColor: AutomationColorInfo? = null,
+    val loadingLampIds: Set<String> = emptySet(),
+    val isGlobalToggling: Boolean = false
 )
 
 class LampsViewModel(
@@ -71,6 +73,11 @@ class LampsViewModel(
 
     fun toggleLamp(lamp: Lamp) {
         viewModelScope.launch {
+            // Mark lamp as loading
+            _uiState.value = _uiState.value.copy(
+                loadingLampIds = _uiState.value.loadingLampIds + lamp.id
+            )
+
             val update = LampUpdateRequest(on = !lamp.on)
             val result = apiClient.updateLamp(lamp.id, update)
             result.fold(
@@ -81,11 +88,15 @@ class LampsViewModel(
                     }
                     _uiState.value = _uiState.value.copy(
                         lamps = updatedLamps,
-                        overriddenLampIds = _uiState.value.overriddenLampIds + lamp.id
+                        overriddenLampIds = _uiState.value.overriddenLampIds + lamp.id,
+                        loadingLampIds = _uiState.value.loadingLampIds - lamp.id
                     )
                 },
                 onFailure = { e ->
-                    _uiState.value = _uiState.value.copy(error = e.message)
+                    _uiState.value = _uiState.value.copy(
+                        error = e.message,
+                        loadingLampIds = _uiState.value.loadingLampIds - lamp.id
+                    )
                 }
             )
         }
@@ -93,6 +104,11 @@ class LampsViewModel(
 
     fun setBrightness(lamp: Lamp, brightness: Int) {
         viewModelScope.launch {
+            // Mark lamp as loading
+            _uiState.value = _uiState.value.copy(
+                loadingLampIds = _uiState.value.loadingLampIds + lamp.id
+            )
+
             val update = LampUpdateRequest(brightness = brightness)
             val result = apiClient.updateLamp(lamp.id, update)
             result.fold(
@@ -102,11 +118,15 @@ class LampsViewModel(
                     }
                     _uiState.value = _uiState.value.copy(
                         lamps = updatedLamps,
-                        overriddenLampIds = _uiState.value.overriddenLampIds + lamp.id
+                        overriddenLampIds = _uiState.value.overriddenLampIds + lamp.id,
+                        loadingLampIds = _uiState.value.loadingLampIds - lamp.id
                     )
                 },
                 onFailure = { e ->
-                    _uiState.value = _uiState.value.copy(error = e.message)
+                    _uiState.value = _uiState.value.copy(
+                        error = e.message,
+                        loadingLampIds = _uiState.value.loadingLampIds - lamp.id
+                    )
                 }
             )
         }
@@ -114,6 +134,11 @@ class LampsViewModel(
 
     fun setLampColor(lamp: Lamp, hue: Int, saturation: Int) {
         viewModelScope.launch {
+            // Mark lamp as loading
+            _uiState.value = _uiState.value.copy(
+                loadingLampIds = _uiState.value.loadingLampIds + lamp.id
+            )
+
             val update = LampUpdateRequest(hue = hue, saturation = saturation)
             val result = apiClient.updateLamp(lamp.id, update)
             result.fold(
@@ -123,41 +148,43 @@ class LampsViewModel(
                     }
                     _uiState.value = _uiState.value.copy(
                         lamps = updatedLamps,
-                        overriddenLampIds = _uiState.value.overriddenLampIds + lamp.id
+                        overriddenLampIds = _uiState.value.overriddenLampIds + lamp.id,
+                        loadingLampIds = _uiState.value.loadingLampIds - lamp.id
                     )
                 },
                 onFailure = { e ->
-                    _uiState.value = _uiState.value.copy(error = e.message)
+                    _uiState.value = _uiState.value.copy(
+                        error = e.message,
+                        loadingLampIds = _uiState.value.loadingLampIds - lamp.id
+                    )
                 }
             )
         }
     }
 
-    fun turnAllOn() {
+    fun setAllLamps(on: Boolean) {
         viewModelScope.launch {
-            val result = apiClient.updateAllLamps(AllLampsUpdateRequest(on = true))
-            result.fold(
-                onSuccess = {
-                    val updatedLamps = _uiState.value.lamps.map { it.copy(on = true) }
-                    _uiState.value = _uiState.value.copy(lamps = updatedLamps)
-                },
-                onFailure = { e ->
-                    _uiState.value = _uiState.value.copy(error = e.message)
-                }
-            )
-        }
-    }
+            _uiState.value = _uiState.value.copy(isGlobalToggling = true)
 
-    fun turnAllOff() {
-        viewModelScope.launch {
-            val result = apiClient.updateAllLamps(AllLampsUpdateRequest(on = false))
+            val result = apiClient.updateAllLamps(AllLampsUpdateRequest(on = on))
             result.fold(
                 onSuccess = {
-                    val updatedLamps = _uiState.value.lamps.map { it.copy(on = false) }
-                    _uiState.value = _uiState.value.copy(lamps = updatedLamps)
+                    val updatedLamps = _uiState.value.lamps.map { it.copy(on = on) }
+                    // Update overriddenLampIds for all lamps since this is a manual action
+                    val allLampIds = updatedLamps.map { it.id }
+                    val newOverriddenIds = (_uiState.value.overriddenLampIds + allLampIds).distinct()
+                    
+                    _uiState.value = _uiState.value.copy(
+                        lamps = updatedLamps,
+                        overriddenLampIds = newOverriddenIds,
+                        isGlobalToggling = false
+                    )
                 },
                 onFailure = { e ->
-                    _uiState.value = _uiState.value.copy(error = e.message)
+                    _uiState.value = _uiState.value.copy(
+                        error = e.message,
+                        isGlobalToggling = false
+                    )
                 }
             )
         }
@@ -195,15 +222,26 @@ class LampsViewModel(
 
     fun clearOverride(lampId: String) {
         viewModelScope.launch {
+            // Mark lamp as loading
+            _uiState.value = _uiState.value.copy(
+                loadingLampIds = _uiState.value.loadingLampIds + lampId
+            )
+
             val result = apiClient.clearLampOverride(lampId)
             result.fold(
                 onSuccess = {
                     _uiState.value = _uiState.value.copy(
-                        overriddenLampIds = _uiState.value.overriddenLampIds - lampId
+                        overriddenLampIds = _uiState.value.overriddenLampIds - lampId,
+                        loadingLampIds = _uiState.value.loadingLampIds - lampId
                     )
+                    // Refresh to get the automation-dictated state
+                    refresh()
                 },
                 onFailure = { e ->
-                    _uiState.value = _uiState.value.copy(error = e.message)
+                    _uiState.value = _uiState.value.copy(
+                        error = e.message,
+                        loadingLampIds = _uiState.value.loadingLampIds - lampId
+                    )
                 }
             )
         }

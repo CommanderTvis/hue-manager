@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -25,6 +26,7 @@ import io.github.commandertvis.huemanager.models.Lamp
 fun LampCard(
     lamp: Lamp,
     isOverridden: Boolean,
+    isLoading: Boolean = false,
     onToggle: () -> Unit,
     onBrightnessChange: (Int) -> Unit,
     onColorChange: ((Int, Int) -> Unit)? = null,
@@ -39,6 +41,11 @@ fun LampCard(
     val controller = rememberColorPickerController()
     var hexCode by remember { mutableStateOf("") }
 
+    // Update controller enabled state based on loading
+    LaunchedEffect(isLoading) {
+        controller.enabled = !isLoading
+    }
+
     // Initialize controller with lamp color if available
     LaunchedEffect(isColorPickerExpanded) {
         if (isColorPickerExpanded) {
@@ -51,7 +58,9 @@ fun LampCard(
         modifier = modifier.fillMaxWidth()
     ) {
         Column(
-            modifier = Modifier.padding(16.dp)
+            modifier = Modifier
+                .padding(16.dp)
+                .alpha(if (isLoading) 0.5f else 1f)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -95,7 +104,10 @@ fun LampCard(
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (lamp.on && lamp.reachable && onColorChange != null) {
-                        IconButton(onClick = { isColorPickerExpanded = !isColorPickerExpanded }) {
+                        IconButton(
+                            onClick = { isColorPickerExpanded = !isColorPickerExpanded },
+                            enabled = !isLoading
+                        ) {
                             Icon(
                                 imageVector = Icons.Default.Palette,
                                 contentDescription = "Color Picker",
@@ -103,11 +115,11 @@ fun LampCard(
                             )
                         }
                     }
-                    
+
                     Switch(
                         checked = lamp.on,
                         onCheckedChange = { onToggle() },
-                        enabled = lamp.reachable
+                        enabled = lamp.reachable && !isLoading
                     )
                 }
             }
@@ -134,7 +146,8 @@ fun LampCard(
                             onBrightnessChange(sliderValue.toInt())
                         },
                         valueRange = 1f..254f,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        enabled = !isLoading
                     )
 
                     Text(
@@ -207,7 +220,8 @@ fun LampCard(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                             textStyle = MaterialTheme.typography.bodySmall,
-                            placeholder = { Text("RRGGBB") }
+                            placeholder = { Text("RRGGBB") },
+                            enabled = !isLoading
                         )
                     }
                 }
@@ -233,7 +247,8 @@ fun LampCard(
                             onClearOverride()
                             isColorPickerExpanded = false
                         },
-                        contentPadding = PaddingValues(horizontal = 8.dp)
+                        contentPadding = PaddingValues(horizontal = 8.dp),
+                        enabled = !isLoading
                     ) {
                         Text("Clear", style = MaterialTheme.typography.bodySmall)
                     }

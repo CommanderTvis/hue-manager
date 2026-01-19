@@ -66,7 +66,9 @@ Changes to color should be immediate right as I click on picker or enter a valid
 
 Manual changes should be respected only for 1 hour unless a special control is pressed, then we are going back to automation. There should be a control to clear manual override. After clicking that control, the lamp should return to the dictated state immediately.
 
-And turn on/off all lamps at once, no matter automation e.g. "I left home" switching to "I am back."
+The controls of lamps for which something changes should gray out to avoid messy experience when you change something, then not sure whether app is lagging or why lamp hasn't changed, etc. For example, I change color, the controls gray out until we are sure the change was written.
+
+And a toggle on/off control for all lamps at once, no matter automation e.g. "I left home" switching to "I am back." This control should also cause automation to be paused and to grey out individual lamp controls.
 
 There should be "I woke up!" button that turns into "I'm asleep!"
 

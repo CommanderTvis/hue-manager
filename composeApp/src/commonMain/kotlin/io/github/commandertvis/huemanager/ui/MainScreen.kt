@@ -124,25 +124,28 @@ fun MainScreen(
                     // All lamps controls
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        OutlinedButton(
-                            onClick = { lampsViewModel.turnAllOn() },
-                            modifier = Modifier.weight(1f)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("All On")
-                        }
-
-                        OutlinedButton(
-                            onClick = { lampsViewModel.turnAllOff() },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("All Off")
+                            Text(
+                                text = "All Lamps",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            
+                            Switch(
+                                checked = uiState.lamps.any { it.on },
+                                onCheckedChange = { lampsViewModel.setAllLamps(it) },
+                                enabled = !uiState.isLoading && !uiState.isGlobalToggling
+                            )
                         }
 
                         OutlinedButton(
                             onClick = { lampsViewModel.refresh() },
-                            modifier = Modifier.weight(1f)
+                            enabled = !uiState.isLoading
                         ) {
                             Text("Refresh")
                         }
@@ -179,6 +182,7 @@ fun MainScreen(
                         LampCard(
                             lamp = lamp,
                             isOverridden = lamp.id in uiState.overriddenLampIds,
+                            isLoading = lamp.id in uiState.loadingLampIds || uiState.isGlobalToggling,
                             onToggle = { lampsViewModel.toggleLamp(lamp) },
                             onBrightnessChange = { brightness ->
                                 lampsViewModel.setBrightness(lamp, brightness)
