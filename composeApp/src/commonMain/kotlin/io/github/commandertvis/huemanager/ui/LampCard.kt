@@ -256,7 +256,10 @@ fun LampCard(
                     )
 
                     TextButton(
-                        onClick = onClearOverride,
+                        onClick = {
+                            onClearOverride()
+                            isColorPickerExpanded = false
+                        },
                         contentPadding = PaddingValues(horizontal = 8.dp)
                     ) {
                         Text("Clear", style = MaterialTheme.typography.bodySmall)
