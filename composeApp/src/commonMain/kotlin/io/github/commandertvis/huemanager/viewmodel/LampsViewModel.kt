@@ -107,6 +107,27 @@ class LampsViewModel(
         }
     }
 
+    fun setLampColor(lamp: Lamp, hue: Int, saturation: Int) {
+        viewModelScope.launch {
+            val update = LampUpdateRequest(hue = hue, saturation = saturation)
+            val result = apiClient.updateLamp(lamp.id, update)
+            result.fold(
+                onSuccess = {
+                    val updatedLamps = _uiState.value.lamps.map {
+                        if (it.id == lamp.id) it.copy(hue = hue, saturation = saturation) else it
+                    }
+                    _uiState.value = _uiState.value.copy(
+                        lamps = updatedLamps,
+                        overriddenLampIds = _uiState.value.overriddenLampIds + lamp.id
+                    )
+                },
+                onFailure = { e ->
+                    _uiState.value = _uiState.value.copy(error = e.message)
+                }
+            )
+        }
+    }
+
     fun turnAllOn() {
         viewModelScope.launch {
             val result = apiClient.updateAllLamps(AllLampsUpdateRequest(on = true))

@@ -156,6 +156,9 @@ fun MainScreen(
                             onBrightnessChange = { brightness ->
                                 lampsViewModel.setBrightness(lamp, brightness)
                             },
+                            onColorChange = { hue, saturation ->
+                                lampsViewModel.setLampColor(lamp, hue, saturation)
+                            },
                             onClearOverride = { lampsViewModel.clearOverride(lamp.id) }
                         )
                     }

@@ -184,7 +184,7 @@ class AutomationManager(
             (pseudoSunset.hour + 3) % 24,
             pseudoSunset.minute
         )
-        val isInWindDown = currentTime >= pseudoSunset && currentTime < pseudoSunsetEnd
+        val isInWindDown = currentTime in pseudoSunset..<pseudoSunsetEnd
 
         return when {
             // Before sunrise: full bright white

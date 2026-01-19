@@ -47,6 +47,7 @@ kotlin {
             implementation(libs.composeUiToolingPreview)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
+            implementation(libs.colorpicker.compose)
             implementation(projects.shared)
 
             // Ktor Client

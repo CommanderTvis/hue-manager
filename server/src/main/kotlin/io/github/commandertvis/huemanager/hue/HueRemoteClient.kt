@@ -17,7 +17,6 @@ import org.slf4j.LoggerFactory
 
 /**
  * Client for Philips Hue Remote API (cloud-based control).
- * Uses OAuth2 for authentication and routes requests through api.meethue.com.
  */
 class HueRemoteClient(
     private val clientId: String,
@@ -28,17 +27,17 @@ class HueRemoteClient(
     private var username: String?
 ) : AutoCloseable {
     private val logger = LoggerFactory.getLogger(HueRemoteClient::class.java)
-    
+
     private val client = HttpClient(CIO) {
         configureJson()
     }
-    
+
     private val lightRateLimiter = RateLimiter(maxTokens = 10)
     private val groupRateLimiter = RateLimiter(maxTokens = 1)
-    
+
     val isConfigured: Boolean
         get() = accessToken != null && username != null
-    
+
     /**
      * Generate the OAuth2 authorization URL for user to visit.
      * Per Hue OAuth2 spec: https://developers.meethue.com/develop/hue-api/remote-authentication-oauth/
@@ -88,7 +87,7 @@ class HueRemoteClient(
 
         return finalUrl
     }
-    
+
     /**
      * Exchange authorization code for access and refresh tokens.
      * Uses Basic Authentication as recommended in Hue OAuth2 spec.
@@ -140,13 +139,13 @@ class HueRemoteClient(
             null
         }
     }
-    
+
     /**
      * Refresh the access token using the refresh token.
      */
     suspend fun refreshAccessToken(): Boolean {
         val refresh = refreshToken ?: return false
-        
+
         return try {
             val response: HttpResponse = client.post("https://api.meethue.com/v2/oauth2/token") {
                 contentType(ContentType.Application.FormUrlEncoded)
@@ -156,19 +155,19 @@ class HueRemoteClient(
                     append("refresh_token", refresh)
                 }))
             }
-            
+
             if (response.status.isSuccess()) {
                 val tokenResponse: TokenResponse = response.body()
                 accessToken = tokenResponse.accessToken
                 if (tokenResponse.refreshToken != null) {
                     refreshToken = tokenResponse.refreshToken
                 }
-                
+
                 ConfigLoader.updateHueTokens(
                     tokenResponse.accessToken,
                     tokenResponse.refreshToken ?: refresh
                 )
-                
+
                 logger.info("Successfully refreshed access token")
                 true
             } else {
@@ -180,14 +179,14 @@ class HueRemoteClient(
             false
         }
     }
-    
+
     /**
      * Link the remote API to a specific bridge (creates username).
      * User must press the bridge button before calling this.
      */
     suspend fun linkBridge(): LinkResult {
         val token = accessToken ?: return LinkResult.Error("Not authenticated")
-        
+
         return try {
             // First, we need to activate the link button via Remote API
             val activateResponse: HttpResponse = client.put("https://api.meethue.com/route/api/0/config") {
@@ -195,30 +194,30 @@ class HueRemoteClient(
                 contentType(ContentType.Application.Json)
                 setBody("""{"linkbutton": true}""")
             }
-            
+
             if (!activateResponse.status.isSuccess()) {
                 return LinkResult.Error("Failed to activate link: ${activateResponse.status}")
             }
-            
+
             // Now create the user
             val createResponse: HttpResponse = client.post("https://api.meethue.com/route/api") {
                 header(HttpHeaders.Authorization, "Bearer $token")
                 contentType(ContentType.Application.Json)
                 setBody("""{"devicetype": "hue_manager#server"}""")
             }
-            
+
             val body = createResponse.bodyAsText()
             logger.debug("Link response: $body")
-            
+
             if (body.contains("\"success\"")) {
                 val usernamePattern = "\"username\":\"([^\"]+)\"".toRegex()
                 val match = usernamePattern.find(body)
                 val newUsername = match?.groupValues?.get(1)
                     ?: return LinkResult.Error("Could not parse username from response")
-                
+
                 username = newUsername
                 ConfigLoader.updateHueTokens(accessToken!!, refreshToken ?: "", newUsername)
-                
+
                 logger.info("Successfully linked to Hue Bridge, username: $newUsername")
                 LinkResult.Success(newUsername)
             } else if (body.contains("link button not pressed")) {
@@ -234,20 +233,20 @@ class HueRemoteClient(
             LinkResult.Error(e.message ?: "Unknown error")
         }
     }
-    
+
     /**
      * Get all lights via Remote API.
      */
     suspend fun getLights(): Map<String, HueLight> {
         val token = accessToken ?: return emptyMap()
         val user = username ?: return emptyMap()
-        
+
         return lightRateLimiter.execute {
             try {
                 var response: HttpResponse = client.get("https://api.meethue.com/route/api/$user/lights") {
                     header(HttpHeaders.Authorization, "Bearer $token")
                 }
-                
+
                 if (response.status == HttpStatusCode.Unauthorized) {
                     logger.info("getLights failed with 401. Refreshing token and retrying...")
                     if (refreshAccessToken()) {
@@ -260,7 +259,7 @@ class HueRemoteClient(
                         return@execute emptyMap()
                     }
                 }
-                
+
                 response.body<Map<String, HueLight>>()
             } catch (e: Exception) {
                 logger.error("Error getting lights: ${e.message}", e)
@@ -268,20 +267,20 @@ class HueRemoteClient(
             }
         }
     }
-    
+
     /**
      * Get a single light.
      */
     suspend fun getLight(id: String): HueLight? {
         val token = accessToken ?: return null
         val user = username ?: return null
-        
+
         return lightRateLimiter.execute {
             try {
                 var response: HttpResponse = client.get("https://api.meethue.com/route/api/$user/lights/$id") {
                     header(HttpHeaders.Authorization, "Bearer $token")
                 }
-                
+
                 if (response.status == HttpStatusCode.Unauthorized) {
                     logger.info("getLight failed with 401. Refreshing token and retrying...")
                     if (refreshAccessToken()) {
@@ -293,7 +292,7 @@ class HueRemoteClient(
                         return@execute null
                     }
                 }
-                
+
                 response.body<HueLight>()
             } catch (e: Exception) {
                 logger.error("Error getting light $id: ${e.message}", e)
@@ -301,14 +300,14 @@ class HueRemoteClient(
             }
         }
     }
-    
+
     /**
      * Set light state.
      */
     suspend fun setLightState(id: String, state: HueLightStateUpdate): Boolean {
         val token = accessToken ?: return false
         val user = username ?: return false
-        
+
         return lightRateLimiter.execute {
             try {
                 var response: HttpResponse = client.put("https://api.meethue.com/route/api/$user/lights/$id/state") {
@@ -316,7 +315,7 @@ class HueRemoteClient(
                     contentType(ContentType.Application.Json)
                     setBody(state)
                 }
-                
+
                 if (response.status == HttpStatusCode.Unauthorized) {
                     logger.warn("Set light state failed with 401 Unauthorized. Attempting token refresh.")
                     if (refreshAccessToken()) {
@@ -330,11 +329,11 @@ class HueRemoteClient(
                         return@execute false
                     }
                 }
-                
+
                 if (!response.status.isSuccess()) {
                     logger.warn("Set light state failed: ${response.status} Body: ${response.bodyAsText()}")
                 }
-                
+
                 response.status.isSuccess()
             } catch (e: Exception) {
                 logger.error("Error setting light state: ${e.message}", e)
@@ -342,20 +341,20 @@ class HueRemoteClient(
             }
         }
     }
-    
+
     /**
      * Get all groups.
      */
     suspend fun getGroups(): Map<String, HueGroup> {
         val token = accessToken ?: return emptyMap()
         val user = username ?: return emptyMap()
-        
+
         return groupRateLimiter.execute {
             try {
                 var response: HttpResponse = client.get("https://api.meethue.com/route/api/$user/groups") {
                     header(HttpHeaders.Authorization, "Bearer $token")
                 }
-                
+
                 if (response.status == HttpStatusCode.Unauthorized) {
                     logger.info("getGroups failed with 401. Refreshing token and retrying...")
                     if (refreshAccessToken()) {
@@ -367,7 +366,7 @@ class HueRemoteClient(
                         return@execute emptyMap()
                     }
                 }
-                
+
                 response.body<Map<String, HueGroup>>()
             } catch (e: Exception) {
                 logger.error("Error getting groups: ${e.message}", e)
@@ -375,15 +374,15 @@ class HueRemoteClient(
             }
         }
     }
-    
+
     override fun close() = client.close()
-    
+
     companion object {
         fun fromConfig(config: Config): HueRemoteClient {
             val clientId = config.hueClientId
             val clientSecret = config.hueClientSecret
             val appId = config.hueAppId
-            
+
             return HueRemoteClient(
                 clientId = clientId,
                 clientSecret = clientSecret,

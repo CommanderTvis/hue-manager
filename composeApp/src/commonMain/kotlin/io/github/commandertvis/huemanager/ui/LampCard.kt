@@ -1,8 +1,14 @@
 package io.github.commandertvis.huemanager.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -10,6 +16,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.github.skydoves.colorpicker.compose.AlphaTile
+import com.github.skydoves.colorpicker.compose.HsvColorPicker
+import com.github.skydoves.colorpicker.compose.rememberColorPickerController
 import io.github.commandertvis.huemanager.models.Lamp
 
 @Composable
@@ -18,11 +27,25 @@ fun LampCard(
     isOverridden: Boolean,
     onToggle: () -> Unit,
     onBrightnessChange: (Int) -> Unit,
+    onColorChange: ((Int, Int) -> Unit)? = null,
     onClearOverride: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var sliderValue by remember(lamp.brightness) {
         mutableStateOf((lamp.brightness ?: 254).toFloat())
+    }
+    
+    var isColorPickerExpanded by remember { mutableStateOf(false) }
+    val controller = rememberColorPickerController()
+    var hexCode by remember { mutableStateOf("") }
+
+    // Initialize controller with lamp color if available
+    LaunchedEffect(lamp.hue, lamp.saturation) {
+        if (lamp.hue != null && lamp.saturation != null) {
+            // This is approximate, ideally we'd set the controller color
+            // but HsvColorPicker controller API might be tricky to set initial color
+            // directly from hue/sat without full context
+        }
     }
 
     Card(
@@ -71,11 +94,23 @@ fun LampCard(
                     }
                 }
 
-                Switch(
-                    checked = lamp.on,
-                    onCheckedChange = { onToggle() },
-                    enabled = lamp.reachable
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (lamp.on && lamp.reachable && onColorChange != null) {
+                        IconButton(onClick = { isColorPickerExpanded = !isColorPickerExpanded }) {
+                            Icon(
+                                imageVector = Icons.Default.Palette,
+                                contentDescription = "Color Picker",
+                                tint = if (isColorPickerExpanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                    
+                    Switch(
+                        checked = lamp.on,
+                        onCheckedChange = { onToggle() },
+                        enabled = lamp.reachable
+                    )
+                }
             }
 
             // Brightness slider (only show when lamp is on and reachable)
@@ -108,6 +143,100 @@ fun LampCard(
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.width(36.dp)
                     )
+                }
+            }
+            
+            // Color Picker
+            if (isColorPickerExpanded && onColorChange != null && lamp.on && lamp.reachable) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Divider()
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Text("Color Control", style = MaterialTheme.typography.titleSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(200.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                        HsvColorPicker(
+                            modifier = Modifier.fillMaxSize(),
+                            controller = controller,
+                            onColorChanged = { envelope ->
+                                hexCode = envelope.hexCode
+                                // We don't update automatically to avoid spamming the API
+                            }
+                        )
+                    }
+                    
+                    Column(
+                        modifier = Modifier.width(120.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        AlphaTile(
+                            modifier = Modifier
+                                .size(60.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                            controller = controller
+                        )
+                        
+                        OutlinedTextField(
+                            value = hexCode,
+                            onValueChange = { 
+                                hexCode = it
+                                if (it.length == 6 || it.length == 7) {
+                                     // Try to parse color from hex could be added here
+                                     // But controller doesn't support setting from hex easily yet
+                                }
+                            },
+                            label = { Text("Hex") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = MaterialTheme.typography.bodySmall
+                        )
+                        
+                        Button(
+                            onClick = {
+                                val color = controller.selectedColor.value
+                                
+                                // Manually convert RGB to HSV since we are in commonMain
+                                val r = color.red
+                                val g = color.green
+                                val b = color.blue
+                                
+                                val max = maxOf(r, maxOf(g, b))
+                                val min = minOf(r, minOf(g, b))
+                                val d = max - min
+                                
+                                var h = 0f
+                                val s = if (max == 0f) 0f else d / max
+                                val v = max
+                                
+                                if (max != min) {
+                                    h = when (max) {
+                                        r -> (g - b) / d + (if (g < b) 6f else 0f)
+                                        g -> (b - r) / d + 2f
+                                        b -> (r - g) / d + 4f
+                                        else -> 0f
+                                    }
+                                    h /= 6f
+                                }
+                                
+                                // Convert HSV to Hue API values
+                                // Hue: 0-1 -> 0-65535 (Hue API uses 0-65535 for 0-360 degrees)
+                                val hue = (h * 65535).toInt()
+                                // Saturation: 0-1 -> 0-254
+                                val sat = (s * 254).toInt()
+                                
+                                onColorChange(hue, sat)
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Set")
+                        }
+                    }
                 }
             }
 

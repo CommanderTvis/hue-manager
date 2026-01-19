@@ -22,7 +22,7 @@ expect fun createSessionStorageBackend(): SessionStorageBackend
 class SessionStorage(
     private val backend: SessionStorageBackend = createSessionStorageBackend()
 ) {
-    private val _token = MutableStateFlow<String?>(backend.getToken())
+    private val _token = MutableStateFlow(backend.getToken())
     val token: StateFlow<String?> = _token.asStateFlow()
 
     val isLoggedIn: Boolean

@@ -3,7 +3,7 @@ package io.github.commandertvis.huemanager.hue
 import io.github.commandertvis.huemanager.config.Config
 import org.slf4j.LoggerFactory
 
-class HueService(private var config: Config) : AutoCloseable {
+class HueService(config: Config) : AutoCloseable {
     private val logger = LoggerFactory.getLogger(HueService::class.java)
 
     // Remote API client (cloud connection via OAuth2)
@@ -15,9 +15,8 @@ class HueService(private var config: Config) : AutoCloseable {
     val needsLinking: Boolean
         get() = remoteClient?.isConfigured != true
     
-    fun getAuthorizationUrl(redirectUri: String, state: String): String? {
-        return remoteClient?.getAuthorizationUrl(redirectUri, state)
-    }
+    fun getAuthorizationUrl(redirectUri: String, state: String): String? =
+        remoteClient?.getAuthorizationUrl(redirectUri, state)
     
     suspend fun handleOAuthCallback(code: String, redirectUri: String): Boolean {
         val tokens = remoteClient?.exchangeCodeForTokens(code, redirectUri)
@@ -28,7 +27,7 @@ class HueService(private var config: Config) : AutoCloseable {
         return remoteClient?.linkBridge() ?: LinkResult.Error("Remote client not configured")
     }
 
-    suspend fun initialize(): Boolean {
+    fun initialize(): Boolean {
         // With remote API, we just check if we have valid tokens
         if (remoteClient?.isConfigured == true) {
             logger.info("Remote API client configured, ready to use")
