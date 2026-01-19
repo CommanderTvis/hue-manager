@@ -40,11 +40,10 @@ fun LampCard(
     var hexCode by remember { mutableStateOf("") }
 
     // Initialize controller with lamp color if available
-    LaunchedEffect(lamp.hue, lamp.saturation) {
-        if (lamp.hue != null && lamp.saturation != null) {
-            // This is approximate, ideally we'd set the controller color
-            // but HsvColorPicker controller API might be tricky to set initial color
-            // directly from hue/sat without full context
+    LaunchedEffect(isColorPickerExpanded) {
+        if (isColorPickerExpanded) {
+            val color = getLampColor(lamp)
+            controller.selectByColor(color, true)
         }
     }
 
@@ -267,7 +266,6 @@ fun LampCard(
     }
 }
 
-@Composable
 private fun getLampColor(lamp: Lamp): Color {
     val hueValue = lamp.hue
     val satValue = lamp.saturation
