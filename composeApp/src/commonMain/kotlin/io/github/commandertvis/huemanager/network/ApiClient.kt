@@ -43,7 +43,11 @@ class ApiClient(
                 }
                 Result.success(loginResponse)
             } else {
-                Result.failure(ApiException("Login failed: ${response.status}"))
+                val errorMessage = when (response.status.value) {
+                    401 -> "Incorrect password"
+                    else -> "Login failed: ${response.status}"
+                }
+                Result.failure(ApiException(errorMessage))
             }
         } catch (e: Exception) {
             Result.failure(e)

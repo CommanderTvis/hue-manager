@@ -60,7 +60,18 @@ data class AutomationStatusResponse(
     val wakeUpTime: String?,
     val pseudoSunset: String,
     val entertainmentActive: Boolean,
-    val overriddenLamps: List<String>
+    val overriddenLamps: List<String>,
+    val automationMode: String,
+    val automationColor: AutomationColorInfo
+)
+
+@Serializable
+data class AutomationColorInfo(
+    val hue: Int?,
+    val saturation: Int?,
+    val colorTemperature: Int?,
+    val brightness: Int,
+    val description: String
 )
 
 // Settings endpoints

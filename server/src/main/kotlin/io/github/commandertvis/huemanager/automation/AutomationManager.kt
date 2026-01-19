@@ -18,6 +18,22 @@ enum class UserState {
     AWAKE, ASLEEP
 }
 
+enum class AutomationMode {
+    WAKE_UP_COMPENSATION,  // Compensating for lack of daylight
+    DAYLIGHT,              // Sun is up, minimal light needed
+    EVENING_TRANSITION,    // Transitioning to warm/dim (pseudo-sunset period)
+    NIGHT_MODE,            // Very dim warm light
+    USER_ASLEEP            // User is asleep, lamps should be off
+}
+
+data class LampColorInfo(
+    val hue: Int?,
+    val saturation: Int?,
+    val colorTemperature: Int?,
+    val brightness: Int,
+    val description: String
+)
+
 data class LampOverride(
     val lampId: String,
     val overrideUntil: Instant
@@ -44,6 +60,90 @@ class AutomationManager(
     fun getLocation(): GeoLocation = config.region
     fun getOverriddenLampIds(): List<String> = lampOverrides.keys.toList()
     fun getAutomatedLampIds(): Set<String> = automatedLampIds.toSet()
+
+    fun getCurrentAutomationMode(): AutomationMode {
+        if (userState != UserState.AWAKE) {
+            return AutomationMode.USER_ASLEEP
+        }
+
+        val timeZone = TimeZone.of(config.timezone)
+        val localNow = Clock.System.now().toLocalDateTime(timeZone)
+        val currentTime = localNow.time
+
+        val sunTimes = calculateSunTimes()
+        val sunriseTime = sunTimes.first
+        val sunsetTime = sunTimes.second
+
+        val isBeforeSunrise = currentTime < sunriseTime
+        val isAfterSunset = currentTime > sunsetTime
+        val isAfterPseudoSunset = currentTime >= pseudoSunset
+
+        val pseudoSunsetEnd = LocalTime(
+            (pseudoSunset.hour + 3) % 24,
+            pseudoSunset.minute
+        )
+        val isInWindDown = currentTime in pseudoSunset..<pseudoSunsetEnd
+
+        return when {
+            isBeforeSunrise -> AutomationMode.WAKE_UP_COMPENSATION
+            !isAfterSunset && !isAfterPseudoSunset -> AutomationMode.DAYLIGHT
+            isAfterSunset && !isAfterPseudoSunset -> AutomationMode.WAKE_UP_COMPENSATION
+            isInWindDown -> AutomationMode.EVENING_TRANSITION
+            else -> AutomationMode.NIGHT_MODE
+        }
+    }
+
+    fun getAutomationColor(): LampColorInfo {
+        val mode = getCurrentAutomationMode()
+        val desiredState = if (userState == UserState.AWAKE) {
+            val timeZone = TimeZone.of(config.timezone)
+            val localNow = Clock.System.now().toLocalDateTime(timeZone)
+            calculateDesiredState(localNow.time)
+        } else {
+            null
+        }
+
+        return when (mode) {
+            AutomationMode.WAKE_UP_COMPENSATION -> LampColorInfo(
+                hue = null,
+                saturation = null,
+                colorTemperature = 153,
+                brightness = 254,
+                description = "Bright white"
+            )
+            AutomationMode.DAYLIGHT -> LampColorInfo(
+                hue = null,
+                saturation = null,
+                colorTemperature = 200,
+                brightness = 100,
+                description = "Dim white"
+            )
+            AutomationMode.EVENING_TRANSITION -> {
+                val brightness = desiredState?.bri ?: 127
+                LampColorInfo(
+                    hue = 5000,
+                    saturation = 254,
+                    colorTemperature = null,
+                    brightness = brightness,
+                    description = "Warm orange (dimming)"
+                )
+            }
+            AutomationMode.NIGHT_MODE -> LampColorInfo(
+                hue = 5000,
+                saturation = 254,
+                colorTemperature = null,
+                brightness = 1,
+                description = "Minimal orange"
+            )
+            AutomationMode.USER_ASLEEP -> LampColorInfo(
+                hue = null,
+                saturation = null,
+                colorTemperature = null,
+                brightness = 0,
+                description = "Off"
+            )
+        }
+    }
 
     fun isEntertainmentActive(): Boolean {
         return runBlocking {

@@ -3,6 +3,7 @@ package io.github.commandertvis.huemanager.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.commandertvis.huemanager.api.AllLampsUpdateRequest
+import io.github.commandertvis.huemanager.api.AutomationColorInfo
 import io.github.commandertvis.huemanager.api.LampUpdateRequest
 import io.github.commandertvis.huemanager.models.Lamp
 import io.github.commandertvis.huemanager.models.UserState
@@ -18,7 +19,9 @@ data class LampsUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
     val overriddenLampIds: List<String> = emptyList(),
-    val pseudoSunset: String = "21:05"
+    val pseudoSunset: String = "21:05",
+    val automationMode: String = "",
+    val automationColor: AutomationColorInfo? = null
 )
 
 class LampsViewModel(
@@ -54,7 +57,9 @@ class LampsViewModel(
                     _uiState.value = _uiState.value.copy(
                         userState = response.userState,
                         overriddenLampIds = response.overriddenLamps,
-                        pseudoSunset = response.pseudoSunset
+                        pseudoSunset = response.pseudoSunset,
+                        automationMode = response.automationMode,
+                        automationColor = response.automationColor
                     )
                 },
                 onFailure = { /* ignore */ }

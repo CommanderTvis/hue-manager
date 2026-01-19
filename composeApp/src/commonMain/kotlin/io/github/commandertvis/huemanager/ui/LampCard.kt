@@ -150,10 +150,10 @@ fun LampCard(
                 Spacer(modifier = Modifier.height(16.dp))
                 HorizontalDivider()
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 Text("Color Control", style = MaterialTheme.typography.titleSmall)
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 Row(
                     modifier = Modifier.fillMaxWidth().height(200.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -164,11 +164,15 @@ fun LampCard(
                             controller = controller,
                             onColorChanged = { envelope ->
                                 hexCode = envelope.hexCode
-                                // We don't update automatically to avoid spamming the API
+
+                                // Apply color immediately when picker is used
+                                val color = envelope.color
+                                val (hue, sat) = rgbToHueApiValues(color.red, color.green, color.blue)
+                                onColorChange(hue, sat)
                             }
                         )
                     }
-                    
+
                     Column(
                         modifier = Modifier.width(120.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -180,62 +184,31 @@ fun LampCard(
                                 .clip(RoundedCornerShape(8.dp)),
                             controller = controller
                         )
-                        
+
                         OutlinedTextField(
                             value = hexCode,
-                            onValueChange = { 
-                                hexCode = it
-                                if (it.length == 6 || it.length == 7) {
-                                     // Try to parse color from hex could be added here
-                                     // But controller doesn't support setting from hex easily yet
+                            onValueChange = { newValue ->
+                                // Only allow hex characters (0-9, a-f, A-F) and max 6 characters
+                                val filtered = newValue.filter { it.isHexChar() }.take(6)
+                                hexCode = filtered
+
+                                // If we have a valid 6-character hex, apply it immediately
+                                if (filtered.length == 6) {
+                                    try {
+                                        val (r, g, b) = hexToRgb(filtered)
+                                        val (hue, sat) = rgbToHueApiValues(r, g, b)
+                                        onColorChange(hue, sat)
+                                    } catch (e: Exception) {
+                                        // Invalid hex, ignore
+                                    }
                                 }
                             },
                             label = { Text("Hex") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
-                            textStyle = MaterialTheme.typography.bodySmall
+                            textStyle = MaterialTheme.typography.bodySmall,
+                            placeholder = { Text("RRGGBB") }
                         )
-                        
-                        Button(
-                            onClick = {
-                                val color = controller.selectedColor.value
-                                
-                                // Manually convert RGB to HSV since we are in commonMain
-                                val r = color.red
-                                val g = color.green
-                                val b = color.blue
-                                
-                                val max = maxOf(r, maxOf(g, b))
-                                val min = minOf(r, minOf(g, b))
-                                val d = max - min
-                                
-                                var h = 0f
-                                val s = if (max == 0f) 0f else d / max
-                                val v = max
-                                
-                                if (max != min) {
-                                    h = when (max) {
-                                        r -> (g - b) / d + (if (g < b) 6f else 0f)
-                                        g -> (b - r) / d + 2f
-                                        b -> (r - g) / d + 4f
-                                        else -> 0f
-                                    }
-                                    h /= 6f
-                                }
-                                
-                                // Convert HSV to Hue API values
-                                // Hue: 0-1 -> 0-65535 (Hue API uses 0-65535 for 0-360 degrees)
-                                val hue = (h * 65535).toInt()
-                                // Saturation: 0-1 -> 0-254
-                                val sat = (s * 254).toInt()
-                                
-                                onColorChange(hue, sat)
-                                isColorPickerExpanded = false
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Set")
-                        }
                     }
                 }
             }
@@ -293,4 +266,44 @@ private fun getLampColor(lamp: Lamp): Color {
         }
         else -> Color.Yellow
     }
+}
+
+private fun Char.isHexChar(): Boolean {
+    return this in '0'..'9' || this in 'a'..'f' || this in 'A'..'F'
+}
+
+private fun hexToRgb(hex: String): Triple<Float, Float, Float> {
+    require(hex.length == 6) { "Hex must be 6 characters" }
+    val r = hex.substring(0, 2).toInt(16) / 255f
+    val g = hex.substring(2, 4).toInt(16) / 255f
+    val b = hex.substring(4, 6).toInt(16) / 255f
+    return Triple(r, g, b)
+}
+
+private fun rgbToHueApiValues(r: Float, g: Float, b: Float): Pair<Int, Int> {
+    // Convert RGB to HSV
+    val max = maxOf(r, maxOf(g, b))
+    val min = minOf(r, minOf(g, b))
+    val d = max - min
+
+    var h = 0f
+    val s = if (max == 0f) 0f else d / max
+
+    if (max != min) {
+        h = when (max) {
+            r -> (g - b) / d + (if (g < b) 6f else 0f)
+            g -> (b - r) / d + 2f
+            b -> (r - g) / d + 4f
+            else -> 0f
+        }
+        h /= 6f
+    }
+
+    // Convert HSV to Hue API values
+    // Hue: 0-1 -> 0-65535 (Hue API uses 0-65535 for 0-360 degrees)
+    val hue = (h * 65535).toInt()
+    // Saturation: 0-1 -> 0-254
+    val sat = (s * 254).toInt()
+
+    return Pair(hue, sat)
 }

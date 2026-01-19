@@ -46,7 +46,7 @@ A Philips Hue lamp management system with:
 
 **Server API & Auth:**
 - `server/.../auth/SessionManager.kt` - Token-based session management
-- `server/.../automation/AutomationManager.kt` - User state, lamp overrides, heartbeat
+- `server/.../automation/AutomationManager.kt` - User state, lamp overrides, heartbeat, automation mode calculation
 
 **UI Files:**
 - `composeApp/.../network/ApiClient.kt` - Multiplatform Ktor client with all API methods (platform-specific implementations in jvmMain, wasmJsMain)
@@ -57,8 +57,8 @@ A Philips Hue lamp management system with:
 - `composeApp/.../viewmodel/LampsViewModel.kt` - Lamp state and control management
 - `composeApp/.../viewmodel/ServerConnectViewModel.kt` - Server URL validation
 - `composeApp/.../ui/LoginScreen.kt` - Password input with error handling
-- `composeApp/.../ui/MainScreen.kt` - Full lamp control interface
-- `composeApp/.../ui/LampCard.kt` - Individual lamp card with toggle, brightness slider
+- `composeApp/.../ui/MainScreen.kt` - Full lamp control interface with automation state display
+- `composeApp/.../ui/LampCard.kt` - Individual lamp card with toggle, brightness slider, RGB color picker with hex input
 - `composeApp/.../ui/ServerConnectScreen.kt` - Server URL input and validation
 - `composeApp/.../ui/PleaseAuthorizeScreen.kt` - OAuth2 authorization instructions
 
@@ -256,17 +256,37 @@ hue-manager/
 ## Recent Changes
 
 **Latest Updates (Jan 2026):**
-- Fixed OAuth2 parameter naming: corrected `clientid` to `client_id` in Hue authorization flow
-- Added support for configurable `HUE_REDIRECT_URI` in environment variables
-- Implemented `PleaseAuthorizeScreen` for OAuth2 authorization instructions
-- Standardized terminology: "pairing" → "authorization", improved consistency across codebase
-- Enhanced OAuth2 authorization URL generation with detailed logging and parameter validation
-- Added platform-specific URL opening functionality for authorization flow:
-  - Desktop (JVM): Opens URLs using `java.awt.Desktop.browse()`
-  - Android: Opens URLs using Intent with `ACTION_VIEW`
-  - Web: Opens URLs using `window.open()`
-- Fixed Android platform `openUrl()` implementation to properly launch browser
-- Updated dependency versions (kotlinx-serialization 1.9.0, kotlinx-datetime 0.7.1, kotlinx-coroutines 1.10.2)
-- Documented HTTPS/domain requirement for OAuth2 across all documentation files
-- Created `Caddyfile.example` for easy HTTPS setup with automatic Let's Encrypt certificates
-- Updated `docker-compose.yml` to include production deployment configuration with Caddy
+- **UI Enhancements:**
+  - Implemented RGB color picker with hex input in LampCard for precise color control
+    - Color changes are immediate (no "Set" button required)
+    - Hex input validates characters (only 0-9, a-f, A-F allowed) and limits to 6 characters
+    - Typing a valid 6-character hex code immediately applies the color
+    - Dragging the color picker immediately updates the lamp color
+  - Added automation state display in MainScreen showing current mode ("Auto-compensating", "Evening light")
+  - Display automation target color and description in MainScreen status bar
+  - Changed "Pseudo-sunset" label to "Evening light" for better user understanding
+  - Fixed login error messages: 401 errors now show "Incorrect password" instead of "Login failed: 401"
+
+- **Automation Improvements:**
+  - Added `AutomationMode` enum with modes: WAKE_UP_COMPENSATION, DAYLIGHT, EVENING_TRANSITION, NIGHT_MODE, USER_ASLEEP
+  - Implemented `getCurrentAutomationMode()` in AutomationManager to determine current automation state
+  - Added `getAutomationColor()` to provide color information for UI display
+  - Extended API response (`AutomationStatusResponse`) to include automation mode and color data
+
+- **OAuth2 & Authentication:**
+  - Fixed OAuth2 parameter naming: corrected `clientid` to `client_id` in Hue authorization flow
+  - Added support for configurable `HUE_REDIRECT_URI` in environment variables
+  - Implemented `PleaseAuthorizeScreen` for OAuth2 authorization instructions
+  - Standardized terminology: "pairing" → "authorization", improved consistency across codebase
+  - Enhanced OAuth2 authorization URL generation with detailed logging and parameter validation
+  - Added platform-specific URL opening functionality for authorization flow:
+    - Desktop (JVM): Opens URLs using `java.awt.Desktop.browse()`
+    - Android: Opens URLs using Intent with `ACTION_VIEW`
+    - Web: Opens URLs using `window.open()`
+  - Fixed Android platform `openUrl()` implementation to properly launch browser
+
+- **Infrastructure:**
+  - Updated dependency versions (kotlinx-serialization 1.9.0, kotlinx-datetime 0.7.1, kotlinx-coroutines 1.10.2)
+  - Documented HTTPS/domain requirement for OAuth2 across all documentation files
+  - Created `Caddyfile.example` for easy HTTPS setup with automatic Let's Encrypt certificates
+  - Updated `docker-compose.yml` to include production deployment configuration with Caddy

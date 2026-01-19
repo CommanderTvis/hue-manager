@@ -426,13 +426,24 @@ fun Application.module(
                 UserState.AWAKE -> io.github.commandertvis.huemanager.models.UserState.AWAKE
                 UserState.ASLEEP -> io.github.commandertvis.huemanager.models.UserState.ASLEEP
             }
+            val mode = automationManager.getCurrentAutomationMode()
+            val color = automationManager.getAutomationColor()
+
             call.respond(
                 AutomationStatusResponse(
                     userState = modelState,
                     wakeUpTime = automationManager.getWakeUpTime()?.toString(),
                     pseudoSunset = automationManager.getPseudoSunset().toString(),
                     entertainmentActive = automationManager.isEntertainmentActive(),
-                    overriddenLamps = automationManager.getOverriddenLampIds()
+                    overriddenLamps = automationManager.getOverriddenLampIds(),
+                    automationMode = mode.name,
+                    automationColor = AutomationColorInfo(
+                        hue = color.hue,
+                        saturation = color.saturation,
+                        colorTemperature = color.colorTemperature,
+                        brightness = color.brightness,
+                        description = color.description
+                    )
                 )
             )
         }

@@ -70,8 +70,35 @@ fun MainScreen(
                                 text = if (uiState.userState == UserState.AWAKE) "You're awake" else "You're asleep",
                                 style = MaterialTheme.typography.titleMedium
                             )
+
+                            // Automation mode display
+                            if (uiState.automationMode.isNotEmpty()) {
+                                val modeDisplay = when (uiState.automationMode) {
+                                    "WAKE_UP_COMPENSATION" -> "Auto-compensating"
+                                    "DAYLIGHT" -> "Daylight mode"
+                                    "EVENING_TRANSITION" -> "Evening light (transitioning)"
+                                    "NIGHT_MODE" -> "Evening light (minimal)"
+                                    "USER_ASLEEP" -> "Lamps off"
+                                    else -> uiState.automationMode
+                                }
+                                Text(
+                                    text = "Automation: $modeDisplay",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+
+                            // Color information
+                            uiState.automationColor?.let { color ->
+                                Text(
+                                    text = "Target: ${color.description}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
                             Text(
-                                text = "Pseudo-sunset: ${uiState.pseudoSunset}",
+                                text = "Evening light: ${uiState.pseudoSunset}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

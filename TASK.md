@@ -58,7 +58,11 @@ The UI shows a "Please authorize" screen with these instructions when the bridge
 
 Should list all lamps of home and their current state.
 
-Provide controls to turn on/off individual lamps, to change their brightness and color.
+Also, we should see the state of the automation scheduler ("Auto-compensating", "Evening light") and what color does it dictate to all the lamps.
+
+Provide controls to turn on/off individual lamps to change their brightness and color (there should be a RGB color picker and a hex text field, 6 symbols of length max, without ability to type invalid characters in it. e.g. "f" is fine, "z" is not).
+
+Changes to color should be immediate right as I click on picker or enter a valid color to text field. There should be no "Set" button or anything like that.
 
 Manual changes should be respected only for 1 hour unless a special control is pressed, then we are going back to automation.
 
@@ -84,7 +88,9 @@ E.g. if the user wakes up at 6:00 and the sun has not risen yet, the lamps go su
 - 12:00 - sun is shining, lamps turn off
 - 17:00 - actual sunset, lamps are super bright
 - 21:05 - "pseudo sunset", lamps are going orange ##FF5500 100% brightness
-- 00:05 - lamps are preparing user to sleep, ##FF5500, 1% brightness
+- 00:05 (pseduo sunset + 3 hours) - lamps are preparing user to sleep, ##FF5500, 1% brightness
+
+The UI name of pseudo sunset is "Evening light".
 
 When user (in the main screen) presses "I'm asleep", lamps are just turning off.
 
@@ -113,3 +119,4 @@ Use .env (gitignored) and .env.example (to show structure .env) for configuratio
 ## Misc
 
 - Philips Hue has tight rate limits, especially for discovery. Make sure to throttle requests.
+- Don't automatically commit changes unless requested in prompt.
