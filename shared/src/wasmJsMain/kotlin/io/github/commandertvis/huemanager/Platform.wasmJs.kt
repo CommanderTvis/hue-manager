@@ -1,12 +1,12 @@
 package io.github.commandertvis.huemanager
 
-import kotlinx.browser.window
+private external fun open(url: String, target: String)
 
 class WasmPlatform: Platform {
     override val name: String = "Web with Kotlin/Wasm"
     override val isWeb: Boolean = true
     override fun openUrl(url: String) {
-        window.open(url, "_blank")
+        open(url, "_blank")
     }
 }
 

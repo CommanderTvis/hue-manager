@@ -34,7 +34,7 @@ COPY server server
 COPY composeApp composeApp
 
 # Build the fat JAR and Web assets
-RUN ./gradlew :server:buildFatJar :composeApp:jsBrowserDistribution --no-daemon
+RUN ./gradlew :server:buildFatJar :composeApp:wasmJsBrowserDistribution --no-daemon
 
 # Runtime stage
 FROM eclipse-temurin:21-jre-alpine
@@ -48,7 +48,7 @@ USER huemanager
 COPY --from=build /app/server/build/libs/*-all.jar app.jar
 
 # Copy the web assets
-COPY --from=build /app/composeApp/build/dist/js/productionExecutable /app/web
+COPY --from=build /app/composeApp/build/dist/wasmJs/productionExecutable /app/web
 
 EXPOSE 8080
 

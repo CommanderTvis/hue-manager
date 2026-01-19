@@ -32,13 +32,13 @@ jobs:
           build-scan-publish: false
 
       - name: Build with Gradle
-        run: ./gradlew :server:buildFatJar :composeApp:jsBrowserDistribution
+        run: ./gradlew :server:buildFatJar :composeApp:wasmJsBrowserDistribution
 
       - name: Prepare Docker build context
         run: |
           mkdir -p build-output
           cp server/build/libs/*-all.jar build-output/server.jar
-          cp -r composeApp/build/dist/js/productionExecutable build-output/web
+          cp -r composeApp/build/dist/wasmJs/productionExecutable build-output/web
 
       - name: Log in to the Container registry
         uses: docker/login-action@v3

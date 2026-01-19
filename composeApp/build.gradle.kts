@@ -21,11 +21,6 @@ kotlin {
     
     jvm()
     
-    js {
-        browser()
-        binaries.executable()
-    }
-    
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
         browser()
@@ -66,9 +61,6 @@ kotlin {
             implementation(libs.kotlinx.coroutinesSwing)
             implementation(libs.ktor.kmpClient.cio)
             implementation(libs.logback)
-        }
-        jsMain.dependencies {
-            implementation(libs.ktor.kmpClient.js)
         }
     }
 }
