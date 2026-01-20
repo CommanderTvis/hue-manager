@@ -26,7 +26,10 @@ dependencies {
     implementation(libs.ktor.serverAuth)
     implementation(libs.ktor.serverSessions)
     implementation(libs.ktor.serverCors)
+    implementation(libs.ktor.serverSse)
     implementation(libs.ktor.serializationJson)
+
+    implementation(libs.mcp.sdk)
 
     implementation(libs.ktor.clientCore)
     implementation(libs.ktor.clientCio)

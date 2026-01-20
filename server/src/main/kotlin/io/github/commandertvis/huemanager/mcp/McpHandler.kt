@@ -4,12 +4,14 @@ import io.github.commandertvis.huemanager.automation.AutomationManager
 import io.github.commandertvis.huemanager.automation.UserState
 import io.github.commandertvis.huemanager.hue.HueLightStateUpdate
 import io.github.commandertvis.huemanager.hue.HueService
+import io.modelcontextprotocol.kotlin.sdk.server.Server
+import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
+import io.modelcontextprotocol.kotlin.sdk.types.*
 import kotlinx.serialization.json.*
 import org.slf4j.LoggerFactory
 
 /**
  * Handler for MCP (Model Context Protocol) requests.
- * Implements JSON-RPC 2.0 over HTTP with SSE support.
  */
 class McpHandler(
     private val hueService: HueService,
@@ -18,305 +20,177 @@ class McpHandler(
 ) {
     private companion object {
         private val logger = LoggerFactory.getLogger(McpHandler::class.java)
-
-        private val json = Json {
-            ignoreUnknownKeys = true
-            encodeDefaults = false
-            explicitNulls = true
-        }
     }
 
-    // Track initialized sessions
-    private val initializedSessions = mutableSetOf<String>()
-
     /**
-     * Available MCP tools for lamp control
+     * Creates a configured MCP Server instance with all lamp control tools.
      */
-    private val tools = listOf(
-        Tool(
-            name = "list_lamps",
-            description = "List all Philips Hue lamps with their current state including name, on/off status, brightness, color, and whether they are under automation, manual override, or Hue Sync control.",
-            inputSchema = ToolInputSchema(
-                type = "object",
-                properties = emptyMap(),
-                required = emptyList()
-            )
-        ),
-        Tool(
-            name = "get_lamp_state",
-            description = "Get detailed state of a specific lamp including its automation status, whether it has a manual override, and if it's controlled by Hue Sync entertainment mode.",
-            inputSchema = ToolInputSchema(
-                type = "object",
-                properties = mapOf(
-                    "lamp_id" to PropertySchema(
-                        type = "string",
-                        description = "The ID of the lamp to get state for"
-                    )
-                ),
-                required = listOf("lamp_id")
-            )
-        ),
-        Tool(
-            name = "set_lamp_state",
-            description = "Set the state of a specific lamp. This creates a manual override that lasts for 1 hour. You can control on/off, brightness (0-254), and color via hue (0-65535), saturation (0-254), or color temperature in Mirek (153-500).",
-            inputSchema = ToolInputSchema(
-                type = "object",
-                properties = mapOf(
-                    "lamp_id" to PropertySchema(
-                        type = "string",
-                        description = "The ID of the lamp to control"
-                    ),
-                    "on" to PropertySchema(
-                        type = "boolean",
-                        description = "Turn the lamp on (true) or off (false)"
-                    ),
-                    "brightness" to PropertySchema(
-                        type = "integer",
-                        description = "Brightness level from 0 to 254"
-                    ),
-                    "hue" to PropertySchema(
-                        type = "integer",
-                        description = "Hue value from 0 to 65535 (red=0, green=25500, blue=46920)"
-                    ),
-                    "saturation" to PropertySchema(
-                        type = "integer",
-                        description = "Color saturation from 0 to 254"
-                    ),
-                    "color_temperature" to PropertySchema(
-                        type = "integer",
-                        description = "Color temperature in Mirek (153=cold/6500K to 500=warm/2000K)"
-                    )
-                ),
-                required = listOf("lamp_id")
-            )
-        ),
-        Tool(
-            name = "set_all_lamps",
-            description = "Set the state of all lamps at once. Useful for 'I left home' / 'I am back' scenarios. This creates manual overrides for all lamps.",
-            inputSchema = ToolInputSchema(
-                type = "object",
-                properties = mapOf(
-                    "on" to PropertySchema(
-                        type = "boolean",
-                        description = "Turn all lamps on (true) or off (false)"
-                    ),
-                    "brightness" to PropertySchema(
-                        type = "integer",
-                        description = "Brightness level from 0 to 254"
-                    )
-                ),
-                required = listOf("on")
-            )
-        ),
-        Tool(
-            name = "clear_lamp_override",
-            description = "Clear the manual override for a specific lamp, returning it to automation control.",
-            inputSchema = ToolInputSchema(
-                type = "object",
-                properties = mapOf(
-                    "lamp_id" to PropertySchema(
-                        type = "string",
-                        description = "The ID of the lamp to clear override for"
-                    )
-                ),
-                required = listOf("lamp_id")
-            )
-        ),
-        Tool(
-            name = "get_automation_status",
-            description = "Get the current automation status including user state (awake/asleep), current automation mode, target color, and list of overridden lamps.",
-            inputSchema = ToolInputSchema(
-                type = "object",
-                properties = emptyMap(),
-                required = emptyList()
-            )
-        ),
-        Tool(
-            name = "wake_up",
-            description = "Trigger the 'I woke up!' action. This starts the daylight automation sequence.",
-            inputSchema = ToolInputSchema(
-                type = "object",
-                properties = emptyMap(),
-                required = emptyList()
-            )
-        ),
-        Tool(
-            name = "go_to_sleep",
-            description = "Trigger the 'I'm asleep!' action. This turns off all automated lamps.",
-            inputSchema = ToolInputSchema(
-                type = "object",
-                properties = emptyMap(),
-                required = emptyList()
-            )
-        )
-    )
-
-    /**
-     * Process a JSON-RPC request and return the response
-     */
-    suspend fun handleRequest(requestBody: String, sessionToken: String?): JsonRpcResponse {
-        val request = try {
-            json.decodeFromString<JsonRpcRequest>(requestBody)
-        } catch (e: Exception) {
-            logger.warn("Failed to parse JSON-RPC request: ${e.message}")
-            return JsonRpcResponse(
-                id = JsonNull,
-                error = JsonRpcError(
-                    code = JsonRpcErrorCodes.PARSE_ERROR,
-                    message = "Failed to parse JSON-RPC request: ${e.message}"
-                )
-            )
-        }
-
-        logger.debug("MCP request: method={}, id={}", request.method, request.id)
-
-        return when (request.method) {
-            "initialize" -> handleInitialize(request)
-            "initialized" -> handleInitialized(request, sessionToken)
-            "tools/list" -> handleToolsList(request, sessionToken)
-            "tools/call" -> handleToolCall(request, sessionToken)
-            "ping" -> handlePing(request)
-            else -> {
-                logger.warn("Unknown MCP method: ${request.method}")
-                JsonRpcResponse(
-                    id = request.id,
-                    error = JsonRpcError(
-                        code = JsonRpcErrorCodes.METHOD_NOT_FOUND,
-                        message = "Method not found: ${request.method}"
-                    )
-                )
-            }
-        }
-    }
-
-    private fun handleInitialize(request: JsonRpcRequest): JsonRpcResponse {
-        val result = InitializeResult(
-            protocolVersion = MCP_PROTOCOL_VERSION,
-            capabilities = ServerCapabilities(
-                tools = ToolsCapability(listChanged = false)
-            ),
-            serverInfo = ServerInfo(
+    fun createServer(): Server {
+        val server = Server(
+            Implementation(
                 name = "hue-manager",
                 version = "1.0.0"
+            ),
+            ServerOptions(
+                capabilities = ServerCapabilities(
+                    tools = ServerCapabilities.Tools(listChanged = false)
+                )
             )
         )
 
-        return JsonRpcResponse(
-            id = request.id,
-            result = json.encodeToJsonElement(result)
-        )
+        registerTools(server)
+        return server
     }
 
-    private fun handleInitialized(request: JsonRpcRequest, sessionToken: String?): JsonRpcResponse {
-        // Mark this session as initialized
-        sessionToken?.let { initializedSessions.add(it) }
-        
-        // This is a notification, no response needed but we return empty success
-        return JsonRpcResponse(
-            id = request.id,
-            result = JsonObject(emptyMap())
-        )
-    }
-
-    private fun handlePing(request: JsonRpcRequest): JsonRpcResponse {
-        return JsonRpcResponse(
-            id = request.id,
-            result = JsonObject(emptyMap())
-        )
-    }
-
-    private fun validatePassword(providedPassword: String?): Boolean {
+    /**
+     * Validates the password for authentication.
+     */
+    fun validatePassword(providedPassword: String?): Boolean {
         return providedPassword != null && providedPassword == password
     }
 
-    private fun handleToolsList(request: JsonRpcRequest, providedPassword: String?): JsonRpcResponse {
-        // Check authentication for tool listing
-        if (!validatePassword(providedPassword)) {
-            return JsonRpcResponse(
-                id = request.id,
-                error = JsonRpcError(
-                    code = JsonRpcErrorCodes.INVALID_REQUEST,
-                    message = "Authentication required. Please provide your password in the Authorization header (Bearer <PASSWORD>)."
-                )
-            )
+    private fun registerTools(server: Server) {
+        // list_lamps
+        server.addTool(
+            name = "list_lamps",
+            description = "List all Philips Hue lamps with their current state including name, on/off status, brightness, color, and whether they are under automation, manual override, or Hue Sync control.",
+            inputSchema = ToolSchema()
+        ) { _ ->
+            executeListLamps()
         }
 
-        val result = ToolsListResult(tools = tools)
-        return JsonRpcResponse(
-            id = request.id,
-            result = json.encodeToJsonElement(result)
-        )
+        // get_lamp_state
+        server.addTool(
+            name = "get_lamp_state",
+            description = "Get detailed state of a specific lamp including its automation status, whether it has a manual override, and if it's controlled by Hue Sync entertainment mode.",
+            inputSchema = ToolSchema(
+                properties = buildJsonObject {
+                    putJsonObject("lamp_id") {
+                        put("type", "string")
+                        put("description", "The ID of the lamp to get state for")
+                    }
+                },
+                required = listOf("lamp_id")
+            )
+        ) { request ->
+            executeGetLampState(request.arguments)
+        }
+
+        // set_lamp_state
+        server.addTool(
+            name = "set_lamp_state",
+            description = "Set the state of a specific lamp. This creates a manual override that lasts for 1 hour. You can control on/off, brightness (0-254), and color via hue (0-65535), saturation (0-254), or color temperature in Mirek (153-500).",
+            inputSchema = ToolSchema(
+                properties = buildJsonObject {
+                    putJsonObject("lamp_id") {
+                        put("type", "string")
+                        put("description", "The ID of the lamp to control")
+                    }
+                    putJsonObject("on") {
+                        put("type", "boolean")
+                        put("description", "Turn the lamp on (true) or off (false)")
+                    }
+                    putJsonObject("brightness") {
+                        put("type", "integer")
+                        put("description", "Brightness level from 0 to 254")
+                    }
+                    putJsonObject("hue") {
+                        put("type", "integer")
+                        put("description", "Hue value from 0 to 65535 (red=0, green=25500, blue=46920)")
+                    }
+                    putJsonObject("saturation") {
+                        put("type", "integer")
+                        put("description", "Color saturation from 0 to 254")
+                    }
+                    putJsonObject("color_temperature") {
+                        put("type", "integer")
+                        put("description", "Color temperature in Mirek (153=cold/6500K to 500=warm/2000K)")
+                    }
+                },
+                required = listOf("lamp_id")
+            )
+        ) { request ->
+            executeSetLampState(request.arguments)
+        }
+
+        // set_all_lamps
+        server.addTool(
+            name = "set_all_lamps",
+            description = "Set the state of all lamps at once. Useful for 'I left home' / 'I am back' scenarios. This creates manual overrides for all lamps.",
+            inputSchema = ToolSchema(
+                properties = buildJsonObject {
+                    putJsonObject("on") {
+                        put("type", "boolean")
+                        put("description", "Turn all lamps on (true) or off (false)")
+                    }
+                    putJsonObject("brightness") {
+                        put("type", "integer")
+                        put("description", "Brightness level from 0 to 254")
+                    }
+                },
+                required = listOf("on")
+            )
+        ) { request ->
+            executeSetAllLamps(request.arguments)
+        }
+
+        // clear_lamp_override
+        server.addTool(
+            name = "clear_lamp_override",
+            description = "Clear the manual override for a specific lamp, returning it to automation control.",
+            inputSchema = ToolSchema(
+                properties = buildJsonObject {
+                    putJsonObject("lamp_id") {
+                        put("type", "string")
+                        put("description", "The ID of the lamp to clear override for")
+                    }
+                },
+                required = listOf("lamp_id")
+            )
+        ) { request ->
+            executeClearLampOverride(request.arguments)
+        }
+
+        // get_automation_status
+        server.addTool(
+            name = "get_automation_status",
+            description = "Get the current automation status including user state (awake/asleep), current automation mode, target color, and list of overridden lamps.",
+            inputSchema = ToolSchema()
+        ) { _ ->
+            executeGetAutomationStatus()
+        }
+
+        // wake_up
+        server.addTool(
+            name = "wake_up",
+            description = "Trigger the 'I woke up!' action. This starts the daylight automation sequence.",
+            inputSchema = ToolSchema()
+        ) { _ ->
+            executeWakeUp()
+        }
+
+        // go_to_sleep
+        server.addTool(
+            name = "go_to_sleep",
+            description = "Trigger the 'I'm asleep!' action. This turns off all automated lamps.",
+            inputSchema = ToolSchema()
+        ) { _ ->
+            executeGoToSleep()
+        }
     }
 
-    private suspend fun handleToolCall(request: JsonRpcRequest, providedPassword: String?): JsonRpcResponse {
-        // Check authentication
-        if (!validatePassword(providedPassword)) {
-            return JsonRpcResponse(
-                id = request.id,
-                error = JsonRpcError(
-                    code = JsonRpcErrorCodes.INVALID_REQUEST,
-                    message = "Authentication required. Please provide your password in the Authorization header (Bearer <PASSWORD>)."
-                )
-            )
-        }
-
-        val params = try {
-            request.params?.let { json.decodeFromJsonElement<ToolCallParams>(it) }
-        } catch (e: Exception) {
-            return JsonRpcResponse(
-                id = request.id,
-                error = JsonRpcError(
-                    code = JsonRpcErrorCodes.INVALID_PARAMS,
-                    message = "Invalid tool call params: ${e.message}"
-                )
-            )
-        }
-
-        if (params == null) {
-            return JsonRpcResponse(
-                id = request.id,
-                error = JsonRpcError(
-                    code = JsonRpcErrorCodes.INVALID_PARAMS,
-                    message = "Missing tool call params"
-                )
-            )
-        }
-
-        logger.info("MCP tool call: ${params.name}")
-
-        val result = when (params.name) {
-            "list_lamps" -> executeListLamps()
-            "get_lamp_state" -> executeGetLampState(params.arguments)
-            "set_lamp_state" -> executeSetLampState(params.arguments)
-            "set_all_lamps" -> executeSetAllLamps(params.arguments)
-            "clear_lamp_override" -> executeClearLampOverride(params.arguments)
-            "get_automation_status" -> executeGetAutomationStatus()
-            "wake_up" -> executeWakeUp()
-            "go_to_sleep" -> executeGoToSleep()
-            else -> ToolCallResult(
-                content = listOf(ToolContent.Text(text = "Unknown tool: ${params.name}")),
-                isError = true
-            )
-        }
-
-        return JsonRpcResponse(
-            id = request.id,
-            result = json.encodeToJsonElement(result)
-        )
-    }
-
-    private suspend fun executeListLamps(): ToolCallResult {
+    private suspend fun executeListLamps(): CallToolResult {
         return try {
             val lights = hueService.getLights()
             val entertainmentGroups = hueService.getEntertainmentGroups()
             val entertainmentLamps = mutableSetOf<String>()
-            
+
             for ((_, group) in entertainmentGroups) {
                 if (group.stream?.active == true) {
                     entertainmentLamps.addAll(group.lights)
                 }
             }
-            
+
             val overriddenLamps = automationManager.getOverriddenLampIds()
             val automatedLamps = automationManager.getAutomatedLampIds()
 
@@ -327,7 +201,7 @@ class McpHandler(
                     in automatedLamps -> "automation"
                     else -> "unmanaged"
                 }
-                
+
                 buildString {
                     append("- ${light.name} (ID: $id)\n")
                     append("  Status: $status\n")
@@ -342,30 +216,28 @@ class McpHandler(
             }
 
             val summary = "Found ${lights.size} lamps:\n\n${lampsInfo.joinToString("\n")}"
-            
-            ToolCallResult(
-                content = listOf(ToolContent.Text(text = summary))
-            )
+
+            CallToolResult(content = listOf(TextContent(summary)))
         } catch (e: Exception) {
             logger.error("Failed to list lamps", e)
-            ToolCallResult(
-                content = listOf(ToolContent.Text(text = "Error listing lamps: ${e.message}")),
+            CallToolResult(
+                content = listOf(TextContent("Error listing lamps: ${e.message}")),
                 isError = true
             )
         }
     }
 
-    private suspend fun executeGetLampState(arguments: JsonObject?): ToolCallResult {
+    private suspend fun executeGetLampState(arguments: JsonObject?): CallToolResult {
         val lampId = arguments?.get("lamp_id")?.jsonPrimitive?.contentOrNull
-            ?: return ToolCallResult(
-                content = listOf(ToolContent.Text(text = "Missing required parameter: lamp_id")),
+            ?: return CallToolResult(
+                content = listOf(TextContent("Missing required parameter: lamp_id")),
                 isError = true
             )
 
         return try {
             val light = hueService.getLight(lampId)
-                ?: return ToolCallResult(
-                    content = listOf(ToolContent.Text(text = "Lamp not found: $lampId")),
+                ?: return CallToolResult(
+                    content = listOf(TextContent("Lamp not found: $lampId")),
                     isError = true
                 )
 
@@ -392,34 +264,32 @@ class McpHandler(
                 val brightnessPercent = light.state.bri?.let { it * 100 / 254 } ?: 0
                 append("  Brightness: ${light.state.bri ?: 0}/254 ($brightnessPercent%)\n")
                 append("  Color Mode: ${light.state.colormode ?: "unknown"}\n")
-                light.state.hue?.let { 
-                    append("  Hue: $it (${hueToColorName(it)})\n") 
+                light.state.hue?.let {
+                    append("  Hue: $it (${hueToColorName(it)})\n")
                 }
                 light.state.sat?.let { append("  Saturation: $it/254\n") }
-                light.state.ct?.let { 
+                light.state.ct?.let {
                     val kelvin = 1000000 / it
-                    append("  Color Temperature: $it Mirek (~${kelvin}K)\n") 
+                    append("  Color Temperature: $it Mirek (~${kelvin}K)\n")
                 }
                 append("  Reachable: ${light.state.reachable ?: "unknown"}\n")
                 append("  Type: ${light.type}\n")
             }
 
-            ToolCallResult(
-                content = listOf(ToolContent.Text(text = info))
-            )
+            CallToolResult(content = listOf(TextContent(info)))
         } catch (e: Exception) {
             logger.error("Failed to get lamp state", e)
-            ToolCallResult(
-                content = listOf(ToolContent.Text(text = "Error getting lamp state: ${e.message}")),
+            CallToolResult(
+                content = listOf(TextContent("Error getting lamp state: ${e.message}")),
                 isError = true
             )
         }
     }
 
-    private suspend fun executeSetLampState(arguments: JsonObject?): ToolCallResult {
+    private suspend fun executeSetLampState(arguments: JsonObject?): CallToolResult {
         val lampId = arguments?.get("lamp_id")?.jsonPrimitive?.contentOrNull
-            ?: return ToolCallResult(
-                content = listOf(ToolContent.Text(text = "Missing required parameter: lamp_id")),
+            ?: return CallToolResult(
+                content = listOf(TextContent("Missing required parameter: lamp_id")),
                 isError = true
             )
 
@@ -431,8 +301,8 @@ class McpHandler(
             }
 
             if (isInEntertainment) {
-                return ToolCallResult(
-                    content = listOf(ToolContent.Text(text = "Cannot control lamp '$lampId' - it is currently controlled by Hue Sync entertainment mode.")),
+                return CallToolResult(
+                    content = listOf(TextContent("Cannot control lamp '$lampId' - it is currently controlled by Hue Sync entertainment mode.")),
                     isError = true
                 )
             }
@@ -455,7 +325,7 @@ class McpHandler(
             )
 
             val success = hueService.setLightState(lampId, state)
-            
+
             if (success) {
                 val changes = buildString {
                     append("Lamp '$lampId' updated successfully:\n")
@@ -466,26 +336,26 @@ class McpHandler(
                     colorTemperature?.let { append("  Color Temperature: $it Mirek\n") }
                     append("\nManual override active for ~1 hour.")
                 }
-                ToolCallResult(content = listOf(ToolContent.Text(text = changes)))
+                CallToolResult(content = listOf(TextContent(changes)))
             } else {
-                ToolCallResult(
-                    content = listOf(ToolContent.Text(text = "Failed to update lamp state")),
+                CallToolResult(
+                    content = listOf(TextContent("Failed to update lamp state")),
                     isError = true
                 )
             }
         } catch (e: Exception) {
             logger.error("Failed to set lamp state", e)
-            ToolCallResult(
-                content = listOf(ToolContent.Text(text = "Error setting lamp state: ${e.message}")),
+            CallToolResult(
+                content = listOf(TextContent("Error setting lamp state: ${e.message}")),
                 isError = true
             )
         }
     }
 
-    private suspend fun executeSetAllLamps(arguments: JsonObject?): ToolCallResult {
+    private suspend fun executeSetAllLamps(arguments: JsonObject?): CallToolResult {
         val on = arguments?.get("on")?.jsonPrimitive?.booleanOrNull
-            ?: return ToolCallResult(
-                content = listOf(ToolContent.Text(text = "Missing required parameter: on")),
+            ?: return CallToolResult(
+                content = listOf(TextContent("Missing required parameter: on")),
                 isError = true
             )
 
@@ -502,50 +372,50 @@ class McpHandler(
             )
 
             val success = hueService.setAllLightsState(state)
-            
+
             if (success) {
                 val action = if (on) "turned ON" else "turned OFF"
                 val brightnessInfo = brightness?.let { " at brightness $it/254" } ?: ""
-                ToolCallResult(
-                    content = listOf(ToolContent.Text(text = "All lamps ${action}${brightnessInfo}. Manual override active for ~1 hour."))
+                CallToolResult(
+                    content = listOf(TextContent("All lamps ${action}${brightnessInfo}. Manual override active for ~1 hour."))
                 )
             } else {
-                ToolCallResult(
-                    content = listOf(ToolContent.Text(text = "Failed to update all lamps")),
+                CallToolResult(
+                    content = listOf(TextContent("Failed to update all lamps")),
                     isError = true
                 )
             }
         } catch (e: Exception) {
             logger.error("Failed to set all lamps", e)
-            ToolCallResult(
-                content = listOf(ToolContent.Text(text = "Error setting all lamps: ${e.message}")),
+            CallToolResult(
+                content = listOf(TextContent("Error setting all lamps: ${e.message}")),
                 isError = true
             )
         }
     }
 
-    private suspend fun executeClearLampOverride(arguments: JsonObject?): ToolCallResult {
+    private suspend fun executeClearLampOverride(arguments: JsonObject?): CallToolResult {
         val lampId = arguments?.get("lamp_id")?.jsonPrimitive?.contentOrNull
-            ?: return ToolCallResult(
-                content = listOf(ToolContent.Text(text = "Missing required parameter: lamp_id")),
+            ?: return CallToolResult(
+                content = listOf(TextContent("Missing required parameter: lamp_id")),
                 isError = true
             )
 
         return try {
             automationManager.clearLampOverride(lampId)
-            ToolCallResult(
-                content = listOf(ToolContent.Text(text = "Override cleared for lamp '$lampId'. It is now back under automation control."))
+            CallToolResult(
+                content = listOf(TextContent("Override cleared for lamp '$lampId'. It is now back under automation control."))
             )
         } catch (e: Exception) {
             logger.error("Failed to clear lamp override", e)
-            ToolCallResult(
-                content = listOf(ToolContent.Text(text = "Error clearing override: ${e.message}")),
+            CallToolResult(
+                content = listOf(TextContent("Error clearing override: ${e.message}")),
                 isError = true
             )
         }
     }
 
-    private suspend fun executeGetAutomationStatus(): ToolCallResult = try {
+    private suspend fun executeGetAutomationStatus(): CallToolResult = try {
         val userState = automationManager.getUserState()
         val mode = automationManager.getCurrentAutomationMode()
         val color = automationManager.getAutomationColor()
@@ -579,44 +449,42 @@ class McpHandler(
             append("Pseudo-sunset: ${automationManager.getPseudoSunset()}\n")
         }
 
-        ToolCallResult(
-            content = listOf(ToolContent.Text(text = info))
-        )
+        CallToolResult(content = listOf(TextContent(info)))
     } catch (e: Exception) {
         logger.error("Failed to get automation status", e)
-        ToolCallResult(
-            content = listOf(ToolContent.Text(text = "Error getting automation status: ${e.message}")),
+        CallToolResult(
+            content = listOf(TextContent("Error getting automation status: ${e.message}")),
             isError = true
         )
     }
 
-    private suspend fun executeWakeUp(): ToolCallResult {
+    private suspend fun executeWakeUp(): CallToolResult {
         return try {
             val state = automationManager.wakeUp()
             val stateStr = if (state == UserState.AWAKE) "AWAKE" else "ASLEEP"
-            ToolCallResult(
-                content = listOf(ToolContent.Text(text = "Wake-up triggered! User state is now: $stateStr. Daylight automation sequence started."))
+            CallToolResult(
+                content = listOf(TextContent("Wake-up triggered! User state is now: $stateStr. Daylight automation sequence started."))
             )
         } catch (e: Exception) {
             logger.error("Failed to trigger wake-up", e)
-            ToolCallResult(
-                content = listOf(ToolContent.Text(text = "Error triggering wake-up: ${e.message}")),
+            CallToolResult(
+                content = listOf(TextContent("Error triggering wake-up: ${e.message}")),
                 isError = true
             )
         }
     }
 
-    private suspend fun executeGoToSleep(): ToolCallResult {
+    private suspend fun executeGoToSleep(): CallToolResult {
         return try {
             val state = automationManager.goToSleep()
             val stateStr = if (state == UserState.AWAKE) "AWAKE" else "ASLEEP"
-            ToolCallResult(
-                content = listOf(ToolContent.Text(text = "Sleep triggered! User state is now: $stateStr. All automated lamps are turning off."))
+            CallToolResult(
+                content = listOf(TextContent("Sleep triggered! User state is now: $stateStr. All automated lamps are turning off."))
             )
         } catch (e: Exception) {
             logger.error("Failed to trigger sleep", e)
-            ToolCallResult(
-                content = listOf(ToolContent.Text(text = "Error triggering sleep: ${e.message}")),
+            CallToolResult(
+                content = listOf(TextContent("Error triggering sleep: ${e.message}")),
                 isError = true
             )
         }
@@ -634,24 +502,4 @@ class McpHandler(
             else -> "magenta/pink"
         }
     }
-
-    /**
-     * Serialize response to JSON string.
-     * Manually constructs JSON to ensure proper JSON-RPC 2.0 compliance:
-     * - Success responses have "result" but NOT "error"
-     * - Error responses have "error" but NOT "result"
-     * - The "id" field MUST always be present (required by MCP SDK)
-     */
-    fun serializeResponse(response: JsonRpcResponse): String = buildJsonObject {
-        put("jsonrpc", response.jsonrpc)
-        // Always include id field - MCP SDK requires it to be present (not just non-null)
-        put("id", response.id ?: JsonNull)
-        // Only include result OR error, never both
-        if (response.error != null) {
-            put("error", json.encodeToJsonElement(response.error))
-        } else {
-            // For successful responses, always include result (even if empty)
-            put("result", response.result ?: JsonObject(emptyMap()))
-        }
-    }.toString()
 }

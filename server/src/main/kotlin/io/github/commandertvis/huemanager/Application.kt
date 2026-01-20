@@ -22,6 +22,8 @@ import io.ktor.server.plugins.cors.routing.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.ktor.server.sse.*
+import io.modelcontextprotocol.kotlin.sdk.server.mcp
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
@@ -86,6 +88,8 @@ fun Application.module(
         allowHeader(HttpHeaders.ContentType)
         anyHost()
     }
+
+    install(SSE)
 
     routing {
         // --- Static Web UI ---
@@ -725,39 +729,13 @@ fun Application.module(
             """.trimIndent(), ContentType.Text.Html)
         }
 
-        get("/api/mcp") {
-            val token = call.request.header("Authorization")?.removePrefix("Bearer ")
-
-            logger.debug("MCP SSE stream requested")
-
-            call.response.header("Cache-Control", "no-cache")
-            call.response.header("Connection", "keep-alive")
-            call.respondTextWriter(ContentType.Text.EventStream) {
-                // Keep the connection open for SSE
-                // Send periodic ping events to keep connection alive
-                try {
-                    while (true) {
-                        write("event: ping\n")
-                        write("data: {}\n\n")
-                        flush()
-                        kotlinx.coroutines.delay(30000) // Ping every 30 seconds
-                    }
-                } catch (e: Exception) {
-                    logger.debug("SSE connection closed: ${e.message}")
-                }
+        // MCP endpoint using official SDK
+        // Note: Authentication is handled via Bearer token in Authorization header
+        // The SDK handles the SSE transport and JSON-RPC protocol
+        route("/api/mcp") {
+            mcp {
+                mcpHandler.createServer()
             }
-        }
-
-        post("/api/mcp") {
-            val token = call.request.header("Authorization")?.removePrefix("Bearer ")
-            val requestBody = call.receiveText()
-
-            logger.debug("MCP request received")
-
-            val response = mcpHandler.handleRequest(requestBody, token)
-            val responseJson = mcpHandler.serializeResponse(response)
-
-            call.respondText(responseJson, ContentType.Application.Json)
         }
     }
 }

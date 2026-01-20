@@ -206,8 +206,7 @@ The server exposes an MCP endpoint for integration with Claude and other MCP-com
 | `go_to_sleep` | Trigger "I'm asleep!" action - turns off all automated lamps |
 
 **MCP Server Files:**
-- `server/.../mcp/McpModels.kt` - JSON-RPC 2.0 and MCP protocol data models
-- `server/.../mcp/McpHandler.kt` - Request handler with tool implementations
+- `server/.../mcp/McpHandler.kt` - MCP server configuration and tool implementations (uses official MCP Kotlin SDK)
 
 **UI Integration:**
 - Main screen includes "MCP" button that opens a dialog with pre-configured MCP JSON
@@ -389,8 +388,10 @@ hue-manager/
   - **Optimized GitHub Actions CI**: Added dependency pre-download, parallel builds, and build cache to speed up CI builds
 
 - **MCP (Model Context Protocol) Integration:**
-  - Implemented HTTP MCP server at `/api/mcp` for Claude integration
-  - Uses JSON-RPC 2.0 protocol over HTTP POST
+  - Migrated to official MCP Kotlin SDK (`io.modelcontextprotocol:kotlin-sdk:0.8.1`)
+  - Uses SDK's built-in SSE transport via Ktor `mcp {}` extension
+  - Removed self-written `McpModels.kt` (replaced by SDK types)
+  - Simplified `McpHandler.kt` to use SDK's `Server` class and `addTool()` API
   - Authentication via Bearer token (same as regular API)
   - Available tools:
     - `list_lamps` - List all lamps with state and automation status
@@ -400,7 +401,7 @@ hue-manager/
     - `clear_lamp_override` - Return lamp to automation control
     - `get_automation_status` - Current mode, target color, overridden lamps
     - `wake_up` / `go_to_sleep` - Trigger automation state changes
-  - Server files: `mcp/McpModels.kt` (protocol types), `mcp/McpHandler.kt` (tool implementations)
+  - Server file: `mcp/McpHandler.kt` (tool implementations using SDK)
   - UI integration: "MCP" button on main screen opens dialog with pre-configured MCP JSON
   - One-click copy to clipboard functionality for easy MCP client setup
   - Platform-specific clipboard support (JVM, WasmJS, Android)
