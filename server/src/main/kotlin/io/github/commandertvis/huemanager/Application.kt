@@ -9,6 +9,7 @@ import io.github.commandertvis.huemanager.config.ConfigLoader
 import io.github.commandertvis.huemanager.hue.HueLightStateUpdate
 import io.github.commandertvis.huemanager.hue.HueService
 import io.github.commandertvis.huemanager.hue.LinkResult
+import io.github.commandertvis.huemanager.mcp.McpHandler
 import io.github.commandertvis.huemanager.models.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
@@ -508,6 +509,21 @@ fun Application.module(
             val id = call.parameters["id"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
             automationManager.clearLampOverride(id)
             call.respond(ApiSuccess("Override cleared"))
+        }
+
+        // --- MCP (Model Context Protocol) ---
+        val mcpHandler = McpHandler(hueService, automationManager, sessionManager)
+
+        post("/api/mcp") {
+            val token = call.request.header("Authorization")?.removePrefix("Bearer ")
+            val requestBody = call.receiveText()
+            
+            logger.debug("MCP request received")
+            
+            val response = mcpHandler.handleRequest(requestBody, token)
+            val responseJson = mcpHandler.serializeResponse(response)
+            
+            call.respondText(responseJson, ContentType.Application.Json)
         }
     }
 }

@@ -104,7 +104,19 @@ Also, I want to keep using the official Hue Sync application. When entertainment
 
 # HTTP MCP server
 
-TODO, forget about it for now.
+Potential things to do, use case.
+
+In my chats with Claude, I want to do basically anything I can do with the app in reasonable boundaries.
+
+Type of MCP has to be HTTP to be connected like {"url":"<domain>/api/mcp"}. So should be served by server/.
+
+After MCP is connected, we need to go to a simple auth page with password prompt without which MCP will fail.
+
+Potential MCP methods surface:
+- list lamps
+- see lamp state (in automation? in Hue Sync? in manual override?)
+- write lamp state (as manual override)
+- write state to all lamps
 
 # DevOps and security
 

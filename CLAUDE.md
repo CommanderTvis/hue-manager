@@ -170,6 +170,33 @@ KEYSTORE_PASSWORD=<for HTTPS>
 - `GET /api/settings` - Get current settings
 - `PUT /api/settings` - Update settings
 
+### MCP (Model Context Protocol)
+- `POST /api/mcp` - MCP JSON-RPC endpoint (auth required for tools)
+
+## MCP (Model Context Protocol)
+
+The server exposes an MCP endpoint for integration with Claude and other MCP-compatible clients.
+
+**Connection:** Configure as `{"url":"<domain>/api/mcp"}` in your MCP client.
+
+**Authentication:** Requires a valid session token in the `Authorization: Bearer <token>` header. Obtain a token via `POST /api/session`.
+
+**Available Tools:**
+| Tool | Description |
+|------|-------------|
+| `list_lamps` | List all lamps with current state (on/off, brightness, color, automation status) |
+| `get_lamp_state` | Get detailed state of a specific lamp including automation/override/Hue Sync status |
+| `set_lamp_state` | Control a lamp (on/off, brightness, hue, saturation, color temperature). Creates 1-hour override. |
+| `set_all_lamps` | Control all lamps at once (on/off, brightness). Creates overrides for all lamps. |
+| `clear_lamp_override` | Clear manual override for a lamp, returning it to automation control |
+| `get_automation_status` | Get current automation mode, user state, target color, and overridden lamps |
+| `wake_up` | Trigger "I woke up!" action - starts daylight automation sequence |
+| `go_to_sleep` | Trigger "I'm asleep!" action - turns off all automated lamps |
+
+**MCP Server Files:**
+- `server/.../mcp/McpModels.kt` - JSON-RPC 2.0 and MCP protocol data models
+- `server/.../mcp/McpHandler.kt` - Request handler with tool implementations
+
 ## Rate Limiting
 
 Philips Hue Remote API has rate limits:
@@ -196,7 +223,8 @@ hue-manager/
 │   ├── auth/                # Session management
 │   ├── automation/          # Daylight automation
 │   ├── config/              # Environment configuration
-│   └── hue/                 # Hue API clients (Remote + Local)
+│   ├── hue/                 # Hue API clients (Remote + Local)
+│   └── mcp/                 # MCP (Model Context Protocol) server
 ├── shared/src/commonMain/kotlin/io/github/commandertvis/huemanager/
 │   ├── models/              # Data models
 │   ├── api/                 # API DTOs
@@ -340,3 +368,18 @@ hue-manager/
   - Centralized Android context management in shared module via `AndroidContext.kt` singleton
   - Confirmed `colorpicker-compose` library is available on Maven Central (no JitPack needed)
   - **Optimized GitHub Actions CI**: Added dependency pre-download, parallel builds, and build cache to speed up CI builds
+
+- **MCP (Model Context Protocol) Integration:**
+  - Implemented HTTP MCP server at `/api/mcp` for Claude integration
+  - Uses JSON-RPC 2.0 protocol over HTTP POST
+  - Authentication via Bearer token (same as regular API)
+  - Available tools:
+    - `list_lamps` - List all lamps with state and automation status
+    - `get_lamp_state` - Detailed lamp state with automation/override/Hue Sync info
+    - `set_lamp_state` - Control individual lamp (creates 1-hour override)
+    - `set_all_lamps` - Control all lamps at once
+    - `clear_lamp_override` - Return lamp to automation control
+    - `get_automation_status` - Current mode, target color, overridden lamps
+    - `wake_up` / `go_to_sleep` - Trigger automation state changes
+  - Server files: `mcp/McpModels.kt` (protocol types), `mcp/McpHandler.kt` (tool implementations)
+  - Connect via `{"url":"<domain>/api/mcp"}` in MCP client configuration
