@@ -10,7 +10,7 @@ import kotlinx.serialization.json.JsonObject
 /**
  * MCP Protocol version
  */
-const val MCP_PROTOCOL_VERSION = "2024-11-05"
+const val MCP_PROTOCOL_VERSION = "2025-11-25"
 
 /**
  * JSON-RPC 2.0 Request

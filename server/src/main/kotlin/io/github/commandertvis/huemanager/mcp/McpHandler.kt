@@ -321,10 +321,10 @@ class McpHandler(
             val automatedLamps = automationManager.getAutomatedLampIds()
 
             val lampsInfo = lights.map { (id, light) ->
-                val status = when {
-                    id in entertainmentLamps -> "hue_sync"
-                    id in overriddenLamps -> "manual_override"
-                    id in automatedLamps -> "automation"
+                val status = when (id) {
+                    in entertainmentLamps -> "hue_sync"
+                    in overriddenLamps -> "manual_override"
+                    in automatedLamps -> "automation"
                     else -> "unmanaged"
                 }
                 
@@ -545,51 +545,49 @@ class McpHandler(
         }
     }
 
-    private suspend fun executeGetAutomationStatus(): ToolCallResult {
-        return try {
-            val userState = automationManager.getUserState()
-            val mode = automationManager.getCurrentAutomationMode()
-            val color = automationManager.getAutomationColor()
-            val overriddenLamps = automationManager.getOverriddenLampIds()
-            val entertainmentActive = automationManager.isEntertainmentActive()
+    private suspend fun executeGetAutomationStatus(): ToolCallResult = try {
+        val userState = automationManager.getUserState()
+        val mode = automationManager.getCurrentAutomationMode()
+        val color = automationManager.getAutomationColor()
+        val overriddenLamps = automationManager.getOverriddenLampIds()
+        val entertainmentActive = automationManager.isEntertainmentActive()
 
-            val info = buildString {
-                append("Automation Status\n")
-                append("=================\n\n")
-                append("User State: ${if (userState == UserState.AWAKE) "AWAKE" else "ASLEEP"}\n")
-                append("Automation Mode: ${mode.name}\n")
-                append("Entertainment (Hue Sync) Active: $entertainmentActive\n\n")
-                
-                append("Target Color:\n")
-                append("  ${color.description}\n")
-                append("  Brightness: ${color.brightness}/254\n")
-                color.hue?.let { append("  Hue: $it\n") }
-                color.saturation?.let { append("  Saturation: $it\n") }
-                color.colorTemperature?.let { append("  Color Temperature: $it Mirek\n") }
-                
-                append("\nOverridden Lamps: ")
-                if (overriddenLamps.isEmpty()) {
-                    append("None\n")
-                } else {
-                    append("${overriddenLamps.joinToString(", ")}\n")
-                }
+        val info = buildString {
+            append("Automation Status\n")
+            append("=================\n\n")
+            append("User State: ${if (userState == UserState.AWAKE) "AWAKE" else "ASLEEP"}\n")
+            append("Automation Mode: ${mode.name}\n")
+            append("Entertainment (Hue Sync) Active: $entertainmentActive\n\n")
 
-                automationManager.getWakeUpTime()?.let {
-                    append("\nWake-up Time: $it\n")
-                }
-                append("Pseudo-sunset: ${automationManager.getPseudoSunset()}\n")
+            append("Target Color:\n")
+            append("  ${color.description}\n")
+            append("  Brightness: ${color.brightness}/254\n")
+            color.hue?.let { append("  Hue: $it\n") }
+            color.saturation?.let { append("  Saturation: $it\n") }
+            color.colorTemperature?.let { append("  Color Temperature: $it Mirek\n") }
+
+            append("\nOverridden Lamps: ")
+            if (overriddenLamps.isEmpty()) {
+                append("None\n")
+            } else {
+                append("${overriddenLamps.joinToString(", ")}\n")
             }
 
-            ToolCallResult(
-                content = listOf(ToolContent.Text(text = info))
-            )
-        } catch (e: Exception) {
-            logger.error("Failed to get automation status", e)
-            ToolCallResult(
-                content = listOf(ToolContent.Text(text = "Error getting automation status: ${e.message}")),
-                isError = true
-            )
+            automationManager.getWakeUpTime()?.let {
+                append("\nWake-up Time: $it\n")
+            }
+            append("Pseudo-sunset: ${automationManager.getPseudoSunset()}\n")
         }
+
+        ToolCallResult(
+            content = listOf(ToolContent.Text(text = info))
+        )
+    } catch (e: Exception) {
+        logger.error("Failed to get automation status", e)
+        ToolCallResult(
+            content = listOf(ToolContent.Text(text = "Error getting automation status: ${e.message}")),
+            isError = true
+        )
     }
 
     private suspend fun executeWakeUp(): ToolCallResult {
