@@ -18,19 +18,18 @@ import org.slf4j.LoggerFactory
 /**
  * Client for Philips Hue Remote API (cloud-based control).
  */
-class HueRemoteClient(
+class HueRemoteClient private constructor(
     private val clientId: String,
     private val clientSecret: String,
     private val appId: String,
     private var accessToken: String?,
     private var refreshToken: String?,
-    private var username: String?
-) : AutoCloseable {
-    private val logger = LoggerFactory.getLogger(HueRemoteClient::class.java)
-
-    private val client = HttpClient(CIO) {
+    private var username: String?,
+    private val client: HttpClient = HttpClient(CIO) {
         configureJson()
-    }
+    },
+) : AutoCloseable by client {
+    private val logger = LoggerFactory.getLogger(HueRemoteClient::class.java)
 
     private val lightRateLimiter = RateLimiter(maxTokens = 10)
     private val groupRateLimiter = RateLimiter(maxTokens = 1)
@@ -374,8 +373,6 @@ class HueRemoteClient(
             }
         }
     }
-
-    override fun close() = client.close()
 
     companion object {
         fun fromConfig(config: Config): HueRemoteClient {

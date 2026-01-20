@@ -466,7 +466,5 @@ class AutomationManager(
         }
     }
 
-    override fun close() {
-        scope.cancel()
-    }
+    override fun close() = scope.cancel()
 }

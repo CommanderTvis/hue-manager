@@ -14,9 +14,13 @@ import javax.net.ssl.X509TrustManager
 import kotlin.time.Duration.Companion.seconds
 
 class HueClient(
-    private val bridgeIp: String,
-    private val username: String
-) : AutoCloseable {
+    bridgeIp: String,
+    username: String,
+    private val client: HttpClient = HttpClient(CIO) {
+        configureJson()
+        configureTrustManager()
+    }
+) : AutoCloseable by client {
     private val baseUrl = "https://$bridgeIp/api/$username"
 
     // Hue bridge rate limits (shared across all connected apps):
@@ -24,19 +28,6 @@ class HueClient(
     // - Groups: 1 command per second
     private val lightRateLimiter = RateLimiter(maxTokens = 10, refillRate = 1.seconds)
     private val groupRateLimiter = RateLimiter(maxTokens = 1, refillRate = 1.seconds)
-
-    private val client = HttpClient(CIO) {
-        configureJson()
-        engine {
-            https {
-                trustManager = object : X509TrustManager {
-                    override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
-                    override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
-                    override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
-                }
-            }
-        }
-    }
 
     suspend fun getLights(): Map<String, HueLight> = lightRateLimiter.execute {
         val response: HttpResponse = client.get("$baseUrl/lights")
@@ -95,8 +86,21 @@ class HueClient(
             false
         }
     }
+}
 
-    override fun close() = client.close()
+private fun HttpClientConfig<CIOEngineConfig>.configureTrustManager() {
+    engine {
+        https {
+            trustManager = @Suppress("CustomX509TrustManager")
+            object : X509TrustManager {
+                @Suppress("TrustAllX509TrustManager")
+                override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+                @Suppress("TrustAllX509TrustManager")
+                override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+                override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+            }
+        }
+    }
 }
 
 @Serializable
