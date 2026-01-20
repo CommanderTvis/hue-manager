@@ -120,10 +120,12 @@ fun Application.module(
             val authUrl = hueService.getAuthorizationUrl(redirectUri, state)
             if (authUrl != null) {
                 logger.info("Generated URL: $authUrl")
-                call.respond(mapOf(
-                    "authorizationUrl" to authUrl,
-                    "state" to state
-                ))
+                call.respond(
+                    mapOf(
+                        "authorizationUrl" to authUrl,
+                        "state" to state
+                    )
+                )
             } else {
                 logger.warn("Failed to generate authorization URL - HueService returned null")
                 call.respond(
@@ -252,7 +254,12 @@ fun Application.module(
                 }
 
                 LinkResult.LinkButtonNotPressed -> {
-                    call.respond(GenericResponse(success = false, message = "Press the link button on your Hue Bridge first"))
+                    call.respond(
+                        GenericResponse(
+                            success = false,
+                            message = "Press the link button on your Hue Bridge first"
+                        )
+                    )
                 }
             }
         }
@@ -282,13 +289,13 @@ fun Application.module(
             val lights = hueService.getLights()
             val entertainmentGroups = hueService.getEntertainmentGroups()
             val entertainmentLamps = mutableSetOf<String>()
-            
+
             for ((_, group) in entertainmentGroups) {
                 if (group.stream?.active == true) {
                     entertainmentLamps.addAll(group.lights)
                 }
             }
-            
+
             val lamps = lights.map { (id, light) ->
                 Lamp(
                     id = id,
@@ -315,13 +322,13 @@ fun Application.module(
             } else {
                 val entertainmentGroups = hueService.getEntertainmentGroups()
                 val entertainmentLamps = mutableSetOf<String>()
-                
+
                 for ((_, group) in entertainmentGroups) {
                     if (group.stream?.active == true) {
                         entertainmentLamps.addAll(group.lights)
                     }
                 }
-                
+
                 call.respond(
                     Lamp(
                         id = id,
@@ -517,13 +524,14 @@ fun Application.module(
         post("/api/mcp") {
             val token = call.request.header("Authorization")?.removePrefix("Bearer ")
             val requestBody = call.receiveText()
-            
+
             logger.debug("MCP request received")
-            
+
             val response = mcpHandler.handleRequest(requestBody, token)
             val responseJson = mcpHandler.serializeResponse(response)
-            
-            call.respondText(responseJson, ContentType.Application.Json)
+
+            val sseResponse = "event: message\ndata: $responseJson\n\n"
+            call.respondText(sseResponse, ContentType.Text.EventStream)
         }
     }
 }
