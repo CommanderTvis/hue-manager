@@ -220,18 +220,23 @@ The server exposes an MCP endpoint for integration with Claude and other MCP-com
 
 Replace `yourdomain.com` with your server domain and `YOUR_PASSWORD_HERE` with the same `PASSWORD` from your `.env` file.
 
+### Available MCP Resources
+
+| Resource URI   | Description                                                        |
+|----------------|--------------------------------------------------------------------|
+| `hue://lamps`  | List all lamps with current state (on/off, brightness, color, automation status) |
+
 ### Available MCP Tools
 
 | Tool                   | Description                                                    |
 |------------------------|----------------------------------------------------------------|
-| `list_lamps`           | List all lamps with current state and automation status        |
-| `get_lamp_state`       | Get detailed state of a specific lamp                          |
-| `set_lamp_state`       | Control a lamp (on/off, brightness, color). Creates 1h override |
-| `set_all_lamps`        | Control all lamps at once                                      |
-| `clear_lamp_override`  | Return a lamp to automation control                            |
-| `get_automation_status`| Get current automation mode, target color, overridden lamps    |
-| `wake_up`              | Trigger "I woke up!" action                                    |
-| `go_to_sleep`          | Trigger "I'm asleep!" action                                   |
+| `get_lamp_state`       | Get detailed state of a specific lamp including automation/override/Hue Sync status |
+| `set_lamp_state`       | Control a lamp (on/off, brightness, hue, saturation, color temperature). Creates 1-hour override |
+| `set_all_lamps`        | Control all lamps at once (on/off, brightness). Creates overrides for all lamps |
+| `clear_lamp_override`  | Clear manual override for a lamp, returning it to automation control |
+| `get_automation_status`| Get current automation mode, user state, target color, and overridden lamps |
+| `wake_up`              | Trigger "I woke up!" action - starts daylight automation sequence |
+| `go_to_sleep`          | Trigger "I'm asleep!" action - turns off all automated lamps   |
 
 ## Daylight Automation
 
