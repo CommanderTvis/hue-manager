@@ -30,6 +30,7 @@ dependencies {
     implementation(libs.ktor.serializationJson)
 
     implementation(libs.mcp.sdk)
+    implementation(libs.mcp.sdk.server)
 
     implementation(libs.ktor.clientCore)
     implementation(libs.ktor.clientCio)

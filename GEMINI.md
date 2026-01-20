@@ -211,6 +211,7 @@ The server exposes an MCP endpoint for integration with Claude and other MCP-com
 
 **MCP Server Files:**
 - `server/.../mcp/McpHandler.kt` - MCP server configuration and tool implementations (uses official MCP Kotlin SDK)
+- `server/.../mcp/StreamableHttpTransport.kt` - Custom Streamable HTTP transport for Claude Desktop compatibility
 
 **UI Integration:**
 - Main screen includes "MCP" button that opens a dialog with pre-configured MCP JSON
@@ -392,11 +393,11 @@ hue-manager/
     - **Optimized GitHub Actions CI**: Added dependency pre-download, parallel builds, and build cache to speed up CI builds
 
 - **MCP (Model Context Protocol) Integration:**
-    - Migrated to official MCP Kotlin SDK (`io.modelcontextprotocol:kotlin-sdk:0.8.1`)
-    - Uses SDK's built-in SSE transport via Ktor `mcp {}` extension
-    - Removed self-written `McpModels.kt` (replaced by SDK types)
-    - Simplified `McpHandler.kt` to use SDK's `Server` class and `addTool()`/`addResource()` APIs
-    - Authentication via Bearer token (same as regular API)
+  - Migrated to official MCP Kotlin SDK (`io.modelcontextprotocol:kotlin-sdk:0.8.1`)
+  - Uses custom Streamable HTTP transport (`StreamableHttpTransport.kt`) for compatibility with Claude Desktop
+  - Removed self-written `McpModels.kt` (replaced by SDK types)
+  - Simplified `McpHandler.kt` to use SDK's `Server` class and `addTool()`/`addResource()` APIs
+  - Authentication via Bearer token (same as regular API)
     - Available resources:
         - `hue://lamps` - List all lamps with state and automation status (read-only)
     - Available tools:

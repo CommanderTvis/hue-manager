@@ -22,8 +22,10 @@ import io.ktor.server.plugins.cors.routing.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import io.ktor.server.sse.*
-import io.modelcontextprotocol.kotlin.sdk.server.mcp
+import io.github.commandertvis.huemanager.mcp.StreamableHttpTransport
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
@@ -88,8 +90,6 @@ fun Application.module(
         allowHeader(HttpHeaders.ContentType)
         anyHost()
     }
-
-    install(SSE)
 
     routing {
         // --- Static Web UI ---
@@ -729,13 +729,18 @@ fun Application.module(
             """.trimIndent(), ContentType.Text.Html)
         }
 
-        // MCP endpoint using official SDK
+        // MCP endpoint using official SDK with Streamable HTTP transport
         // Note: Authentication is handled via Bearer token in Authorization header
-        // The SDK handles the SSE transport and JSON-RPC protocol
-        route("/api/mcp") {
-            mcp {
-                mcpHandler.createServer()
-            }
+        val mcpTransport = StreamableHttpTransport()
+        val mcpServer = mcpHandler.createServer()
+        
+        // Connect server to transport in background
+        CoroutineScope(Dispatchers.Default).launch {
+            mcpServer.createSession(mcpTransport)
+        }
+        
+        post("/api/mcp") {
+            mcpTransport.handlePostRequest(call)
         }
     }
 }
