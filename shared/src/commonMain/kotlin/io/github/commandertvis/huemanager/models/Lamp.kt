@@ -13,7 +13,8 @@ data class Lamp(
     val colorTemperature: Int?,
     val colorMode: ColorMode?,
     val reachable: Boolean,
-    val type: LampType = LampType.UNKNOWN
+    val type: LampType = LampType.UNKNOWN,
+    val inEntertainment: Boolean = false
 )
 
 @Serializable

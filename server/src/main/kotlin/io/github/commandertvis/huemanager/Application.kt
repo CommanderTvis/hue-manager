@@ -279,6 +279,15 @@ fun Application.module(
         // --- Lamps ---
         get("/api/lamps") {
             val lights = hueService.getLights()
+            val entertainmentGroups = hueService.getEntertainmentGroups()
+            val entertainmentLamps = mutableSetOf<String>()
+            
+            for ((_, group) in entertainmentGroups) {
+                if (group.stream?.active == true) {
+                    entertainmentLamps.addAll(group.lights)
+                }
+            }
+            
             val lamps = lights.map { (id, light) ->
                 Lamp(
                     id = id,
@@ -290,7 +299,8 @@ fun Application.module(
                     colorTemperature = light.state.ct,
                     colorMode = ColorMode.fromString(light.state.colormode),
                     reachable = light.state.reachable ?: false,
-                    type = LampType.fromHueType(light.type)
+                    type = LampType.fromHueType(light.type),
+                    inEntertainment = id in entertainmentLamps
                 )
             }
             call.respond(LampsResponse(lamps))
@@ -302,6 +312,15 @@ fun Application.module(
             if (light == null) {
                 call.respond(HttpStatusCode.NotFound, ApiError("Lamp not found", 404))
             } else {
+                val entertainmentGroups = hueService.getEntertainmentGroups()
+                val entertainmentLamps = mutableSetOf<String>()
+                
+                for ((_, group) in entertainmentGroups) {
+                    if (group.stream?.active == true) {
+                        entertainmentLamps.addAll(group.lights)
+                    }
+                }
+                
                 call.respond(
                     Lamp(
                         id = id,
@@ -313,7 +332,8 @@ fun Application.module(
                         colorTemperature = light.state.ct,
                         colorMode = ColorMode.fromString(light.state.colormode),
                         reachable = light.state.reachable ?: false,
-                        type = LampType.fromHueType(light.type)
+                        type = LampType.fromHueType(light.type),
+                        inEntertainment = id in entertainmentLamps
                     )
                 )
             }

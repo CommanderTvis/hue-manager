@@ -100,7 +100,7 @@ I guess that we need some kind of 10 min heartbeat coroutine here.
 
 This is the key feature: when lamp is turned off and then turned on again, server has to notice it's on and restore the automation.
 
-Also, I want to keep using the official Hue Sync application. When entertainment area of light Sync is used, automation should forget about the lamps. When Hue Sync is stopped, automation should wake up for those lamps.
+Also, I want to keep using the official Hue Sync application. When entertainment area of light Sync is used, automation should forget about the lamps. When Hue Sync is stopped, automation should wake up for those lamps. The UI of the main screen has to show for each lamp that it's being taken over by Hue Sync in real time and gray out the manual controls of it. Probably completely hide the color and brightness views of the lamp.
 
 # HTTP MCP server
 

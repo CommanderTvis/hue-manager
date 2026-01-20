@@ -92,18 +92,19 @@ fun LampCard(
                         )
                         Text(
                             text = when {
+                                lamp.inEntertainment -> "Controlled by Hue Sync"
                                 !lamp.reachable -> "Unreachable"
                                 lamp.on -> "On (${((lamp.brightness ?: 254) * 100 / 254)}%)"
                                 else -> "Off"
                             },
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (lamp.inEntertainment) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (lamp.on && lamp.reachable && onColorChange != null) {
+                    if (lamp.on && lamp.reachable && onColorChange != null && !lamp.inEntertainment) {
                         IconButton(
                             onClick = { isColorPickerExpanded = !isColorPickerExpanded },
                             enabled = !isLoading
@@ -119,13 +120,13 @@ fun LampCard(
                     Switch(
                         checked = lamp.on,
                         onCheckedChange = { onToggle() },
-                        enabled = lamp.reachable && !isLoading
+                        enabled = lamp.reachable && !isLoading && !lamp.inEntertainment
                     )
                 }
             }
 
-            // Brightness slider (only show when lamp is on and reachable)
-            if (lamp.on && lamp.reachable && lamp.brightness != null) {
+            // Brightness slider (only show when lamp is on and reachable and not in entertainment mode)
+            if (lamp.on && lamp.reachable && lamp.brightness != null && !lamp.inEntertainment) {
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Row(
@@ -158,8 +159,8 @@ fun LampCard(
                 }
             }
             
-            // Color Picker
-            if (isColorPickerExpanded && onColorChange != null && lamp.on && lamp.reachable) {
+            // Color Picker (hide when in entertainment mode)
+            if (isColorPickerExpanded && onColorChange != null && lamp.on && lamp.reachable && !lamp.inEntertainment) {
                 Spacer(modifier = Modifier.height(16.dp))
                 HorizontalDivider()
                 Spacer(modifier = Modifier.height(16.dp))
@@ -247,7 +248,7 @@ fun LampCard(
                             isColorPickerExpanded = false
                         },
                         contentPadding = PaddingValues(horizontal = 8.dp),
-                        enabled = !isLoading
+                        enabled = !isLoading && !lamp.inEntertainment
                     ) {
                         Text("Clear", style = MaterialTheme.typography.bodySmall)
                     }

@@ -280,10 +280,17 @@ hue-manager/
     - Loading state tracked individually for each lamp via `loadingLampIds` set in `LampsUiState`
     - Controls re-enable automatically when server confirms the change
   - Added automation state display in MainScreen showing current mode ("Auto-compensating", "Evening light")
-  - Display automation target color and description in MainScreen status bar
+  - Display automation target color and description in MainScreen status bar (with small colored circle)
   - Changed "Pseudo-sunset" label to "Evening light" for better user understanding
   - Fixed login error messages: 401 errors now show "Incorrect password" instead of "Login failed: 401"
   - Cleaned up unused code from in-house color picker implementation (removed unused extension functions)
+  - **Hue Sync Entertainment Mode Support:**
+    - Added `inEntertainment` field to Lamp model to track per-lamp entertainment status
+    - Server detects active entertainment groups and marks lamps accordingly
+    - UI shows "Controlled by Hue Sync" status for entertainment-active lamps
+    - Manual controls (switch, brightness, color picker, override clear) are disabled for entertainment lamps
+    - Brightness slider and color picker are completely hidden when lamp is in entertainment mode
+    - Allows seamless use of Hue Sync app alongside automation without conflicts
 
 - **Automation Improvements:**
   - Added `AutomationMode` enum with modes: WAKE_UP_COMPENSATION, DAYLIGHT, EVENING_TRANSITION, NIGHT_MODE, USER_ASLEEP
