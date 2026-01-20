@@ -30,8 +30,25 @@ class StreamableHttpTransport : AbstractTransport() {
     private val pendingResponses = mutableMapOf<String, CompletableDeferred<JSONRPCMessage>>()
     private var currentRequestId: String? = null
     
+    // Readiness signaling - completes when start() is called (session is connected)
+    private val readyDeferred = CompletableDeferred<Unit>()
+    
+    /**
+     * Returns true when the transport is ready to handle requests.
+     */
+    val isReady: Boolean
+        get() = readyDeferred.isCompleted
+    
+    /**
+     * Suspends until the transport is ready to handle requests.
+     */
+    suspend fun awaitReady() {
+        readyDeferred.await()
+    }
+    
     override suspend fun start() {
-        logger.debug("StreamableHttpTransport started")
+        logger.info("StreamableHttpTransport started and ready")
+        readyDeferred.complete(Unit)
     }
     
     override suspend fun send(message: JSONRPCMessage, options: TransportSendOptions?) {
@@ -55,6 +72,18 @@ class StreamableHttpTransport : AbstractTransport() {
      * @return true if the request was handled successfully
      */
     suspend fun handlePostRequest(call: ApplicationCall): Boolean {
+        // Wait for transport to be ready (session connected) with timeout
+        val ready = withTimeoutOrNull(5_000) {
+            awaitReady()
+            true
+        } ?: false
+        
+        if (!ready) {
+            logger.warn("Transport not ready within timeout")
+            call.respond(HttpStatusCode.ServiceUnavailable, "MCP server not ready")
+            return false
+        }
+        
         val requestId = java.util.UUID.randomUUID().toString()
         val responseDeferred = CompletableDeferred<JSONRPCMessage>()
         
