@@ -1,5 +1,7 @@
 package io.github.commandertvis.huemanager.mcp
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -24,8 +26,10 @@ data class JsonRpcRequest(
 /**
  * JSON-RPC 2.0 Response
  */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class JsonRpcResponse(
+    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
     val jsonrpc: String = "2.0",
     val id: JsonElement? = null,
     val result: JsonElement? = null,

@@ -20,7 +20,7 @@ class McpHandler(
     private val logger = LoggerFactory.getLogger(McpHandler::class.java)
     private val json = Json {
         ignoreUnknownKeys = true
-        encodeDefaults = true
+        encodeDefaults = false
     }
 
     // Track initialized sessions

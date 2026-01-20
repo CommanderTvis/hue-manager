@@ -205,10 +205,6 @@ Caddy will automatically provision Let's Encrypt SSL certificates for your domai
 
 The server exposes an MCP endpoint for integration with Claude and other MCP-compatible clients.
 
-### Claude Desktop Configuration
-
-Add the following to your Claude Desktop config (typically `~/.config/claude/claude_desktop_config.json`):
-
 ```json
 {
   "mcpServers": {
