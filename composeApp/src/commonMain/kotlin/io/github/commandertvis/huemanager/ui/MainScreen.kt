@@ -259,114 +259,9 @@ fun MainScreen(
         var copiedJson by remember { mutableStateOf(false) }
         var copiedUrl by remember { mutableStateOf(false) }
         var copiedRemote by remember { mutableStateOf(false) }
+        var selectedTab by remember { mutableStateOf(0) }
 
-        AlertDialog(
-            onDismissRequest = {
-                showMcpDialog = false
-                copiedJson = false
-                copiedUrl = false
-                copiedRemote = false
-            },
-            title = { Text("MCP Configuration") },
-            text = {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    // Option 1: Claude Desktop Capabilities
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "Option 1: Claude Desktop (Add as Capability)",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "Use this URL to add as a Claude Desktop capability (no headers needed):",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant
-                        ) {
-                            Text(
-                                text = authUrl,
-                                modifier = Modifier.padding(12.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-                        Button(
-                            onClick = {
-                                getPlatform().copyToClipboard(authUrl)
-                                copiedUrl = true
-                            },
-                            modifier = Modifier.align(Alignment.End)
-                        ) {
-                            Text(if (copiedUrl) "Copied!" else "Copy URL")
-                        }
-                    }
-
-                    HorizontalDivider()
-
-                    // Option 2: Standard MCP Config (with password auth)
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "Option 2: MCP Servers Config (Direct HTTP)",
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                        Text(
-                            text = "Add this to your MCP client config (Claude Desktop or other clients):",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant
-                        ) {
-                            Text(
-                                text = mcpJson,
-                                modifier = Modifier.padding(12.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-                        Text(
-                            text = "Replace YOUR_PASSWORD_HERE with your server password.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Button(
-                            onClick = {
-                                getPlatform().copyToClipboard(mcpJson)
-                                copiedJson = true
-                            },
-                            modifier = Modifier.align(Alignment.End)
-                        ) {
-                            Text(if (copiedJson) "Copied!" else "Copy JSON")
-                        }
-                    }
-
-                    HorizontalDivider()
-
-                    // Option 3: Using mcp-remote proxy
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "Option 3: Using mcp-remote Proxy",
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                        Text(
-                            text = "Use mcp-remote to connect to the MCP server via SSE (for clients that don't support HTTP directly):",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        val mcpRemoteJson = """
+        val mcpRemoteJson = """
 {
   "mcpServers": {
     "hue-manager": {
@@ -380,34 +275,154 @@ fun MainScreen(
     }
   }
 }
-                        """.trimIndent()
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant
-                        ) {
-                            Text(
-                                text = mcpRemoteJson,
-                                modifier = Modifier.padding(12.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-                        Text(
-                            text = "Replace YOUR_PASSWORD_HERE with your server password.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+        """.trimIndent()
+
+        AlertDialog(
+            onDismissRequest = {
+                showMcpDialog = false
+                copiedJson = false
+                copiedUrl = false
+                copiedRemote = false
+                selectedTab = 0
+            },
+            title = { Text("MCP Configuration") },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Tab Row
+                    TabRow(
+                        selectedTabIndex = selectedTab,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Tab(
+                            selected = selectedTab == 0,
+                            onClick = { selectedTab = 0 },
+                            text = { Text("Claude Desktop") }
                         )
-                        Button(
-                            onClick = {
-                                getPlatform().copyToClipboard(mcpRemoteJson)
-                                copiedRemote = true
-                            },
-                            modifier = Modifier.align(Alignment.End)
-                        ) {
-                            Text(if (copiedRemote) "Copied!" else "Copy JSON")
+                        Tab(
+                            selected = selectedTab == 1,
+                            onClick = { selectedTab = 1 },
+                            text = { Text("Direct HTTP") }
+                        )
+                        Tab(
+                            selected = selectedTab == 2,
+                            onClick = { selectedTab = 2 },
+                            text = { Text("mcp-remote") }
+                        )
+                    }
+
+                    // Tab Content
+                    when (selectedTab) {
+                        0 -> {
+                            // Option 1: Claude Desktop Capabilities
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "Use this URL to add as a Claude Desktop capability (no headers needed):",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant
+                                ) {
+                                    Text(
+                                        text = authUrl,
+                                        modifier = Modifier.padding(12.dp),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                                Button(
+                                    onClick = {
+                                        getPlatform().copyToClipboard(authUrl)
+                                        copiedUrl = true
+                                    },
+                                    modifier = Modifier.align(Alignment.End)
+                                ) {
+                                    Text(if (copiedUrl) "Copied!" else "Copy URL")
+                                }
+                            }
+                        }
+                        1 -> {
+                            // Option 2: Standard MCP Config (with password auth)
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "Add this to your MCP client config:",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant
+                                ) {
+                                    Text(
+                                        text = mcpJson,
+                                        modifier = Modifier.padding(12.dp),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                                Text(
+                                    text = "Replace YOUR_PASSWORD_HERE with your server password.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Button(
+                                    onClick = {
+                                        getPlatform().copyToClipboard(mcpJson)
+                                        copiedJson = true
+                                    },
+                                    modifier = Modifier.align(Alignment.End)
+                                ) {
+                                    Text(if (copiedJson) "Copied!" else "Copy JSON")
+                                }
+                            }
+                        }
+                        2 -> {
+                            // Option 3: Using mcp-remote proxy
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "Use mcp-remote to connect via SSE (for clients that don't support HTTP directly):",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant
+                                ) {
+                                    Text(
+                                        text = mcpRemoteJson,
+                                        modifier = Modifier.padding(12.dp),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                                Text(
+                                    text = "Replace YOUR_PASSWORD_HERE with your server password.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Button(
+                                    onClick = {
+                                        getPlatform().copyToClipboard(mcpRemoteJson)
+                                        copiedRemote = true
+                                    },
+                                    modifier = Modifier.align(Alignment.End)
+                                ) {
+                                    Text(if (copiedRemote) "Copied!" else "Copy JSON")
+                                }
+                            }
                         }
                     }
                 }

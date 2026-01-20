@@ -4,7 +4,6 @@ import io.github.commandertvis.huemanager.automation.AutomationManager
 import io.github.commandertvis.huemanager.automation.UserState
 import io.github.commandertvis.huemanager.hue.HueLightStateUpdate
 import io.github.commandertvis.huemanager.hue.HueService
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 import org.slf4j.LoggerFactory
 
@@ -17,11 +16,14 @@ class McpHandler(
     private val automationManager: AutomationManager,
     private val password: String
 ) {
-    private val logger = LoggerFactory.getLogger(McpHandler::class.java)
-    private val json = Json {
-        ignoreUnknownKeys = true
-        encodeDefaults = false
-        explicitNulls = true
+    private companion object {
+        private val logger = LoggerFactory.getLogger(McpHandler::class.java)
+
+        private val json = Json {
+            ignoreUnknownKeys = true
+            encodeDefaults = false
+            explicitNulls = true
+        }
     }
 
     // Track initialized sessions
@@ -158,7 +160,7 @@ class McpHandler(
         } catch (e: Exception) {
             logger.warn("Failed to parse JSON-RPC request: ${e.message}")
             return JsonRpcResponse(
-                id = kotlinx.serialization.json.JsonNull,
+                id = JsonNull,
                 error = JsonRpcError(
                     code = JsonRpcErrorCodes.PARSE_ERROR,
                     message = "Failed to parse JSON-RPC request: ${e.message}"
@@ -166,7 +168,7 @@ class McpHandler(
             )
         }
 
-        logger.debug("MCP request: method=${request.method}, id=${request.id}")
+        logger.debug("MCP request: method={}, id={}", request.method, request.id)
 
         return when (request.method) {
             "initialize" -> handleInitialize(request)
@@ -227,7 +229,7 @@ class McpHandler(
         return providedPassword != null && providedPassword == password
     }
 
-    private suspend fun handleToolsList(request: JsonRpcRequest, providedPassword: String?): JsonRpcResponse {
+    private fun handleToolsList(request: JsonRpcRequest, providedPassword: String?): JsonRpcResponse {
         // Check authentication for tool listing
         if (!validatePassword(providedPassword)) {
             return JsonRpcResponse(
@@ -640,21 +642,18 @@ class McpHandler(
      * Manually constructs JSON to ensure proper JSON-RPC 2.0 compliance:
      * - Success responses have "result" but NOT "error"
      * - Error responses have "error" but NOT "result"
+     * - The "id" field MUST always be present (required by MCP SDK)
      */
-    fun serializeResponse(response: JsonRpcResponse): String {
-        val map = mutableMapOf<String, JsonElement>()
-        map["jsonrpc"] = JsonPrimitive(response.jsonrpc)
-
-        // Always include id field, even if null (required by MCP SDK)
-        map["id"] = response.id ?: JsonNull
-
+    fun serializeResponse(response: JsonRpcResponse): String = buildJsonObject {
+        put("jsonrpc", response.jsonrpc)
+        // Always include id field - MCP SDK requires it to be present (not just non-null)
+        put("id", response.id ?: JsonNull)
         // Only include result OR error, never both
         if (response.error != null) {
-            map["error"] = json.encodeToJsonElement(response.error)
-        } else if (response.result != null) {
-            map["result"] = response.result
+            put("error", json.encodeToJsonElement(response.error))
+        } else {
+            // For successful responses, always include result (even if empty)
+            put("result", response.result ?: JsonObject(emptyMap()))
         }
-
-        return json.encodeToString(JsonObject(map))
-    }
+    }.toString()
 }
