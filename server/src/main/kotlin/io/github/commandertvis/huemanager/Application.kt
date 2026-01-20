@@ -521,6 +521,29 @@ fun Application.module(
         // --- MCP (Model Context Protocol) ---
         val mcpHandler = McpHandler(hueService, automationManager, config.password)
 
+        get("/api/mcp") {
+            val token = call.request.header("Authorization")?.removePrefix("Bearer ")
+
+            logger.debug("MCP SSE stream requested")
+
+            call.response.header("Cache-Control", "no-cache")
+            call.response.header("Connection", "keep-alive")
+            call.respondTextWriter(ContentType.Text.EventStream) {
+                // Keep the connection open for SSE
+                // Send periodic ping events to keep connection alive
+                try {
+                    while (true) {
+                        write("event: ping\n")
+                        write("data: {}\n\n")
+                        flush()
+                        kotlinx.coroutines.delay(30000) // Ping every 30 seconds
+                    }
+                } catch (e: Exception) {
+                    logger.debug("SSE connection closed: ${e.message}")
+                }
+            }
+        }
+
         post("/api/mcp") {
             val token = call.request.header("Authorization")?.removePrefix("Bearer ")
             val requestBody = call.receiveText()
@@ -530,7 +553,8 @@ fun Application.module(
             val response = mcpHandler.handleRequest(requestBody, token)
             val responseJson = mcpHandler.serializeResponse(response)
 
-            call.respondText(responseJson, ContentType.Application.Json)
+            val sseResponse = "event: message\ndata: $responseJson\n\n"
+            call.respondText(sseResponse, ContentType.Text.EventStream)
         }
     }
 }
