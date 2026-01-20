@@ -232,8 +232,8 @@ fun LampCard(
                 }
             }
 
-            // Override indicator
-            if (isOverridden) {
+            // Override indicator (hide when in entertainment mode)
+            if (isOverridden && !lamp.inEntertainment) {
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Row(
