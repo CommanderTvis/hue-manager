@@ -58,8 +58,97 @@ class AutomationManager(
     fun getWakeUpTime(): Instant? = wakeUpTime
     fun getPseudoSunset(): LocalTime = pseudoSunset
     fun getLocation(): GeoLocation = config.region
-    fun getOverriddenLampIds(): List<String> = lampOverrides.keys.toList()
+    
+    suspend fun getOverriddenLampIds(): List<String> {
+        val manualOverrides = lampOverrides.keys.toSet()
+        val outOfSyncLamps = getOutOfSyncLamps()
+        return (manualOverrides + outOfSyncLamps).toList()
+    }
+    
     fun getAutomatedLampIds(): Set<String> = automatedLampIds.toSet()
+    
+    private suspend fun getOutOfSyncLamps(): Set<String> {
+        if (userState != UserState.AWAKE) {
+            // When user is asleep, check if any automated lamps are on
+            val outOfSync = mutableSetOf<String>()
+            for (lampId in automatedLampIds) {
+                if (lampOverrides.containsKey(lampId)) continue // Already tracked as manual override
+                
+                val light = hueService.getLight(lampId) ?: continue
+                if (light.state.on) {
+                    outOfSync.add(lampId)
+                }
+            }
+            return outOfSync
+        }
+        
+        // When user is awake, compare actual state with automation target
+        val timeZone = TimeZone.of(config.timezone)
+        val localNow = Clock.System.now().toLocalDateTime(timeZone)
+        val targetState = calculateDesiredState(localNow.time)
+        val entertainmentLamps = getActiveEntertainmentLamps()
+        val outOfSync = mutableSetOf<String>()
+        
+        for (lampId in automatedLampIds) {
+            if (lampOverrides.containsKey(lampId)) continue // Already tracked as manual override
+            if (entertainmentLamps.contains(lampId)) continue // Skip entertainment lamps
+            
+            val light = hueService.getLight(lampId) ?: continue
+            if (!isLampInSync(light.state, targetState)) {
+                outOfSync.add(lampId)
+            }
+        }
+        
+        return outOfSync
+    }
+    
+    private fun isLampInSync(actualState: io.github.commandertvis.huemanager.hue.HueLightState, targetState: HueLightStateUpdate): Boolean {
+        // Check on/off state
+        if (targetState.on != null && actualState.on != targetState.on) {
+            return false
+        }
+        
+        // If lamp is off and target is off, consider it in sync
+        if (!actualState.on && targetState.on == false) {
+            return true
+        }
+        
+        // If lamp is on, check brightness and color
+        if (actualState.on) {
+            // Check brightness (allow 10% tolerance)
+            if (targetState.bri != null) {
+                val actualBri = actualState.bri ?: 254
+                val tolerance = 25 // ~10% of 254
+                if (kotlin.math.abs(actualBri - targetState.bri) > tolerance) {
+                    return false
+                }
+            }
+            
+            // Check color mode: hue/sat vs color temperature
+            if (targetState.hue != null && targetState.sat != null) {
+                // Target is using hue/sat mode
+                val actualHue = actualState.hue ?: 0
+                val actualSat = actualState.sat ?: 0
+                val hueTolerance = 3000 // ~5% of 65535
+                val satTolerance = 25 // ~10% of 254
+                
+                if (kotlin.math.abs(actualHue - targetState.hue) > hueTolerance ||
+                    kotlin.math.abs(actualSat - targetState.sat) > satTolerance) {
+                    return false
+                }
+            } else if (targetState.ct != null) {
+                // Target is using color temperature mode
+                val actualCt = actualState.ct ?: 153
+                val ctTolerance = 30 // Allow some variation
+                
+                if (kotlin.math.abs(actualCt - targetState.ct) > ctTolerance) {
+                    return false
+                }
+            }
+        }
+        
+        return true
+    }
 
     fun getCurrentAutomationMode(): AutomationMode {
         if (userState != UserState.AWAKE) {

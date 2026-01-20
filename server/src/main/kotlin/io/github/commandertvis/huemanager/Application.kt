@@ -448,6 +448,7 @@ fun Application.module(
             }
             val mode = automationManager.getCurrentAutomationMode()
             val color = automationManager.getAutomationColor()
+            val overriddenLamps = automationManager.getOverriddenLampIds()
 
             call.respond(
                 AutomationStatusResponse(
@@ -455,7 +456,7 @@ fun Application.module(
                     wakeUpTime = automationManager.getWakeUpTime()?.toString(),
                     pseudoSunset = automationManager.getPseudoSunset().toString(),
                     entertainmentActive = automationManager.isEntertainmentActive(),
-                    overriddenLamps = automationManager.getOverriddenLampIds(),
+                    overriddenLamps = overriddenLamps,
                     automationMode = mode.name,
                     automationColor = AutomationColorInfo(
                         hue = color.hue,

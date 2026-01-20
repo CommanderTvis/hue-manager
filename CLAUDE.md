@@ -310,6 +310,14 @@ hue-manager/
     - Updated `LampsViewModel.refresh()` to clear all `loadingLampIds` after fetching updated state
     - Prevents stale color data from being displayed before automation state is applied
     - Ensures smooth visual transition from manual to automated state
+  - **Automatic out-of-sync detection:**
+    - System now detects when lamp state differs from automation target (e.g., changed by other apps)
+    - "Clear override" button appears for both manual overrides AND lamps changed externally
+    - Implemented `getOutOfSyncLamps()` to compare actual lamp state vs automation target
+    - Uses tolerance-based comparison: ~10% for brightness, ~5% for hue/saturation, ~30 Mirek for color temperature
+    - When user is asleep: any automated lamp that's ON is considered out of sync
+    - When user is awake: compares brightness, color mode (hue/sat vs CT), and on/off state
+    - Allows users to restore automation control even when lamps are changed via Google Home, Alexa, or official Hue app
 
 - **OAuth2 & Authentication:**
   - Fixed OAuth2 parameter naming: corrected `clientid` to `client_id` in Hue authorization flow
