@@ -171,26 +171,19 @@ class AutomationManager(
             (pseudoSunset.hour + 3) % 24,
             pseudoSunset.minute
         )
-        val isInWindDown = currentTime in pseudoSunset..<pseudoSunsetEnd
+        val isAfterPseudoSunsetEnd = currentTime >= pseudoSunsetEnd
 
         return when {
             isBeforeSunrise -> AutomationMode.WAKE_UP_COMPENSATION
             !isAfterSunset && !isAfterPseudoSunset -> AutomationMode.DAYLIGHT
             isAfterSunset && !isAfterPseudoSunset -> AutomationMode.WAKE_UP_COMPENSATION
-            isInWindDown -> AutomationMode.EVENING_TRANSITION
+            isAfterPseudoSunset && !isAfterPseudoSunsetEnd -> AutomationMode.EVENING_TRANSITION
             else -> AutomationMode.NIGHT_MODE
         }
     }
 
     fun getAutomationColor(): LampColorInfo {
         val mode = getCurrentAutomationMode()
-        val desiredState = if (userState == UserState.AWAKE) {
-            val timeZone = TimeZone.of(config.timezone)
-            val localNow = Clock.System.now().toLocalDateTime(timeZone)
-            calculateDesiredState(localNow.time)
-        } else {
-            null
-        }
 
         return when (mode) {
             AutomationMode.WAKE_UP_COMPENSATION -> LampColorInfo(
@@ -203,20 +196,17 @@ class AutomationManager(
             AutomationMode.DAYLIGHT -> LampColorInfo(
                 hue = null,
                 saturation = null,
-                colorTemperature = 200,
-                brightness = 100,
-                description = "Dim white"
+                colorTemperature = null,
+                brightness = 0,
+                description = "Off (sun is shining)"
             )
-            AutomationMode.EVENING_TRANSITION -> {
-                val brightness = desiredState?.bri ?: 127
-                LampColorInfo(
-                    hue = 5000,
-                    saturation = 254,
-                    colorTemperature = null,
-                    brightness = brightness,
-                    description = "Warm orange (dimming)"
-                )
-            }
+            AutomationMode.EVENING_TRANSITION -> LampColorInfo(
+                hue = 5000,
+                saturation = 254,
+                colorTemperature = null,
+                brightness = 254,
+                description = "Bright orange"
+            )
             AutomationMode.NIGHT_MODE -> LampColorInfo(
                 hue = 5000,
                 saturation = 254,
@@ -392,7 +382,7 @@ class AutomationManager(
             (pseudoSunset.hour + 3) % 24,
             pseudoSunset.minute
         )
-        val isInWindDown = currentTime in pseudoSunset..<pseudoSunsetEnd
+        val isAfterPseudoSunsetEnd = currentTime >= pseudoSunsetEnd
 
         return when {
             // Before sunrise: full bright white
@@ -400,9 +390,9 @@ class AutomationManager(
                 HueLightStateUpdate(on = true, bri = 254, ct = 153)
             }
 
-            // Between sunrise and sunset: dimmer, daylight coming in
+            // Between sunrise and sunset: turn off (sun is shining)
             !isAfterSunset && !isAfterPseudoSunset -> {
-                HueLightStateUpdate(on = true, bri = 100, ct = 200)
+                HueLightStateUpdate(on = false)
             }
 
             // After actual sunset but before pseudo-sunset: bright compensating
@@ -410,20 +400,13 @@ class AutomationManager(
                 HueLightStateUpdate(on = true, bri = 254, ct = 153)
             }
 
-            // In wind-down period (pseudo-sunset to pseudo-sunset+3h)
-            isInWindDown -> {
-                val minutesIntoWindDown = (currentTime.hour * 60 + currentTime.minute) -
-                        (pseudoSunset.hour * 60 + pseudoSunset.minute)
-                val progress = (minutesIntoWindDown.toFloat() / 180f).coerceIn(0f, 1f)
-
-                // Transition brightness from 254 to 1
-                val brightness = (254 * (1 - progress)).toInt().coerceIn(1, 254)
-
-                // Orange hue for evening
-                HueLightStateUpdate(on = true, bri = brightness, hue = 5000, sat = 254)
+            // At pseudo-sunset until +3h: orange at 100% brightness
+            isAfterPseudoSunset && !isAfterPseudoSunsetEnd -> {
+                // Orange #FF5500 at 100% brightness (254)
+                HueLightStateUpdate(on = true, bri = 254, hue = 5000, sat = 254)
             }
 
-            // After wind-down: minimal orange light
+            // After pseudo-sunset+3h: minimal orange light (1% brightness)
             else -> {
                 HueLightStateUpdate(on = true, bri = 1, hue = 5000, sat = 254)
             }

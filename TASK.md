@@ -81,13 +81,13 @@ The only parameters of full daylight simulation are:
 - where we are in the world (region)
 - time for pseudo-sunset (should be written by user somewhere, probably on the lamps screen. e.g. 21:05)
 
-E.g. if the user wakes up at 6:00 and the sun has not risen yet, the lamps go super white compensating it. Then sun rises and lamps dim to economize energy. Then at the chosen pseudo-sunset (e.g. 21:05), lamp goes from "auto-compensate bright" to "no blue photons" mode and get dimmer and dimmer, so total actual workflow may look like this:
+E.g. if the user wakes up at 6:00 and the sun has not risen yet, the lamps go super white compensating it. Then sun rises and lamps dim to economize energy. Then at the chosen pseudo-sunset (e.g. 21:05), lamp goes from "auto-compensate bright" to "no blue photons" or "Bright orange" mode and then to dim orange mode, so total actual workflow may look like this:
 
 - 6:00 - user presses "I woke up!", we go super bright #FFFFFF 100%
 - 8:00 - sun rises, lamps go dimmer #FFFFFF 
 - 12:00 - sun is shining, lamps turn off
 - 17:00 - actual sunset, lamps are super bright
-- 21:05 - "pseudo sunset", lamps are going orange ##FF5500 100% brightness
+- 21:05 - "pseudo sunset", lamps are going orange ##FF5500 100% brightness (for the whole time before "you need to sleep period!)
 - 00:05 (pseduo sunset + 3 hours) - lamps are preparing user to sleep, ##FF5500, 1% brightness
 
 The UI name of pseudo sunset is "Evening light".

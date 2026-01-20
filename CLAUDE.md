@@ -225,7 +225,18 @@ Philips Hue Remote API has rate limits:
 - Light operations: 10 requests/second (token bucket)
 - Group operations: 1 request/second (stricter limit)
 
-All rate limiters are coroutine-safe using Kotlin's `Mutex`.
+**Implementation:**
+- Token bucket algorithm with monotonic time to avoid clock drift
+- `lightRateLimiter`: 10 tokens refilling every 1 second
+- `groupRateLimiter`: 1 token refilling every 1 second
+- Precise wait time calculation: waits exactly the minimum time needed for next token
+- Only updates time mark when tokens are actually added (prevents time drift)
+- All rate limiters are coroutine-safe using Kotlin's `Mutex`
+
+**Applied to:**
+- All `/lights` API calls (getLights, getLight, setLightState)
+- All `/groups` API calls (getGroups)
+- OAuth2 and bridge linking calls are not rate-limited (one-time setup operations)
 
 ## Daylight Simulation Logic
 

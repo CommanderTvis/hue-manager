@@ -53,8 +53,10 @@ class RateLimiter(
         val timePassed = now - lastRefillMark
         val tokensToAdd = (timePassed / refillRate) * maxTokens
 
-        tokens = minOf(tokens + tokensToAdd, maxTokens.toDouble())
-        lastRefillMark = now
+        if (tokensToAdd > 0) {
+            tokens = minOf(tokens + tokensToAdd, maxTokens.toDouble())
+            lastRefillMark = now
+        }
     }
 
     private fun calculateWaitTime(): Duration {
