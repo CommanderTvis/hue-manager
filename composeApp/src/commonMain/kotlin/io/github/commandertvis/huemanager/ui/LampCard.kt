@@ -71,19 +71,21 @@ fun LampCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Status indicator
-                    Box(
-                        modifier = Modifier
-                            .size(12.dp)
-                            .clip(CircleShape)
-                            .background(
-                                when {
-                                    !lamp.reachable -> Color.Gray
-                                    lamp.on -> getLampColor(lamp)
-                                    else -> Color.DarkGray
-                                }
-                            )
-                    )
+                    // Status indicator (hide when in entertainment mode)
+                    if (!lamp.inEntertainment) {
+                        Box(
+                            modifier = Modifier
+                                .size(12.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    when {
+                                        !lamp.reachable -> Color.Gray
+                                        lamp.on -> getLampColor(lamp)
+                                        else -> Color.DarkGray
+                                    }
+                                )
+                        )
+                    }
 
                     Column {
                         Text(
@@ -117,11 +119,14 @@ fun LampCard(
                         }
                     }
 
-                    Switch(
-                        checked = lamp.on,
-                        onCheckedChange = { onToggle() },
-                        enabled = lamp.reachable && !isLoading && !lamp.inEntertainment
-                    )
+                    // Hide toggle switch when in entertainment mode
+                    if (!lamp.inEntertainment) {
+                        Switch(
+                            checked = lamp.on,
+                            onCheckedChange = { onToggle() },
+                            enabled = lamp.reachable && !isLoading
+                        )
+                    }
                 }
             }
 

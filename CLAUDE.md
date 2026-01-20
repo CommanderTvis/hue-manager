@@ -288,8 +288,13 @@ hue-manager/
     - Added `inEntertainment` field to Lamp model to track per-lamp entertainment status
     - Server detects active entertainment groups and marks lamps accordingly
     - UI shows "Controlled by Hue Sync" status for entertainment-active lamps
-    - Manual controls (switch, brightness, color picker, override clear) are disabled for entertainment lamps
-    - Brightness slider and color picker are completely hidden when lamp is in entertainment mode
+    - Manual controls are completely hidden for entertainment lamps:
+      - Color indicator circle (status dot) is hidden
+      - On/off toggle switch is hidden
+      - Brightness slider is hidden
+      - Color picker is hidden
+      - Override clear button is disabled
+    - Only lamp name and "Controlled by Hue Sync" status text remain visible
     - Allows seamless use of Hue Sync app alongside automation without conflicts
 
 - **Automation Improvements:**
