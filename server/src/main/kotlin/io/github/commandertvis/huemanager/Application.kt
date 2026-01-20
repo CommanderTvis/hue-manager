@@ -512,7 +512,7 @@ fun Application.module(
         }
 
         // --- MCP (Model Context Protocol) ---
-        val mcpHandler = McpHandler(hueService, automationManager, sessionManager)
+        val mcpHandler = McpHandler(hueService, automationManager, config.password)
 
         post("/api/mcp") {
             val token = call.request.header("Authorization")?.removePrefix("Bearer ")

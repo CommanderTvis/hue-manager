@@ -199,6 +199,43 @@ Caddy will automatically provision Let's Encrypt SSL certificates for your domai
 | GET    | `/api/hue/authorize`         | No   | Start OAuth2 flow                      |
 | GET    | `/api/hue/callback`          | No   | OAuth2 callback                        |
 | POST   | `/api/hue/link`              | No   | Complete bridge linking                |
+| POST   | `/api/mcp`                   | Yes  | MCP (Model Context Protocol) endpoint  |
+
+## MCP Integration
+
+The server exposes an MCP endpoint for integration with Claude and other MCP-compatible clients.
+
+### Claude Desktop Configuration
+
+Add the following to your Claude Desktop config (typically `~/.config/claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "hue-manager": {
+      "url": "https://yourdomain.com/api/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_PASSWORD_HERE"
+      }
+    }
+  }
+}
+```
+
+Replace `yourdomain.com` with your server domain and `YOUR_PASSWORD_HERE` with the same `PASSWORD` from your `.env` file.
+
+### Available MCP Tools
+
+| Tool                   | Description                                                    |
+|------------------------|----------------------------------------------------------------|
+| `list_lamps`           | List all lamps with current state and automation status        |
+| `get_lamp_state`       | Get detailed state of a specific lamp                          |
+| `set_lamp_state`       | Control a lamp (on/off, brightness, color). Creates 1h override |
+| `set_all_lamps`        | Control all lamps at once                                      |
+| `clear_lamp_override`  | Return a lamp to automation control                            |
+| `get_automation_status`| Get current automation mode, target color, overridden lamps    |
+| `wake_up`              | Trigger "I woke up!" action                                    |
+| `go_to_sleep`          | Trigger "I'm asleep!" action                                   |
 
 ## Daylight Automation
 

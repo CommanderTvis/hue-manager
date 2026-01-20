@@ -1,6 +1,5 @@
 package io.github.commandertvis.huemanager.mcp
 
-import io.github.commandertvis.huemanager.auth.SessionManager
 import io.github.commandertvis.huemanager.automation.AutomationManager
 import io.github.commandertvis.huemanager.automation.UserState
 import io.github.commandertvis.huemanager.hue.HueLightStateUpdate
@@ -16,7 +15,7 @@ import org.slf4j.LoggerFactory
 class McpHandler(
     private val hueService: HueService,
     private val automationManager: AutomationManager,
-    private val sessionManager: SessionManager
+    private val password: String
 ) {
     private val logger = LoggerFactory.getLogger(McpHandler::class.java)
     private val json = Json {
@@ -222,14 +221,18 @@ class McpHandler(
         )
     }
 
-    private suspend fun handleToolsList(request: JsonRpcRequest, sessionToken: String?): JsonRpcResponse {
+    private fun validatePassword(providedPassword: String?): Boolean {
+        return providedPassword != null && providedPassword == password
+    }
+
+    private suspend fun handleToolsList(request: JsonRpcRequest, providedPassword: String?): JsonRpcResponse {
         // Check authentication for tool listing
-        if (!sessionManager.validateSession(sessionToken)) {
+        if (!validatePassword(providedPassword)) {
             return JsonRpcResponse(
                 id = request.id,
                 error = JsonRpcError(
                     code = JsonRpcErrorCodes.INVALID_REQUEST,
-                    message = "Authentication required. Please provide a valid session token in the Authorization header."
+                    message = "Authentication required. Please provide your password in the Authorization header (Bearer <PASSWORD>)."
                 )
             )
         }
@@ -241,14 +244,14 @@ class McpHandler(
         )
     }
 
-    private suspend fun handleToolCall(request: JsonRpcRequest, sessionToken: String?): JsonRpcResponse {
+    private suspend fun handleToolCall(request: JsonRpcRequest, providedPassword: String?): JsonRpcResponse {
         // Check authentication
-        if (!sessionManager.validateSession(sessionToken)) {
+        if (!validatePassword(providedPassword)) {
             return JsonRpcResponse(
                 id = request.id,
                 error = JsonRpcError(
                     code = JsonRpcErrorCodes.INVALID_REQUEST,
-                    message = "Authentication required. Please provide a valid session token in the Authorization header."
+                    message = "Authentication required. Please provide your password in the Authorization header (Bearer <PASSWORD>)."
                 )
             )
         }
