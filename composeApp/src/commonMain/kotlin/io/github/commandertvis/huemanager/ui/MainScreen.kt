@@ -258,12 +258,14 @@ fun MainScreen(
 
         var copiedJson by remember { mutableStateOf(false) }
         var copiedUrl by remember { mutableStateOf(false) }
+        var copiedRemote by remember { mutableStateOf(false) }
 
         AlertDialog(
             onDismissRequest = {
                 showMcpDialog = false
                 copiedJson = false
                 copiedUrl = false
+                copiedRemote = false
             },
             title = { Text("MCP Configuration") },
             text = {
@@ -313,7 +315,7 @@ fun MainScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = "Option 2: MCP Servers Config",
+                            text = "Option 2: MCP Servers Config (Direct HTTP)",
                             style = MaterialTheme.typography.titleSmall
                         )
                         Text(
@@ -349,6 +351,65 @@ fun MainScreen(
                             Text(if (copiedJson) "Copied!" else "Copy JSON")
                         }
                     }
+
+                    HorizontalDivider()
+
+                    // Option 3: Using mcp-remote proxy
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Option 3: Using mcp-remote Proxy",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(
+                            text = "Use mcp-remote to connect to the MCP server via SSE (for clients that don't support HTTP directly):",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        val mcpRemoteJson = """
+{
+  "mcpServers": {
+    "hue-manager": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "$mcpUrl",
+        "--header",
+        "Authorization: Bearer YOUR_PASSWORD_HERE"
+      ]
+    }
+  }
+}
+                        """.trimIndent()
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant
+                        ) {
+                            Text(
+                                text = mcpRemoteJson,
+                                modifier = Modifier.padding(12.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                        Text(
+                            text = "Replace YOUR_PASSWORD_HERE with your server password.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Button(
+                            onClick = {
+                                getPlatform().copyToClipboard(mcpRemoteJson)
+                                copiedRemote = true
+                            },
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
+                            Text(if (copiedRemote) "Copied!" else "Copy JSON")
+                        }
+                    }
                 }
             },
             confirmButton = {},
@@ -357,6 +418,7 @@ fun MainScreen(
                     showMcpDialog = false
                     copiedJson = false
                     copiedUrl = false
+                    copiedRemote = false
                 }) {
                     Text("Close")
                 }
