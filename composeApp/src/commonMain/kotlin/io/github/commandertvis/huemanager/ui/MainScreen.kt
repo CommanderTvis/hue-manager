@@ -241,70 +241,121 @@ fun MainScreen(
     // MCP Configuration Dialog
     if (showMcpDialog) {
         val baseUrl = apiClient.getBaseUrl()
+        val authUrl = "${baseUrl}api/mcp/auth"
         val mcpJson = """
 {
   "mcpServers": {
     "hue-manager": {
       "url": "${baseUrl}api/mcp",
       "headers": {
-        "Authorization": "Bearer YOUR_PASSWORD_HERE"
+        "Authorization": "Bearer YOUR_SESSION_TOKEN_HERE"
       }
     }
   }
 }
         """.trimIndent()
 
-        var copied by remember { mutableStateOf(false) }
+        var copiedJson by remember { mutableStateOf(false) }
+        var copiedUrl by remember { mutableStateOf(false) }
 
         AlertDialog(
-            onDismissRequest = { 
+            onDismissRequest = {
                 showMcpDialog = false
-                copied = false
+                copiedJson = false
+                copiedUrl = false
             },
             title = { Text("MCP Configuration") },
             text = {
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Text(
-                        text = "Add this to your Claude Desktop config:",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant
+                    // Option 1: Interactive auth for Claude Desktop
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = mcpJson,
-                            modifier = Modifier.padding(12.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace
+                            text = "Option 1: Claude Desktop (Recommended)",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary
                         )
+                        Text(
+                            text = "Visit this URL to get your session token:",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant
+                        ) {
+                            Text(
+                                text = authUrl,
+                                modifier = Modifier.padding(12.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                        Button(
+                            onClick = {
+                                getPlatform().copyToClipboard(authUrl)
+                                copiedUrl = true
+                            },
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
+                            Text(if (copiedUrl) "Copied!" else "Copy URL")
+                        }
                     }
-                    Text(
-                        text = "Replace YOUR_PASSWORD_HERE with your password.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+
+                    HorizontalDivider()
+
+                    // Option 2: JSON config for other MCP clients
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Option 2: Other MCP Clients",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(
+                            text = "Add this to your MCP client config:",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant
+                        ) {
+                            Text(
+                                text = mcpJson,
+                                modifier = Modifier.padding(12.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                        Text(
+                            text = "Replace YOUR_SESSION_TOKEN_HERE with a token from ${authUrl}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Button(
+                            onClick = {
+                                getPlatform().copyToClipboard(mcpJson)
+                                copiedJson = true
+                            },
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
+                            Text(if (copiedJson) "Copied!" else "Copy JSON")
+                        }
+                    }
                 }
             },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        getPlatform().copyToClipboard(mcpJson)
-                        copied = true
-                    }
-                ) {
-                    Text(if (copied) "Copied!" else "Copy")
-                }
-            },
+            confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { 
+                TextButton(onClick = {
                     showMcpDialog = false
-                    copied = false
+                    copiedJson = false
+                    copiedUrl = false
                 }) {
                     Text("Close")
                 }
