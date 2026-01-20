@@ -19,6 +19,7 @@ import io.ktor.server.http.content.*
 import io.ktor.server.netty.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.cors.routing.*
+import io.ktor.server.plugins.origin
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -523,6 +524,10 @@ fun Application.module(
 
         // MCP Authentication page for Claude Desktop
         get("/api/mcp/auth") {
+            val scheme = call.request.headers["X-Forwarded-Proto"] ?: if (call.request.local.serverPort == 443) "https" else "http"
+            val host = call.request.headers["X-Forwarded-Host"] ?: call.request.local.serverHost
+            val mcpUrl = "$scheme://$host/api/mcp"
+
             call.respondText("""
                 <!DOCTYPE html>
                 <html>
@@ -652,7 +657,7 @@ fun Application.module(
 {
   "mcpServers": {
     "hue-manager": {
-      "url": "${call.request.origin.scheme}://${call.request.host()}/api/mcp",
+      "url": "$mcpUrl",
       "headers": {
         "Authorization": "Bearer YOUR_TOKEN_HERE"
       }
