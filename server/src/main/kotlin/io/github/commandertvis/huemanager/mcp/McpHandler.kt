@@ -643,16 +643,17 @@ class McpHandler(
     fun serializeResponse(response: JsonRpcResponse): String {
         val map = mutableMapOf<String, JsonElement>()
         map["jsonrpc"] = JsonPrimitive(response.jsonrpc)
-        
-        response.id?.let { map["id"] = it }
-        
+
+        // Always include id field, even if null (required by MCP SDK)
+        map["id"] = response.id ?: JsonNull
+
         // Only include result OR error, never both
         if (response.error != null) {
             map["error"] = json.encodeToJsonElement(response.error)
         } else if (response.result != null) {
             map["result"] = response.result
         }
-        
+
         return json.encodeToString(JsonObject(map))
     }
 }
