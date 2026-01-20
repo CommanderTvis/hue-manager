@@ -241,14 +241,15 @@ fun MainScreen(
     // MCP Configuration Dialog
     if (showMcpDialog) {
         val baseUrl = apiClient.getBaseUrl()
+        val mcpUrl = "${baseUrl}api/mcp"
         val authUrl = "${baseUrl}api/mcp/auth"
         val mcpJson = """
 {
   "mcpServers": {
     "hue-manager": {
-      "url": "${baseUrl}api/mcp",
+      "url": "$mcpUrl",
       "headers": {
-        "Authorization": "Bearer YOUR_SESSION_TOKEN_HERE"
+        "Authorization": "Bearer YOUR_PASSWORD_HERE"
       }
     }
   }
@@ -269,17 +270,17 @@ fun MainScreen(
                 Column(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Option 1: Interactive auth for Claude Desktop
+                    // Option 1: Claude Desktop Capabilities
                     Column(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = "Option 1: Claude Desktop (Recommended)",
+                            text = "Option 1: Claude Desktop (Add as Capability)",
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = "Visit this URL to get your session token:",
+                            text = "Use this URL to add as a Claude Desktop capability (no headers needed):",
                             style = MaterialTheme.typography.bodyMedium
                         )
                         Surface(
@@ -307,16 +308,16 @@ fun MainScreen(
 
                     HorizontalDivider()
 
-                    // Option 2: JSON config for other MCP clients
+                    // Option 2: Standard MCP Config (with password auth)
                     Column(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = "Option 2: Other MCP Clients",
+                            text = "Option 2: MCP Servers Config",
                             style = MaterialTheme.typography.titleSmall
                         )
                         Text(
-                            text = "Add this to your MCP client config:",
+                            text = "Add this to your MCP client config (Claude Desktop or other clients):",
                             style = MaterialTheme.typography.bodyMedium
                         )
                         Surface(
@@ -334,7 +335,7 @@ fun MainScreen(
                             )
                         }
                         Text(
-                            text = "Replace YOUR_SESSION_TOKEN_HERE with a token from ${authUrl}",
+                            text = "Replace YOUR_PASSWORD_HERE with your server password.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
