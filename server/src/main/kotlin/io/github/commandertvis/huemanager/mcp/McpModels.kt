@@ -131,10 +131,14 @@ data class Tool(
     val inputSchema: ToolInputSchema
 )
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class ToolInputSchema(
+    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
     val type: String = "object",
+    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
     val properties: Map<String, PropertySchema> = emptyMap(),
+    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
     val required: List<String> = emptyList()
 )
 
