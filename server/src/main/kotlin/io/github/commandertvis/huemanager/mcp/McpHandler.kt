@@ -23,7 +23,7 @@ class McpHandler(
     }
 
     /**
-     * Creates a configured MCP Server instance with all lamp control tools.
+     * Creates a configured MCP Server instance with lamp control tools and resources.
      */
     fun createServer(): Server {
         val server = Server(
@@ -33,11 +33,13 @@ class McpHandler(
             ),
             ServerOptions(
                 capabilities = ServerCapabilities(
-                    tools = ServerCapabilities.Tools(listChanged = false)
+                    tools = ServerCapabilities.Tools(listChanged = false),
+                    resources = ServerCapabilities.Resources(subscribe = false, listChanged = false)
                 )
             )
         )
 
+        registerResources(server)
         registerTools(server)
         return server
     }
@@ -49,16 +51,19 @@ class McpHandler(
         return providedPassword != null && providedPassword == password
     }
 
-    private fun registerTools(server: Server) {
-        // list_lamps
-        server.addTool(
-            name = "list_lamps",
-            description = "List all Philips Hue lamps with their current state including name, on/off status, brightness, color, and whether they are under automation, manual override, or Hue Sync control.",
-            inputSchema = ToolSchema()
+    private fun registerResources(server: Server) {
+        // lamps resource - read-only list of all lamps with their current state
+        server.addResource(
+            uri = "hue://lamps",
+            name = "Philips Hue Lamps",
+            description = "List of all Philips Hue lamps with their current state including name, on/off status, brightness, color, and whether they are under automation, manual override, or Hue Sync control.",
+            mimeType = "text/plain"
         ) { _ ->
-            executeListLamps()
+            readLampsResource()
         }
+    }
 
+    private fun registerTools(server: Server) {
         // get_lamp_state
         server.addTool(
             name = "get_lamp_state",
@@ -179,7 +184,7 @@ class McpHandler(
         }
     }
 
-    private suspend fun executeListLamps(): CallToolResult {
+    private suspend fun readLampsResource(): ReadResourceResult {
         return try {
             val lights = hueService.getLights()
             val entertainmentGroups = hueService.getEntertainmentGroups()
@@ -217,12 +222,13 @@ class McpHandler(
 
             val summary = "Found ${lights.size} lamps:\n\n${lampsInfo.joinToString("\n")}"
 
-            CallToolResult(content = listOf(TextContent(summary)))
+            ReadResourceResult(
+                contents = listOf(TextResourceContents(summary, "hue://lamps", "text/plain"))
+            )
         } catch (e: Exception) {
-            logger.error("Failed to list lamps", e)
-            CallToolResult(
-                content = listOf(TextContent("Error listing lamps: ${e.message}")),
-                isError = true
+            logger.error("Failed to read lamps resource", e)
+            ReadResourceResult(
+                contents = listOf(TextResourceContents("Error reading lamps: ${e.message}", "hue://lamps", "text/plain"))
             )
         }
     }

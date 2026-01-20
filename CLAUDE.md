@@ -193,10 +193,14 @@ The server exposes an MCP endpoint for integration with Claude and other MCP-com
 
 **Authentication:** Requires a valid session token in the `Authorization: Bearer <token>` header. Obtain a token via `POST /api/session`.
 
+**Available Resources:**
+| Resource URI | Description |
+|--------------|-------------|
+| `hue://lamps` | List all lamps with current state (on/off, brightness, color, automation status) |
+
 **Available Tools:**
 | Tool | Description |
 |------|-------------|
-| `list_lamps` | List all lamps with current state (on/off, brightness, color, automation status) |
 | `get_lamp_state` | Get detailed state of a specific lamp including automation/override/Hue Sync status |
 | `set_lamp_state` | Control a lamp (on/off, brightness, hue, saturation, color temperature). Creates 1-hour override. |
 | `set_all_lamps` | Control all lamps at once (on/off, brightness). Creates overrides for all lamps. |
@@ -391,17 +395,18 @@ hue-manager/
   - Migrated to official MCP Kotlin SDK (`io.modelcontextprotocol:kotlin-sdk:0.8.1`)
   - Uses SDK's built-in SSE transport via Ktor `mcp {}` extension
   - Removed self-written `McpModels.kt` (replaced by SDK types)
-  - Simplified `McpHandler.kt` to use SDK's `Server` class and `addTool()` API
+  - Simplified `McpHandler.kt` to use SDK's `Server` class and `addTool()`/`addResource()` APIs
   - Authentication via Bearer token (same as regular API)
+  - Available resources:
+    - `hue://lamps` - List all lamps with state and automation status (read-only)
   - Available tools:
-    - `list_lamps` - List all lamps with state and automation status
     - `get_lamp_state` - Detailed lamp state with automation/override/Hue Sync info
     - `set_lamp_state` - Control individual lamp (creates 1-hour override)
     - `set_all_lamps` - Control all lamps at once
     - `clear_lamp_override` - Return lamp to automation control
     - `get_automation_status` - Current mode, target color, overridden lamps
     - `wake_up` / `go_to_sleep` - Trigger automation state changes
-  - Server file: `mcp/McpHandler.kt` (tool implementations using SDK)
+  - Server file: `mcp/McpHandler.kt` (resource and tool implementations using SDK)
   - UI integration: "MCP" button on main screen opens dialog with pre-configured MCP JSON
   - One-click copy to clipboard functionality for easy MCP client setup
   - Platform-specific clipboard support (JVM, WasmJS, Android)
