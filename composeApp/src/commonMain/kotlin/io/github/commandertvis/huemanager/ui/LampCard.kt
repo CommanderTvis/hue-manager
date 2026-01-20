@@ -17,9 +17,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import io.github.commandertvis.huemanager.colorpicker.AlphaTile
-import io.github.commandertvis.huemanager.colorpicker.HsvColorPicker
-import io.github.commandertvis.huemanager.colorpicker.rememberColorPickerController
+import com.github.skydoves.colorpicker.compose.AlphaTile
+import com.github.skydoves.colorpicker.compose.HsvColorPicker
+import com.github.skydoves.colorpicker.compose.rememberColorPickerController
 import io.github.commandertvis.huemanager.models.Lamp
 
 @Composable

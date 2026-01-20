@@ -21,6 +21,7 @@ kotlinx-datetime = "0.7.1-0.6.x-compat"
 ktor = "3.3.3"
 logback = "1.5.25"
 mcp-sdk = "0.8.1"
+colorpicker-compose = "1.1.3"
 
 [libraries]
 junit = { module = "junit:junit", version.ref = "junit" }
@@ -68,6 +69,7 @@ ktor-kmpSerialization-json = { module = "io.ktor:ktor-serialization-kotlinx-json
 ktor-kmpClient-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
 ktor-kmpClient-js = { module = "io.ktor:ktor-client-js", version.ref = "ktor" }
 ktor-kmpClient-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
+colorpicker-compose = { module = "com.github.skydoves:colorpicker-compose", version.ref = "colorpicker-compose" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

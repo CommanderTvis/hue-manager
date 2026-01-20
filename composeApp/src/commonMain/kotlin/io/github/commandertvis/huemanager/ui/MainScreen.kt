@@ -290,8 +290,7 @@ fun MainScreen(
                 Column(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Tab Row
-                    TabRow(
+                    PrimaryTabRow(
                         selectedTabIndex = selectedTab,
                         modifier = Modifier.fillMaxWidth()
                     ) {
