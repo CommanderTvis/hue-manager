@@ -21,6 +21,7 @@ class McpHandler(
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = false
+        explicitNulls = false
     }
 
     // Track initialized sessions
