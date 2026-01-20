@@ -1,6 +1,8 @@
 package io.github.commandertvis.huemanager
 
 import java.awt.Desktop
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
 import java.net.URI
 
 class JVMPlatform: Platform {
@@ -10,6 +12,10 @@ class JVMPlatform: Platform {
         if (Desktop.isDesktopSupported()) {
             Desktop.getDesktop().browse(URI(url))
         }
+    }
+    override fun copyToClipboard(text: String) {
+        val clipboard = Toolkit.getDefaultToolkit().systemClipboard
+        clipboard.setContents(StringSelection(text), null)
     }
 }
 

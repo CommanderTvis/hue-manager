@@ -29,6 +29,8 @@ class ApiClient(
 
     fun getAuthToken(): String? = authToken
 
+    fun getBaseUrl(): String = baseUrl
+
     suspend fun login(password: String): Result<LoginResponse> {
         return try {
             val response: HttpResponse = client.post("$baseUrl/api/session") {

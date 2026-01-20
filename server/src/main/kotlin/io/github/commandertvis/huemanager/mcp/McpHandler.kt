@@ -635,9 +635,24 @@ class McpHandler(
     }
 
     /**
-     * Serialize response to JSON string
+     * Serialize response to JSON string.
+     * Manually constructs JSON to ensure proper JSON-RPC 2.0 compliance:
+     * - Success responses have "result" but NOT "error"
+     * - Error responses have "error" but NOT "result"
      */
     fun serializeResponse(response: JsonRpcResponse): String {
-        return json.encodeToString(response)
+        val map = mutableMapOf<String, JsonElement>()
+        map["jsonrpc"] = JsonPrimitive(response.jsonrpc)
+        
+        response.id?.let { map["id"] = it }
+        
+        // Only include result OR error, never both
+        if (response.error != null) {
+            map["error"] = json.encodeToJsonElement(response.error)
+        } else if (response.result != null) {
+            map["result"] = response.result
+        }
+        
+        return json.encodeToString(JsonObject(map))
     }
 }

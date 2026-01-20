@@ -118,6 +118,8 @@ Potential MCP methods surface:
 - write lamp state (as manual override)
 - write state to all lamps
 
+Copyable MCP JSON with already proper URL patched in should be to the user provided by a clickable link on the main screen.
+
 # DevOps and security
 
 The server has to be fully buildable + deployable with Dockerfile. Meaning that I can just do `git clone ... && cd hue-manager` and `docker compose up -d --build` right in the root directory to run the server.

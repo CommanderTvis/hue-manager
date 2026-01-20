@@ -2,17 +2,22 @@ package io.github.commandertvis.huemanager.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import io.github.commandertvis.huemanager.getPlatform
 import io.github.commandertvis.huemanager.models.UserState
 import io.github.commandertvis.huemanager.network.ApiClient
 import io.github.commandertvis.huemanager.viewmodel.LampsViewModel
@@ -28,6 +33,7 @@ fun MainScreen(
     val uiState by lampsViewModel.uiState.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
+    var showMcpDialog by remember { mutableStateOf(false) }
 
     // Show error in snackbar
     LaunchedEffect(uiState.error) {
@@ -42,6 +48,9 @@ fun MainScreen(
             TopAppBar(
                 title = { Text("Hue Manager") },
                 actions = {
+                    TextButton(onClick = { showMcpDialog = true }) {
+                        Text("MCP")
+                    }
                     TextButton(onClick = onLogout) {
                         Text("Logout")
                     }
@@ -227,5 +236,79 @@ fun MainScreen(
                 }
             }
         }
+    }
+
+    // MCP Configuration Dialog
+    if (showMcpDialog) {
+        val baseUrl = apiClient.getBaseUrl()
+        val mcpJson = """
+{
+  "mcpServers": {
+    "hue-manager": {
+      "url": "${baseUrl}api/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_PASSWORD_HERE"
+      }
+    }
+  }
+}
+        """.trimIndent()
+
+        var copied by remember { mutableStateOf(false) }
+
+        AlertDialog(
+            onDismissRequest = { 
+                showMcpDialog = false
+                copied = false
+            },
+            title = { Text("MCP Configuration") },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Add this to your Claude Desktop config:",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant
+                    ) {
+                        Text(
+                            text = mcpJson,
+                            modifier = Modifier.padding(12.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                    Text(
+                        text = "Replace YOUR_PASSWORD_HERE with your password.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        getPlatform().copyToClipboard(mcpJson)
+                        copied = true
+                    }
+                ) {
+                    Text(if (copied) "Copied!" else "Copy")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { 
+                    showMcpDialog = false
+                    copied = false
+                }) {
+                    Text("Close")
+                }
+            }
+        )
     }
 }
