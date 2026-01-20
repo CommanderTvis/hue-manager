@@ -530,8 +530,7 @@ fun Application.module(
             val response = mcpHandler.handleRequest(requestBody, token)
             val responseJson = mcpHandler.serializeResponse(response)
 
-            val sseResponse = "event: message\ndata: $responseJson\n\n"
-            call.respondText(sseResponse, ContentType.Text.EventStream)
+            call.respondText(responseJson, ContentType.Application.Json)
         }
     }
 }
