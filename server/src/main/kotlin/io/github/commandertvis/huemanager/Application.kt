@@ -521,6 +521,206 @@ fun Application.module(
         // --- MCP (Model Context Protocol) ---
         val mcpHandler = McpHandler(hueService, automationManager, config.password)
 
+        // MCP Authentication page for Claude Desktop
+        get("/api/mcp/auth") {
+            call.respondText("""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>MCP Authentication - Hue Manager</title>
+                    <meta name="viewport" content="width=device-width, initial-scale=1">
+                    <style>
+                        body {
+                            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+                            max-width: 500px;
+                            margin: 80px auto;
+                            padding: 20px;
+                            background: #f5f5f5;
+                        }
+                        .container {
+                            background: white;
+                            padding: 40px;
+                            border-radius: 8px;
+                            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                        }
+                        h1 {
+                            margin: 0 0 10px 0;
+                            font-size: 24px;
+                            color: #333;
+                        }
+                        p {
+                            color: #666;
+                            margin: 0 0 30px 0;
+                        }
+                        input[type="password"] {
+                            width: 100%;
+                            padding: 12px;
+                            border: 1px solid #ddd;
+                            border-radius: 4px;
+                            font-size: 16px;
+                            box-sizing: border-box;
+                            margin-bottom: 20px;
+                        }
+                        button {
+                            width: 100%;
+                            padding: 12px;
+                            background: #007AFF;
+                            color: white;
+                            border: none;
+                            border-radius: 4px;
+                            font-size: 16px;
+                            font-weight: 600;
+                            cursor: pointer;
+                        }
+                        button:hover {
+                            background: #0051D5;
+                        }
+                        button:disabled {
+                            background: #ccc;
+                            cursor: not-allowed;
+                        }
+                        .result {
+                            display: none;
+                            margin-top: 20px;
+                            padding: 15px;
+                            border-radius: 4px;
+                        }
+                        .success {
+                            background: #d4edda;
+                            color: #155724;
+                            border: 1px solid #c3e6cb;
+                        }
+                        .error {
+                            background: #f8d7da;
+                            color: #721c24;
+                            border: 1px solid #f5c6cb;
+                        }
+                        .token-display {
+                            margin-top: 15px;
+                            padding: 12px;
+                            background: #f8f9fa;
+                            border: 1px solid #ddd;
+                            border-radius: 4px;
+                            font-family: monospace;
+                            word-break: break-all;
+                            font-size: 14px;
+                        }
+                        .copy-btn {
+                            margin-top: 10px;
+                            background: #28a745;
+                            font-size: 14px;
+                            padding: 8px 16px;
+                            width: auto;
+                        }
+                        .copy-btn:hover {
+                            background: #218838;
+                        }
+                        .instructions {
+                            margin-top: 20px;
+                            padding: 15px;
+                            background: #e7f3ff;
+                            border-left: 4px solid #007AFF;
+                            font-size: 14px;
+                            line-height: 1.6;
+                        }
+                        .instructions code {
+                            background: #fff;
+                            padding: 2px 6px;
+                            border-radius: 3px;
+                            font-family: monospace;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <h1>MCP Authentication</h1>
+                        <p>Enter your password to get a session token for Claude Desktop</p>
+
+                        <form id="authForm">
+                            <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
+                            <button type="submit" id="submitBtn">Get Token</button>
+                        </form>
+
+                        <div id="result" class="result"></div>
+
+                        <div class="instructions">
+                            <strong>How to use:</strong><br>
+                            1. Enter your password and click "Get Token"<br>
+                            2. Copy the generated token<br>
+                            3. Add to your Claude Desktop MCP config:<br>
+                            <pre style="margin: 10px 0; padding: 10px; background: #fff; border-radius: 4px; overflow-x: auto;">
+{
+  "mcpServers": {
+    "hue-manager": {
+      "url": "${call.request.origin.scheme}://${call.request.host()}/api/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_TOKEN_HERE"
+      }
+    }
+  }
+}</pre>
+                        </div>
+                    </div>
+
+                    <script>
+                        document.getElementById('authForm').addEventListener('submit', async (e) => {
+                            e.preventDefault();
+                            const password = document.getElementById('password').value;
+                            const submitBtn = document.getElementById('submitBtn');
+                            const result = document.getElementById('result');
+
+                            submitBtn.disabled = true;
+                            submitBtn.textContent = 'Authenticating...';
+                            result.style.display = 'none';
+
+                            try {
+                                const response = await fetch('/api/session', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ password })
+                                });
+
+                                const data = await response.json();
+
+                                if (data.success && data.token) {
+                                    result.className = 'result success';
+                                    result.innerHTML = `
+                                        <strong>✓ Authentication successful!</strong>
+                                        <div class="token-display" id="token">${"$"}{data.token}</div>
+                                        <button class="copy-btn" onclick="copyToken()">Copy Token</button>
+                                    `;
+                                    result.style.display = 'block';
+                                    document.getElementById('password').value = '';
+                                } else {
+                                    result.className = 'result error';
+                                    result.innerHTML = '<strong>✗ Authentication failed</strong><br>Invalid password';
+                                    result.style.display = 'block';
+                                }
+                            } catch (error) {
+                                result.className = 'result error';
+                                result.innerHTML = '<strong>✗ Error</strong><br>Failed to authenticate';
+                                result.style.display = 'block';
+                            } finally {
+                                submitBtn.disabled = false;
+                                submitBtn.textContent = 'Get Token';
+                            }
+                        });
+
+                        function copyToken() {
+                            const token = document.getElementById('token').textContent;
+                            navigator.clipboard.writeText(token).then(() => {
+                                const btn = event.target;
+                                const originalText = btn.textContent;
+                                btn.textContent = 'Copied!';
+                                setTimeout(() => { btn.textContent = originalText; }, 2000);
+                            });
+                        }
+                    </script>
+                </body>
+                </html>
+            """.trimIndent(), ContentType.Text.Html)
+        }
+
         get("/api/mcp") {
             val token = call.request.header("Authorization")?.removePrefix("Bearer ")
 
