@@ -19,7 +19,6 @@ import io.ktor.server.http.content.*
 import io.ktor.server.netty.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.cors.routing.*
-import io.ktor.server.plugins.origin
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -758,8 +757,7 @@ fun Application.module(
             val response = mcpHandler.handleRequest(requestBody, token)
             val responseJson = mcpHandler.serializeResponse(response)
 
-            val sseResponse = "event: message\ndata: $responseJson\n\n"
-            call.respondText(sseResponse, ContentType.Text.EventStream)
+            call.respondText(responseJson, ContentType.Application.Json)
         }
     }
 }

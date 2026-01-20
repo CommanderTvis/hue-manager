@@ -158,6 +158,7 @@ class McpHandler(
         } catch (e: Exception) {
             logger.warn("Failed to parse JSON-RPC request: ${e.message}")
             return JsonRpcResponse(
+                id = kotlinx.serialization.json.JsonNull,
                 error = JsonRpcError(
                     code = JsonRpcErrorCodes.PARSE_ERROR,
                     message = "Failed to parse JSON-RPC request: ${e.message}"

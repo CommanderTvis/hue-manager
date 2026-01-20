@@ -12,6 +12,16 @@ A Philips Hue lamp management system with:
 
 **IMPORTANT:** Philips Hue OAuth2 requires HTTPS and a valid domain name. The redirect URI must be publicly accessible over HTTPS.
 
+## Motivation
+
+This project solves key problems with native Philips Hue automation:
+- **Tedious automation setup**: Hue's native all-day scene feature is unreliable and forgets its state when lamps are turned off, requiring daily manual intervention via phone
+- **No desktop control**: No official desktop apps exist for precise lamp control (except Hue Sync for entertainment, which can't control lamps normally)
+- **Limited web interface**: Google Home web page lacks precise control options
+- **Smartphone dependency**: Effectively no way to control lamps when smartphone is off
+
+This system provides a persistent server-based automation with daylight simulation and multi-platform UI access (desktop, web, mobile).
+
 ## Current State
 
 **Implemented:**
@@ -155,7 +165,7 @@ KEYSTORE_PASSWORD=<for HTTPS>
 - `GET /api/lamps` - List all lamps
 - `GET /api/lamps/{id}` - Get single lamp
 - `PUT /api/lamps/{id}` - Update lamp (auth required)
-- `PUT /api/lamps/all` - Update all lamps (auth required)
+- `PUT /api/lamps/all` - Update all lamps at once (auth required) - use case: "I left home"/"I am back" control
 - `DELETE /api/lamps/{id}/override` - Clear manual override
 
 ### Groups
@@ -167,8 +177,10 @@ KEYSTORE_PASSWORD=<for HTTPS>
 - `POST /api/sleep` - "I'm asleep!" action
 
 ### Settings
-- `GET /api/settings` - Get current settings
-- `PUT /api/settings` - Update settings
+- `GET /api/settings` - Get current settings (pseudo-sunset time, location, automated lamp IDs)
+- `PUT /api/settings` - Update settings (auth required)
+
+**Note:** Settings API is fully implemented. Settings UI screen is not yet implemented - settings must be edited via API or in `.env` file.
 
 ### MCP (Model Context Protocol)
 - `POST /api/mcp` - MCP JSON-RPC endpoint (auth required for tools)
@@ -196,6 +208,12 @@ The server exposes an MCP endpoint for integration with Claude and other MCP-com
 **MCP Server Files:**
 - `server/.../mcp/McpModels.kt` - JSON-RPC 2.0 and MCP protocol data models
 - `server/.../mcp/McpHandler.kt` - Request handler with tool implementations
+
+**UI Integration:**
+- Main screen includes "MCP" button that opens a dialog with pre-configured MCP JSON
+- Dialog displays MCP server configuration with the current server URL automatically filled in
+- One-click copy button copies the MCP configuration to clipboard for easy setup in Claude or other MCP clients
+- Platform-specific clipboard implementation (JVM, WasmJS, Android)
 
 ## Rate Limiting
 
@@ -262,6 +280,7 @@ hue-manager/
 - Uses `Dockerfile.runtime` (runtime-only)
 - GitHub Actions builds artifacts and creates Docker image
 - Published to GitHub Container Registry (GHCR)
+- Container visibility inherits from repository (private repository → private packages)
 - Tagged with commit hash (e.g., `ghcr.io/commandertvis/hue-manager:sha-abc1234`)
 - Good for: Production deployments, faster deploys, reproducible builds
 
@@ -382,4 +401,6 @@ hue-manager/
     - `get_automation_status` - Current mode, target color, overridden lamps
     - `wake_up` / `go_to_sleep` - Trigger automation state changes
   - Server files: `mcp/McpModels.kt` (protocol types), `mcp/McpHandler.kt` (tool implementations)
-  - Connect via `{"url":"<domain>/api/mcp"}` in MCP client configuration
+  - UI integration: "MCP" button on main screen opens dialog with pre-configured MCP JSON
+  - One-click copy to clipboard functionality for easy MCP client setup
+  - Platform-specific clipboard support (JVM, WasmJS, Android)
