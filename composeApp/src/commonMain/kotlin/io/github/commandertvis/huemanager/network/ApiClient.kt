@@ -1,6 +1,5 @@
 package io.github.commandertvis.huemanager.network
 
-import io.github.commandertvis.huemanager.SERVER_PORT
 import io.github.commandertvis.huemanager.api.*
 import io.github.commandertvis.huemanager.models.Lamp
 import io.github.commandertvis.huemanager.models.LoginRequest
@@ -14,9 +13,11 @@ import kotlin.time.Duration.Companion.seconds
 
 expect fun createHttpClient(): HttpClient
 
-class ApiClient(
-    private val baseUrl: String = "http://localhost:$SERVER_PORT"
-) : AutoCloseable {
+class ApiClient(private val baseUrl: String) : AutoCloseable {
+    init {
+        check(baseUrl.isNotEmpty()) { "Base URL cannot be empty" }
+    }
+
     private val client = createHttpClient()
     private var authToken: String? = null
 

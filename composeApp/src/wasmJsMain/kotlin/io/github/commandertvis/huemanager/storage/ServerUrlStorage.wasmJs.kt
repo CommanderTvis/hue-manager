@@ -3,9 +3,7 @@ package io.github.commandertvis.huemanager.storage
 import kotlinx.browser.localStorage
 
 private class WasmJsServerUrlStorage : ServerUrlStorage {
-    override fun getServerUrl(): String? {
-        return localStorage.getItem(KEY_SERVER_URL)
-    }
+    override fun getServerUrl(): String? = localStorage.getItem(KEY_SERVER_URL)?.takeIf { it.isNotEmpty() }
     
     override fun setServerUrl(url: String) {
         localStorage.setItem(KEY_SERVER_URL, url)
