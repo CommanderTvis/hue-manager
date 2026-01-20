@@ -54,7 +54,7 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
 
             // Color Picker
-            implementation("com.github.skydoves:colorpicker-compose:1.1.2")
+            implementation(libs.colorpicker.compose)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
