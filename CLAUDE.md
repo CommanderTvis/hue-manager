@@ -291,6 +291,13 @@ hue-manager/
   - Added `getAutomationColor()` to provide color information for UI display
   - Extended API response (`AutomationStatusResponse`) to include automation mode and color data
   - Improved clear override behavior: lamps now immediately return to automation-dictated state when override is cleared
+    - When user is AWAKE: applies calculated automation state (brightness, color based on time of day)
+    - When user is ASLEEP: explicitly turns off the lamp (automation state is OFF)
+  - Fixed color glitch when clearing manual override:
+    - Modified `LampsViewModel.clearOverride()` to keep lamp in loading state until refresh completes
+    - Updated `LampsViewModel.refresh()` to clear all `loadingLampIds` after fetching updated state
+    - Prevents stale color data from being displayed before automation state is applied
+    - Ensures smooth visual transition from manual to automated state
 
 - **OAuth2 & Authentication:**
   - Fixed OAuth2 parameter naming: corrected `clientid` to `client_id` in Hue authorization flow

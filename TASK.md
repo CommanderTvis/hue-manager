@@ -58,17 +58,13 @@ The UI shows a "Please authorize" screen with these instructions when the bridge
 
 Should list all lamps of home and their current state.
 
-Also, we should see the state of the automation scheduler ("Auto-compensating", "Evening light") and what color does it dictate to all the lamps.
+Also, we should see the state of the automation scheduler ("Auto-compensating", "Evening light") and what color does it dictate to all the lamps (show also as a small colored circle)
 
-Provide controls to turn on/off individual lamps to change their brightness and color (there should be a RGB color picker and a hex text field, 6 symbols of length max, without ability to type invalid characters in it. e.g. "f" is fine, "z" is not).
+Provide controls to turn on/off individual lamps to change their brightness and color (there should be a RGB color picker and a hex text field, 6 symbols of length max, without ability to type invalid characters in it. e.g. "f" is fine, "z" is not).The color picker should have a preview square of the selected color which also has to react to changes in hex field, too. Changes to color should be immediate right as user clicks the picker or enter a valid color to text field. There should be no "Set" button or anything like that.
 
-The color picker should have a preview square of the selected color which also has to react to changes in hex field, too.
+Manual changes should be respected only for 1 hour unless a special control is pressed, then we are going back to automation. There should be a control to clear manual override. After clicking that control, the lamp should return to the state dictated by schedule immediately.
 
-Changes to color should be immediate right as I click on picker or enter a valid color to text field. There should be no "Set" button or anything like that.
-
-Manual changes should be respected only for 1 hour unless a special control is pressed, then we are going back to automation. There should be a control to clear manual override. After clicking that control, the lamp should return to the dictated state immediately.
-
-The controls of lamps for which something changes should gray out to avoid messy experience when you change something, then not sure whether app is lagging or why lamp hasn't changed, etc. For example, I change color, the controls gray out until we are sure the change was written.
+The controls of lamps for which something changes should gray out to avoid the messy experience when you change something, then not sure whether app is lagging or why lamp hasn't changed, etc. For example, I change color, the controls gray out until we are sure the change was written.
 
 And a toggle on/off control for all lamps at once, no matter automation e.g. "I left home" switching to "I am back." This control should also cause automation to be paused and to grey out individual lamp controls.
 

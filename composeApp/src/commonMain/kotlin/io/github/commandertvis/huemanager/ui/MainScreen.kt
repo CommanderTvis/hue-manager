@@ -1,12 +1,17 @@
 package io.github.commandertvis.huemanager.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import io.github.commandertvis.huemanager.models.UserState
 import io.github.commandertvis.huemanager.network.ApiClient
@@ -89,12 +94,38 @@ fun MainScreen(
                             }
 
                             // Color information
-                            uiState.automationColor?.let { color ->
-                                Text(
-                                    text = "Target: ${color.description}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                            uiState.automationColor?.let { colorInfo ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    // Small colored circle
+                                    val hueValue = colorInfo.hue
+                                    val saturationValue = colorInfo.saturation
+                                    val displayColor = if (hueValue != null && saturationValue != null) {
+                                        // Convert Hue (0-65535) and Saturation (0-254) to RGB
+                                        val hue = (hueValue / 65535f) * 360f
+                                        val saturation = saturationValue / 254f
+                                        val brightness = colorInfo.brightness / 254f
+                                        Color.hsv(hue, saturation, brightness)
+                                    } else {
+                                        // Color temperature mode - use warm white
+                                        Color(0xFFFFE4B5)
+                                    }
+                                    
+                                    Box(
+                                        modifier = Modifier
+                                            .size(16.dp)
+                                            .clip(CircleShape)
+                                            .background(displayColor)
+                                            .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                                    )
+                                    Text(
+                                        text = "Target: ${colorInfo.description}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
 
                             Text(

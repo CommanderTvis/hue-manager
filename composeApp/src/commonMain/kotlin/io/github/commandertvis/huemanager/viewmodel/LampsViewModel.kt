@@ -67,7 +67,10 @@ class LampsViewModel(
                 onFailure = { /* ignore */ }
             )
 
-            _uiState.value = _uiState.value.copy(isLoading = false)
+            _uiState.value = _uiState.value.copy(
+                isLoading = false,
+                loadingLampIds = emptySet() // Clear all loading states after refresh
+            )
         }
     }
 
@@ -230,11 +233,12 @@ class LampsViewModel(
             val result = apiClient.clearLampOverride(lampId)
             result.fold(
                 onSuccess = {
+                    // Remove from overridden list but keep loading state
                     _uiState.value = _uiState.value.copy(
-                        overriddenLampIds = _uiState.value.overriddenLampIds - lampId,
-                        loadingLampIds = _uiState.value.loadingLampIds - lampId
+                        overriddenLampIds = _uiState.value.overriddenLampIds - lampId
                     )
                     // Refresh to get the automation-dictated state
+                    // Loading state will be cleared when refresh completes
                     refresh()
                 },
                 onFailure = { e ->
