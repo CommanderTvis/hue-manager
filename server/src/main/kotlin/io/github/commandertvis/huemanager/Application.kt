@@ -23,10 +23,12 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.sse.*
-import io.modelcontextprotocol.kotlin.sdk.server.mcp
+import io.modelcontextprotocol.kotlin.sdk.server.SseServerTransport
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.io.path.Path
 import kotlin.io.path.isDirectory
 
@@ -732,14 +734,40 @@ fun Application.module(
             )
         }
 
-        // MCP endpoint using SDK's SSE transport
+        // MCP endpoint using SSE transport
         // SSE connection: GET /api/mcp (establishes connection, receives server messages)
         // Client messages: POST /api/mcp?sessionId=<id> (sends client messages)
         // Authentication: Bearer token (session token) OR Bearer password (direct password)
-        mcp("/api/mcp") {
-            // Note: Authentication should be added but SDK's mcp() doesn't support intercepts
-            // TODO: Add authentication wrapper if needed
-            mcpHandler.createServer()
+        val mcpSessions = ConcurrentHashMap<String, SseServerTransport>()
+        val mcpEndpoint = "/api/mcp"
+
+        sse(mcpEndpoint) {
+            val transport = SseServerTransport(mcpEndpoint, this)
+            mcpSessions[transport.sessionId] = transport
+
+            val server = mcpHandler.createServer()
+            server.onClose {
+                mcpSessions.remove(transport.sessionId)
+            }
+
+            server.createSession(transport)
+            awaitCancellation()
+        }
+
+        post(mcpEndpoint) {
+            val sessionId = call.request.queryParameters["sessionId"]
+            if (sessionId == null) {
+                call.respond(HttpStatusCode.BadRequest, "sessionId query parameter is not provided")
+                return@post
+            }
+
+            val transport = mcpSessions[sessionId]
+            if (transport == null) {
+                call.respond(HttpStatusCode.NotFound, "Session not found")
+                return@post
+            }
+
+            transport.handlePostMessage(call)
         }
     }
 }
