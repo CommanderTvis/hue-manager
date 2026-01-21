@@ -189,7 +189,7 @@ Caddy will automatically provision Let's Encrypt SSL certificates for your domai
 | GET    | `/api/lamps/{id}`            | No   | Get single lamp state                  |
 | PUT    | `/api/lamps/{id}`            | Yes  | Update lamp state                      |
 | PUT    | `/api/lamps/all`             | Yes  | Update all lamps                       |
-| POST   | `/api/session`               | No   | Login with password                    |
+| POST   | `/api/auth`                  | No   | Verify password                        |
 | POST   | `/api/wakeup`                | Yes  | Trigger "I woke up!"                   |
 | POST   | `/api/sleep`                 | Yes  | Trigger "I'm asleep!"                  |
 | GET    | `/api/automation`            | No   | Automation status                      |
@@ -199,11 +199,15 @@ Caddy will automatically provision Let's Encrypt SSL certificates for your domai
 | GET    | `/api/hue/authorize`         | No   | Start OAuth2 flow                      |
 | GET    | `/api/hue/callback`          | No   | OAuth2 callback                        |
 | POST   | `/api/hue/link`              | No   | Complete bridge linking                |
+| GET    | `/api/mcp/oauth`             | No   | MCP OAuth-style authorization page     |
 | POST   | `/api/mcp`                   | Yes  | MCP (Model Context Protocol) endpoint  |
+
+Authenticated endpoints require `Authorization: Bearer <password>`.
 
 ## MCP Integration
 
 The server exposes an MCP endpoint for integration with Claude and other MCP-compatible clients.
+For OAuth-style authorization flows, use `/api/mcp/oauth` as the authorization URL.
 
 ```json
 {

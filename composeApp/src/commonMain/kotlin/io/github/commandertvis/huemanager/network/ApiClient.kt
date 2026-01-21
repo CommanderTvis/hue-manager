@@ -2,8 +2,8 @@ package io.github.commandertvis.huemanager.network
 
 import io.github.commandertvis.huemanager.api.*
 import io.github.commandertvis.huemanager.models.Lamp
-import io.github.commandertvis.huemanager.models.LoginRequest
-import io.github.commandertvis.huemanager.models.LoginResponse
+import io.github.commandertvis.huemanager.models.AuthRequest
+import io.github.commandertvis.huemanager.models.AuthResponse
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.request.*
@@ -33,18 +33,18 @@ class ApiClient(private val baseUrl: String, private val client: HttpClient = cr
 
     fun getBaseUrl(): String = baseUrl
 
-    suspend fun login(password: String): Result<LoginResponse> = try {
-        val response = client.post("$baseUrl/api/session") {
+    suspend fun login(password: String): Result<AuthResponse> = try {
+        val response = client.post("$baseUrl/api/auth") {
             contentType(ContentType.Application.Json)
-            setBody(LoginRequest(password))
+            setBody(AuthRequest(password))
         }
 
         if (response.status.isSuccess()) {
-            val loginResponse = response.body<LoginResponse>()
-            if (loginResponse.success && loginResponse.token != null) {
-                authToken = loginResponse.token
+            val authResponse = response.body<AuthResponse>()
+            if (authResponse.success) {
+                authToken = password
             }
-            Result.success(loginResponse)
+            Result.success(authResponse)
         } else {
             val errorMessage = when (response.status.value) {
                 401 -> "Incorrect password"

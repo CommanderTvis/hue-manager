@@ -15,8 +15,7 @@ import org.slf4j.LoggerFactory
  */
 class McpHandler(
     private val hueService: HueService,
-    private val automationManager: AutomationManager,
-    private val password: String
+    private val automationManager: AutomationManager
 ) {
     private companion object {
         private val logger = LoggerFactory.getLogger(McpHandler::class.java)
@@ -42,13 +41,6 @@ class McpHandler(
         registerResources(server)
         registerTools(server)
         return server
-    }
-
-    /**
-     * Validates the password for authentication.
-     */
-    fun validatePassword(providedPassword: String?): Boolean {
-        return providedPassword != null && providedPassword == password
     }
 
     private fun registerResources(server: Server) {
@@ -228,7 +220,13 @@ class McpHandler(
         } catch (e: Exception) {
             logger.error("Failed to read lamps resource", e)
             ReadResourceResult(
-                contents = listOf(TextResourceContents("Error reading lamps: ${e.message}", "hue://lamps", "text/plain"))
+                contents = listOf(
+                    TextResourceContents(
+                        "Error reading lamps: ${e.message}",
+                        "hue://lamps",
+                        "text/plain"
+                    )
+                )
             )
         }
     }

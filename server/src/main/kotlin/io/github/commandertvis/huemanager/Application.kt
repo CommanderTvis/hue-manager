@@ -1,7 +1,6 @@
 package io.github.commandertvis.huemanager
 
 import io.github.commandertvis.huemanager.api.*
-import io.github.commandertvis.huemanager.auth.SessionManager
 import io.github.commandertvis.huemanager.automation.AutomationManager
 import io.github.commandertvis.huemanager.automation.UserState
 import io.github.commandertvis.huemanager.config.Config
@@ -44,8 +43,6 @@ fun main() {
     }
 
     HueService(config).use { hueService ->
-        val sessionManager = SessionManager(config)
-
         AutomationManager(config, hueService).use { automationManager ->
             runBlocking {
                 val initialized = hueService.initialize()
@@ -60,7 +57,7 @@ fun main() {
             }
 
             embeddedServer(Netty, port = SERVER_PORT, host = "0.0.0.0") {
-                module(config, hueService, sessionManager, automationManager)
+                module(config, hueService, automationManager)
             }.start(wait = true)
         }
     }
@@ -69,7 +66,6 @@ fun main() {
 fun Application.module(
     config: Config,
     hueService: HueService,
-    sessionManager: SessionManager,
     automationManager: AutomationManager
 ) {
     install(ContentNegotiation) {
@@ -107,13 +103,12 @@ fun Application.module(
         }
 
         // --- Authentication ---
-        post("/api/session") {
-            val request = call.receive<LoginRequest>()
-            val session = sessionManager.authenticate(request.password)
-            if (session != null) {
-                call.respond(LoginResponse.success(session.token))
+        post("/api/auth") {
+            val request = call.receive<AuthRequest>()
+            if (request.password == config.password) {
+                call.respond(AuthResponse.success())
             } else {
-                call.respond(HttpStatusCode.Unauthorized, LoginResponse.failure("Invalid password"))
+                call.respond(HttpStatusCode.Unauthorized, AuthResponse.failure("Invalid password"))
             }
         }
 
@@ -354,11 +349,7 @@ fun Application.module(
         }
 
         put("/api/lamps/{id}") {
-            val token = call.request.header("Authorization")?.removePrefix("Bearer ")
-            if (!sessionManager.validateSession(token)) {
-                call.respond(HttpStatusCode.Unauthorized, ApiError("Invalid session", 401))
-                return@put
-            }
+            if (!call.requirePassword(config)) return@put
 
             val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
             val request = call.receive<LampUpdateRequest>()
@@ -384,11 +375,7 @@ fun Application.module(
         }
 
         put("/api/lamps/all") {
-            val token = call.request.header("Authorization")?.removePrefix("Bearer ")
-            if (!sessionManager.validateSession(token)) {
-                call.respond(HttpStatusCode.Unauthorized, ApiError("Invalid session", 401))
-                return@put
-            }
+            if (!call.requirePassword(config)) return@put
 
             val request = call.receive<AllLampsUpdateRequest>()
 
@@ -425,11 +412,7 @@ fun Application.module(
 
         // --- Automation ---
         post("/api/wakeup") {
-            val token = call.request.header("Authorization")?.removePrefix("Bearer ")
-            if (!sessionManager.validateSession(token)) {
-                call.respond(HttpStatusCode.Unauthorized, ApiError("Invalid session", 401))
-                return@post
-            }
+            if (!call.requirePassword(config)) return@post
 
             val state = automationManager.wakeUp()
             val modelState = when (state) {
@@ -440,11 +423,7 @@ fun Application.module(
         }
 
         post("/api/sleep") {
-            val token = call.request.header("Authorization")?.removePrefix("Bearer ")
-            if (!sessionManager.validateSession(token)) {
-                call.respond(HttpStatusCode.Unauthorized, ApiError("Invalid session", 401))
-                return@post
-            }
+            if (!call.requirePassword(config)) return@post
 
             val state = automationManager.goToSleep()
             val modelState = when (state) {
@@ -497,11 +476,7 @@ fun Application.module(
         }
 
         put("/api/settings") {
-            val token = call.request.header("Authorization")?.removePrefix("Bearer ")
-            if (!sessionManager.validateSession(token)) {
-                call.respond(HttpStatusCode.Unauthorized, ApiError("Invalid session", 401))
-                return@put
-            }
+            if (!call.requirePassword(config)) return@put
 
             val request = call.receive<SettingsUpdateRequest>()
 
@@ -513,11 +488,7 @@ fun Application.module(
 
         // --- Override management ---
         delete("/api/lamps/{id}/override") {
-            val token = call.request.header("Authorization")?.removePrefix("Bearer ")
-            if (!sessionManager.validateSession(token)) {
-                call.respond(HttpStatusCode.Unauthorized, ApiError("Invalid session", 401))
-                return@delete
-            }
+            if (!call.requirePassword(config)) return@delete
 
             val id = call.parameters["id"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
             automationManager.clearLampOverride(id)
@@ -525,223 +496,56 @@ fun Application.module(
         }
 
         // --- MCP (Model Context Protocol) ---
-        val mcpHandler = McpHandler(hueService, automationManager, config.password)
+        val mcpHandler = McpHandler(hueService, automationManager)
 
-        // MCP Authentication page for Claude Desktop
-        get("/api/mcp/auth") {
-            val scheme = call.request.headers["X-Forwarded-Proto"]
-                ?: if (call.request.local.serverPort == 443) "https" else "http"
-            val host = call.request.headers["X-Forwarded-Host"] ?: call.request.local.serverHost
-            val mcpUrl = "$scheme://$host/api/mcp"
+        // MCP OAuth-style authorization (password-only)
+        get("/api/mcp/oauth") {
+            val redirectUri = call.parameters["redirect_uri"]
+            if (redirectUri.isNullOrBlank()) {
+                call.respond(HttpStatusCode.BadRequest, "redirect_uri query parameter is required")
+                return@get
+            }
 
+            val state = call.parameters["state"]
             call.respondText(
-                """
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>MCP Authentication - Hue Manager</title>
-                    <meta name="viewport" content="width=device-width, initial-scale=1">
-                    <style>
-                        body {
-                            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-                            max-width: 500px;
-                            margin: 80px auto;
-                            padding: 20px;
-                            background: #f5f5f5;
-                        }
-                        .container {
-                            background: white;
-                            padding: 40px;
-                            border-radius: 8px;
-                            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                        }
-                        h1 {
-                            margin: 0 0 10px 0;
-                            font-size: 24px;
-                            color: #333;
-                        }
-                        p {
-                            color: #666;
-                            margin: 0 0 30px 0;
-                        }
-                        input[type="password"] {
-                            width: 100%;
-                            padding: 12px;
-                            border: 1px solid #ddd;
-                            border-radius: 4px;
-                            font-size: 16px;
-                            box-sizing: border-box;
-                            margin-bottom: 20px;
-                        }
-                        button {
-                            width: 100%;
-                            padding: 12px;
-                            background: #007AFF;
-                            color: white;
-                            border: none;
-                            border-radius: 4px;
-                            font-size: 16px;
-                            font-weight: 600;
-                            cursor: pointer;
-                        }
-                        button:hover {
-                            background: #0051D5;
-                        }
-                        button:disabled {
-                            background: #ccc;
-                            cursor: not-allowed;
-                        }
-                        .result {
-                            display: none;
-                            margin-top: 20px;
-                            padding: 15px;
-                            border-radius: 4px;
-                        }
-                        .success {
-                            background: #d4edda;
-                            color: #155724;
-                            border: 1px solid #c3e6cb;
-                        }
-                        .error {
-                            background: #f8d7da;
-                            color: #721c24;
-                            border: 1px solid #f5c6cb;
-                        }
-                        .token-display {
-                            margin-top: 15px;
-                            padding: 12px;
-                            background: #f8f9fa;
-                            border: 1px solid #ddd;
-                            border-radius: 4px;
-                            font-family: monospace;
-                            word-break: break-all;
-                            font-size: 14px;
-                        }
-                        .copy-btn {
-                            margin-top: 10px;
-                            background: #28a745;
-                            font-size: 14px;
-                            padding: 8px 16px;
-                            width: auto;
-                        }
-                        .copy-btn:hover {
-                            background: #218838;
-                        }
-                        .instructions {
-                            margin-top: 20px;
-                            padding: 15px;
-                            background: #e7f3ff;
-                            border-left: 4px solid #007AFF;
-                            font-size: 14px;
-                            line-height: 1.6;
-                        }
-                        .instructions code {
-                            background: #fff;
-                            padding: 2px 6px;
-                            border-radius: 3px;
-                            font-family: monospace;
-                        }
-                    </style>
-                </head>
-                <body>
-                    <div class="container">
-                        <h1>MCP Authentication</h1>
-                        <p>Enter your password to get a session token for Claude Desktop</p>
-
-                        <form id="authForm">
-                            <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
-                            <button type="submit" id="submitBtn">Get Token</button>
-                        </form>
-
-                        <div id="result" class="result"></div>
-
-                        <div class="instructions">
-                            <strong>How to use:</strong><br>
-                            1. Enter your password and click "Get Token"<br>
-                            2. Copy the generated token<br>
-                            3. Add to your Claude Desktop MCP config:<br>
-                            <pre style="margin: 10px 0; padding: 10px; background: #fff; border-radius: 4px; overflow-x: auto;">
-{
-  "mcpServers": {
-    "hue-manager": {
-      "url": "$mcpUrl",
-      "headers": {
-        "Authorization": "Bearer YOUR_TOKEN_HERE"
-      }
-    }
-  }
-}</pre>
-                        </div>
-                    </div>
-
-                    <script>
-                        document.getElementById('authForm').addEventListener('submit', async (e) => {
-                            e.preventDefault();
-                            const password = document.getElementById('password').value;
-                            const submitBtn = document.getElementById('submitBtn');
-                            const result = document.getElementById('result');
-
-                            submitBtn.disabled = true;
-                            submitBtn.textContent = 'Authenticating...';
-                            result.style.display = 'none';
-
-                            try {
-                                const response = await fetch('/api/session', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ password })
-                                });
-
-                                const data = await response.json();
-
-                                if (data.success && data.token) {
-                                    result.className = 'result success';
-                                    result.innerHTML = `
-                                        <strong>✓ Authentication successful!</strong>
-                                        <div class="token-display" id="token">${"$"}{data.token}</div>
-                                        <button class="copy-btn" onclick="copyToken()">Copy Token</button>
-                                    `;
-                                    result.style.display = 'block';
-                                    document.getElementById('password').value = '';
-                                } else {
-                                    result.className = 'result error';
-                                    result.innerHTML = '<strong>✗ Authentication failed</strong><br>Invalid password';
-                                    result.style.display = 'block';
-                                }
-                            } catch (error) {
-                                result.className = 'result error';
-                                result.innerHTML = '<strong>✗ Error</strong><br>Failed to authenticate';
-                                result.style.display = 'block';
-                            } finally {
-                                submitBtn.disabled = false;
-                                submitBtn.textContent = 'Get Token';
-                            }
-                        });
-
-                        function copyToken() {
-                            const token = document.getElementById('token').textContent;
-                            navigator.clipboard.writeText(token).then(() => {
-                                const btn = event.target;
-                                const originalText = btn.textContent;
-                                btn.textContent = 'Copied!';
-                                setTimeout(() => { btn.textContent = originalText; }, 2000);
-                            });
-                        }
-                    </script>
-                </body>
-                </html>
-            """.trimIndent(), ContentType.Text.Html
+                renderMcpOauthPage(redirectUri, state, errorMessage = null),
+                ContentType.Text.Html
             )
+        }
+
+        post("/api/mcp/oauth") {
+            val params = call.receiveParameters()
+            val redirectUri = params["redirect_uri"]
+            if (redirectUri.isNullOrBlank()) {
+                call.respond(HttpStatusCode.BadRequest, "redirect_uri form parameter is required")
+                return@post
+            }
+
+            val password = params["password"]
+            val state = params["state"]
+            if (password != config.password) {
+                call.respondText(
+                    renderMcpOauthPage(redirectUri, state, errorMessage = "Invalid password"),
+                    ContentType.Text.Html,
+                    status = HttpStatusCode.Unauthorized
+                )
+                return@post
+            }
+
+            val redirectUrl = buildMcpOauthRedirect(redirectUri, password, state)
+            call.respondRedirect(redirectUrl, permanent = false)
         }
 
         // MCP endpoint using SSE transport
         // SSE connection: GET /api/mcp (establishes connection, receives server messages)
         // Client messages: POST /api/mcp?sessionId=<id> (sends client messages)
-        // Authentication: Bearer token (session token) OR Bearer password (direct password)
+        // Authentication: Bearer password
         val mcpSessions = ConcurrentHashMap<String, SseServerTransport>()
         val mcpEndpoint = "/api/mcp"
 
         sse(mcpEndpoint) {
+            if (!call.requirePassword(config)) return@sse
+
             val transport = SseServerTransport(mcpEndpoint, this)
             mcpSessions[transport.sessionId] = transport
 
@@ -755,6 +559,8 @@ fun Application.module(
         }
 
         post(mcpEndpoint) {
+            if (!call.requirePassword(config)) return@post
+
             val sessionId = call.request.queryParameters["sessionId"]
             if (sessionId == null) {
                 call.respond(HttpStatusCode.BadRequest, "sessionId query parameter is not provided")
@@ -794,4 +600,151 @@ private fun ApplicationCall.resolveHueRedirectUri(config: Config): String {
     }
 
     return "$scheme://$hostWithPort/api/hue/callback"
+}
+
+private suspend fun ApplicationCall.requirePassword(config: Config): Boolean {
+    val token = request.header(HttpHeaders.Authorization)
+        ?.removePrefix("Bearer ")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+
+    if (token == null || token != config.password) {
+        respond(HttpStatusCode.Unauthorized, ApiError("Invalid password", 401))
+        return false
+    }
+
+    return true
+}
+
+private fun buildMcpOauthRedirect(
+    redirectUri: String,
+    accessToken: String,
+    state: String?
+): String {
+    val redirectParts = redirectUri.split("#", limit = 2)
+    val baseUri = redirectParts[0]
+    val fragment = redirectParts.getOrNull(1)
+    val separator = if (baseUri.contains("?")) "&" else "?"
+    val params = mutableListOf(
+        "access_token=${accessToken.encodeURLParameter()}",
+        "token_type=Bearer"
+    )
+    if (!state.isNullOrBlank()) {
+        params.add("state=${state.encodeURLParameter()}")
+    }
+    val redirectWithParams = baseUri + separator + params.joinToString("&")
+    return if (fragment != null) "$redirectWithParams#$fragment" else redirectWithParams
+}
+
+private fun renderMcpOauthPage(
+    redirectUri: String,
+    state: String?,
+    errorMessage: String?
+): String {
+    val errorBlock = if (errorMessage != null) {
+        """
+        <div class="error">${errorMessage.escapeHtml()}</div>
+        """.trimIndent()
+    } else {
+        ""
+    }
+
+    val stateInput = if (!state.isNullOrBlank()) {
+        """<input type="hidden" name="state" value="${state.escapeHtml()}">"""
+    } else {
+        ""
+    }
+
+    return """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>MCP Authorization - Hue Manager</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+                    max-width: 500px;
+                    margin: 80px auto;
+                    padding: 20px;
+                    background: #f5f5f5;
+                }
+                .container {
+                    background: white;
+                    padding: 40px;
+                    border-radius: 8px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                }
+                h1 {
+                    margin: 0 0 10px 0;
+                    font-size: 24px;
+                    color: #333;
+                }
+                p {
+                    color: #666;
+                    margin: 0 0 30px 0;
+                }
+                input[type="password"] {
+                    width: 100%;
+                    padding: 12px;
+                    border: 1px solid #ddd;
+                    border-radius: 4px;
+                    font-size: 16px;
+                    box-sizing: border-box;
+                    margin-bottom: 20px;
+                }
+                button {
+                    width: 100%;
+                    padding: 12px;
+                    background: #007AFF;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    font-size: 16px;
+                    font-weight: 600;
+                    cursor: pointer;
+                }
+                button:hover {
+                    background: #0051D5;
+                }
+                .error {
+                    margin-top: 16px;
+                    padding: 12px;
+                    border-radius: 4px;
+                    background: #f8d7da;
+                    color: #721c24;
+                    border: 1px solid #f5c6cb;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>Authorize MCP Access</h1>
+                <p>Enter your Hue Manager password to authorize this MCP client.</p>
+                <form method="post" action="/api/mcp/oauth">
+                    <input type="password" name="password" placeholder="Password" autocomplete="current-password" required>
+                    <input type="hidden" name="redirect_uri" value="${redirectUri.escapeHtml()}">
+                    $stateInput
+                    <button type="submit">Authorize</button>
+                </form>
+                $errorBlock
+            </div>
+        </body>
+        </html>
+    """.trimIndent()
+}
+
+private fun String.escapeHtml(): String {
+    return buildString(length) {
+        for (char in this@escapeHtml) {
+            when (char) {
+                '&' -> append("&amp;")
+                '<' -> append("&lt;")
+                '>' -> append("&gt;")
+                '"' -> append("&quot;")
+                '\'' -> append("&#39;")
+                else -> append(char)
+            }
+        }
+    }
 }

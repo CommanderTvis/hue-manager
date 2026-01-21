@@ -94,7 +94,7 @@ KEYSTORE_PASSWORD=<for HTTPS>
 ## API Endpoints
 
 ### Authentication
-- `POST /api/session` - Login with password
+- `POST /api/auth` - Verify password
 
 ### OAuth2 (Bridge Authorization)
 - `GET /api/hue/authorize` - Start OAuth2 flow (returns authorization URL)
@@ -124,7 +124,7 @@ KEYSTORE_PASSWORD=<for HTTPS>
 **Note:** Settings API is fully implemented. Settings UI screen is not yet implemented - settings must be edited via API or in `.env` file.
 
 ### MCP (Model Context Protocol)
-- `GET /api/mcp/auth` - MCP authentication page for Claude Desktop setup
+- `GET /api/mcp/oauth` - MCP OAuth-style authorization page
 - `/api/mcp` - MCP SSE endpoint (auth required for tools)
 
 ## MCP (Model Context Protocol)
@@ -133,11 +133,11 @@ The server exposes an MCP endpoint for integration with Claude and other MCP-com
 
 **Connection:** Configure as `{"url":"<domain>/api/mcp"}` in your MCP client.
 
-**Authentication:** Requires a valid session token in the `Authorization: Bearer <token>` header. Obtain a token via `POST /api/session`. Visit `/api/mcp/auth` for a setup page with instructions.
+**Authentication:** Requires `Authorization: Bearer <password>`. For interactive auth (Claude connector), use `/api/mcp/oauth` as the authorization URL.
 
 **Implementation:**
 - Uses official MCP Kotlin SDK (`io.modelcontextprotocol:kotlin-sdk:0.8.1`)
-- SSE (Server-Sent Events) transport via SDK's `mcp()` routing function
+- SSE transport is wired manually via `SseServerTransport` for correct endpoint advertisement
 - Server file: `server/.../mcp/McpHandler.kt`
 
 **Available Resources:**
@@ -261,7 +261,6 @@ hue-manager/
 - `server/.../hue/HueRemoteClient.kt` - HTTP client for Philips Hue Remote API (OAuth2)
 - `server/.../hue/HueService.kt` - Service layer managing Hue connection via Remote API
 - `server/.../hue/RateLimiter.kt` - Token bucket and minimum delay rate limiters
-- `server/.../auth/SessionManager.kt` - Token-based session management
 - `server/.../automation/AutomationManager.kt` - User state, lamp overrides, heartbeat, automation mode calculation
 - `server/.../mcp/McpHandler.kt` - MCP server configuration and tool implementations
 
@@ -270,7 +269,7 @@ hue-manager/
 - `shared/.../models/Lamp.kt` - Lamp, LampState, ColorMode, LampType
 - `shared/.../models/Group.kt` - Group, GroupType, RoomClass
 - `shared/.../models/Automation.kt` - AutomationState, UserState, LampOverride, SunTimes
-- `shared/.../models/Session.kt` - Session, LoginRequest, LoginResponse
+- `shared/.../models/Auth.kt` - AuthRequest, AuthResponse
 - `shared/.../api/ApiModels.kt` - API DTOs (StatusResponse, LampsResponse, etc.)
 - `shared/.../network/JsonConfig.kt` - Shared JSON serialization configuration
 - `shared/.../Platform.kt` - Platform-specific utilities (expect/actual pattern)
@@ -280,7 +279,7 @@ hue-manager/
 
 - `composeApp/.../network/ApiClient.kt` - Multiplatform Ktor client with all API methods
 - `composeApp/.../network/RateLimiter.kt` - Client-side rate limiting
-- `composeApp/.../auth/SessionStorage.kt` - Persistent session token storage with StateFlow
+- `composeApp/.../auth/AuthStorage.kt` - Persistent password storage with StateFlow
 - `composeApp/.../storage/ServerUrlStorage.kt` - Platform-specific server URL storage
 - `composeApp/.../viewmodel/AuthViewModel.kt` - Login state management
 - `composeApp/.../viewmodel/LampsViewModel.kt` - Lamp state and control management

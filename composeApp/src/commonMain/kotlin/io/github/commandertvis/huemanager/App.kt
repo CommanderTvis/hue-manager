@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
-import io.github.commandertvis.huemanager.auth.SessionStorage
+import io.github.commandertvis.huemanager.auth.AuthStorage
 import io.github.commandertvis.huemanager.network.ApiClient
 import io.github.commandertvis.huemanager.storage.createServerUrlStorage
 import io.github.commandertvis.huemanager.ui.*
@@ -51,24 +51,24 @@ fun App(
                 key(serverUrl) {
                     // We need to store the client to close it when URL changes or app dies
                     val apiClient = remember(serverUrl) { ApiClient(serverUrl!!) }
-                    
+
                     DisposableEffect(apiClient) {
                         onDispose { apiClient.close() }
                     }
 
-                    val sessionStorage = remember { SessionStorage() }
-                    val authViewModel = remember(apiClient, sessionStorage) { 
-                        AuthViewModel(apiClient, sessionStorage) 
+                    val authStorage = remember { AuthStorage() }
+                    val authViewModel = remember(apiClient, authStorage) {
+                        AuthViewModel(apiClient, authStorage)
                     }
 
                     val authUiState by authViewModel.uiState.collectAsState()
-                    
+
                     val platform = remember { getPlatform() }
                     val scope = rememberCoroutineScope()
-                    
+
                     // Track bridge authorization status
                     var bridgeStatus by remember { mutableStateOf<BridgeStatus?>(null) }
-                    
+
                     // Check bridge status when logged in
                     LaunchedEffect(authUiState.isLoggedIn) {
                         if (authUiState.isLoggedIn) {
@@ -94,7 +94,7 @@ fun App(
                                 onErrorDismiss = { authViewModel.clearError() }
                             )
                         }
-                        
+
                         bridgeStatus == BridgeStatus.NeedsAuthorization && platform.isWeb -> {
                             // Web app: show "Please authorize" screen
                             PleaseAuthorizeScreen(
@@ -127,7 +127,7 @@ fun App(
                                 }
                             )
                         }
-                        
+
                         bridgeStatus == BridgeStatus.NeedsAuthorization && !platform.isWeb -> {
                             // Desktop/mobile: OAuth is done via browser, show same screen as web
                             PleaseAuthorizeScreen(
@@ -160,14 +160,14 @@ fun App(
                                 }
                             )
                         }
-                        
+
                         bridgeStatus == BridgeStatus.Connected -> {
                             MainScreen(
                                 apiClient = apiClient,
                                 onLogout = { authViewModel.logout() }
                             )
                         }
-                        
+
                         else -> {
                             // Loading state while checking bridge status
                             Box(

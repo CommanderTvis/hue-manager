@@ -241,7 +241,7 @@ fun MainScreen(
     if (showMcpDialog) {
         val baseUrl = apiClient.getBaseUrl()
         val mcpUrl = "${baseUrl}api/mcp"
-        val authUrl = "${baseUrl}api/mcp/auth"
+        val oauthUrl = "${baseUrl}api/mcp/oauth"
         val mcpJson = """
 {
   "mcpServers": {
@@ -327,7 +327,7 @@ fun MainScreen(
                                     color = MaterialTheme.colorScheme.surfaceVariant
                                 ) {
                                     Text(
-                                        text = authUrl,
+                                        text = oauthUrl,
                                         modifier = Modifier.padding(12.dp),
                                         style = MaterialTheme.typography.bodySmall,
                                         fontFamily = FontFamily.Monospace
@@ -335,7 +335,7 @@ fun MainScreen(
                                 }
                                 Button(
                                     onClick = {
-                                        getPlatform().copyToClipboard(authUrl)
+                                        getPlatform().copyToClipboard(oauthUrl)
                                         copiedUrl = true
                                     },
                                     modifier = Modifier.align(Alignment.End)
