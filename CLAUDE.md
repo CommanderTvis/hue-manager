@@ -137,9 +137,9 @@ The server exposes an MCP endpoint for integration with Claude and other MCP-com
 
 **Implementation:**
 - Uses official MCP Kotlin SDK (`io.modelcontextprotocol:kotlin-sdk:0.8.3`)
-- Streamable HTTP transport via `StreamableHttpServerTransport`
-- Supports both SSE streaming (GET) and JSON-RPC (POST) requests
-- Session management with automatic cleanup on DELETE
+- SSE transport via SDK's built-in `mcp {}` DSL
+- SSE connection: `GET /api/mcp` (establishes connection, receives server messages)
+- Client messages: `POST /api/mcp?sessionId=<id>` (sends client requests)
 - Server file: `server/.../mcp/McpHandler.kt`
 
 **Available Resources:**
@@ -186,17 +186,16 @@ Philips Hue Remote API has rate limits:
 ## Daylight Simulation Logic
 
 ```
-wake_time -> pseudo_sunset: Compensate for sun (bright when dark outside)
-pseudo_sunset -> pseudo_sunset+3h: Transition from white to orange (#FF5500), gradually dim
-pseudo_sunset+3h onwards: Minimal brightness, orange light only
+Before pseudo_sunset: Bright white light (auto compensation)
+pseudo_sunset -> pseudo_sunset+3h: Bright orange (#FF5500, 100% brightness)
+pseudo_sunset+3h onwards: Dim orange light (1% brightness)
 sleep_action: Turn off all automated lamps
 ```
 
 **Automation Modes:**
-- `WAKE_UP_COMPENSATION` - Early morning, compensating for lack of sunlight
-- `DAYLIGHT` - Sun is up, lamps dimmed or off
-- `EVENING_TRANSITION` - Transitioning from white to orange after pseudo-sunset
-- `NIGHT_MODE` - Late night, minimal orange light
+- `AUTO_COMPENSATION` - Before pseudo-sunset: bright white light
+- `EVENING` - From pseudo-sunset to +3h: bright orange light
+- `NIGHT` - After pseudo-sunset+3h: dim orange light
 - `USER_ASLEEP` - User pressed "I'm asleep!", lamps off
 
 **Out-of-sync Detection:**
