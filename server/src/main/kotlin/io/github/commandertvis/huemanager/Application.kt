@@ -735,7 +735,21 @@ fun Application.module(
         // MCP endpoint using SDK's SSE transport
         // SSE connection: GET /api/mcp (establishes connection, receives server messages)
         // Client messages: POST /api/mcp?sessionId=<id> (sends client messages)
+        // Authentication: Bearer token (session token) OR Bearer password (direct password)
         route("/api/mcp") {
+            // Authentication intercept - accepts session token OR direct password
+            intercept(ApplicationCallPipeline.Plugins) {
+                val token = call.request.header("Authorization")?.removePrefix("Bearer ")?.trim()
+                val isValidSession = sessionManager.validateSession(token)
+                val isValidPassword = mcpHandler.validatePassword(token)
+
+                if (!isValidSession && !isValidPassword) {
+                    call.respond(HttpStatusCode.Unauthorized, "Invalid authorization")
+                    finish()
+                    return@intercept
+                }
+            }
+
             mcp {
                 mcpHandler.createServer()
             }
