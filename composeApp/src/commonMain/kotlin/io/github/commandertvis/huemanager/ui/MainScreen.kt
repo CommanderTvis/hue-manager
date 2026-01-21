@@ -121,7 +121,7 @@ fun MainScreen(
                                         // Color temperature mode - use warm white
                                         Color(0xFFFFE4B5)
                                     }
-                                    
+
                                     Box(
                                         modifier = Modifier
                                             .size(16.dp)
@@ -175,7 +175,7 @@ fun MainScreen(
                                 text = "All Lamps",
                                 style = MaterialTheme.typography.titleMedium
                             )
-                            
+
                             Switch(
                                 checked = uiState.lamps.any { it.on },
                                 onCheckedChange = { lampsViewModel.setAllLamps(it) },
@@ -302,7 +302,7 @@ fun MainScreen(
                         Tab(
                             selected = selectedTab == 1,
                             onClick = { selectedTab = 1 },
-                            text = { Text("Direct HTTP") }
+                            text = { Text("http") }
                         )
                         Tab(
                             selected = selectedTab == 2,
@@ -319,7 +319,7 @@ fun MainScreen(
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Text(
-                                    text = "Use this URL to add as a Claude Desktop capability (no headers needed):",
+                                    text = "Use this URL to add as a Claude Desktop connector:",
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                                 Surface(

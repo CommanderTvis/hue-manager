@@ -43,5 +43,6 @@ dependencies {
     implementation(libs.dotenv)
 
     testImplementation(libs.ktor.serverTestHost)
+    testImplementation(libs.mcp.sdk)
     testImplementation(kotlin("test-junit"))
 }

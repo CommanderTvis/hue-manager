@@ -23,7 +23,7 @@ A Philips Hue lamp management system with:
 - kotlinx-datetime 0.7.1-0.6.x-compat
 - kotlinx-coroutines 1.10.2
 - dotenv-kotlin 6.5.1
-- MCP Kotlin SDK 0.8.3
+- MCP Kotlin SDK 0.8.1
 - Gradle with version catalog
 
 **Build Configuration:**
@@ -136,10 +136,8 @@ The server exposes an MCP endpoint for integration with Claude and other MCP-com
 **Authentication:** Requires a valid session token in the `Authorization: Bearer <token>` header. Obtain a token via `POST /api/session`. Visit `/api/mcp/auth` for a setup page with instructions.
 
 **Implementation:**
-- Uses official MCP Kotlin SDK (`io.modelcontextprotocol:kotlin-sdk:0.8.3`)
-- Streamable HTTP transport via `StreamableHttpServerTransport`
-- Supports both SSE streaming (GET) and JSON-RPC (POST) requests
-- Session management with automatic cleanup on DELETE
+- Uses official MCP Kotlin SDK (`io.modelcontextprotocol:kotlin-sdk:0.8.1`)
+- SSE (Server-Sent Events) transport via SDK's `mcp()` routing function
 - Server file: `server/.../mcp/McpHandler.kt`
 
 **Available Resources:**
@@ -351,8 +349,6 @@ hue-manager/
 ## Recent Changes
 
 **January 2026:**
-- Migrated MCP from SSE transport to Streamable HTTP transport (`StreamableHttpServerTransport`)
-- Bumped MCP Kotlin SDK from 0.8.1 to 0.8.3
 - Simplified automation mode handling and fixed evening transition brightness
 - Removed unused `initialServerUrl` parameter from App function
 - Updated README with MCP resources and tool descriptions
