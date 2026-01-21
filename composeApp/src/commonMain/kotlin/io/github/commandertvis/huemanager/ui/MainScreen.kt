@@ -88,11 +88,11 @@ fun MainScreen(
                             // Automation mode display
                             if (uiState.automationMode.isNotEmpty()) {
                                 val modeDisplay = when (uiState.automationMode) {
-                                    "AUTO_COMPENSATION", "WAKE_UP_COMPENSATION", "DAYLIGHT" -> "Auto-compensating"
-                                    "EVENING", "EVENING_TRANSITION" -> "Evening light"
-                                    "NIGHT", "NIGHT_MODE" -> "Night mode"
+                                    "AUTO_COMPENSATION" -> "Auto-compensating"
+                                    "EVENING" -> "Evening light"
+                                    "NIGHT" -> "Night mode"
                                     "USER_ASLEEP" -> "Lamps off"
-                                    else -> uiState.automationMode.lowercase().replace("_", " ")
+                                    else -> uiState.automationMode
                                 }
                                 Text(
                                     text = "Automation: $modeDisplay",
