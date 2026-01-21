@@ -23,10 +23,7 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.sse.*
-import io.modelcontextprotocol.kotlin.sdk.server.StreamableHttpServerTransport
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import io.modelcontextprotocol.kotlin.sdk.server.mcp
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
@@ -530,11 +527,13 @@ fun Application.module(
 
         // MCP Authentication page for Claude Desktop
         get("/api/mcp/auth") {
-            val scheme = call.request.headers["X-Forwarded-Proto"] ?: if (call.request.local.serverPort == 443) "https" else "http"
+            val scheme = call.request.headers["X-Forwarded-Proto"]
+                ?: if (call.request.local.serverPort == 443) "https" else "http"
             val host = call.request.headers["X-Forwarded-Host"] ?: call.request.local.serverHost
             val mcpUrl = "$scheme://$host/api/mcp"
 
-            call.respondText("""
+            call.respondText(
+                """
                 <!DOCTYPE html>
                 <html>
                 <head>
@@ -729,69 +728,16 @@ fun Application.module(
                     </script>
                 </body>
                 </html>
-            """.trimIndent(), ContentType.Text.Html)
+            """.trimIndent(), ContentType.Text.Html
+            )
         }
 
-        // MCP endpoint using Streamable HTTP transport
-        // Note: Authentication is handled via Bearer token in Authorization header
-        val mcpSessions = java.util.concurrent.ConcurrentHashMap<String, StreamableHttpServerTransport>()
-
+        // MCP endpoint using SDK's SSE transport
+        // SSE connection: GET /api/mcp (establishes connection, receives server messages)
+        // Client messages: POST /api/mcp?sessionId=<id> (sends client messages)
         route("/api/mcp") {
-            // Handle GET requests for SSE streaming
-            sse {
-                val sessionId = call.request.header("mcp-session-id")
-                val transport = sessionId?.let { mcpSessions[it] }
-                if (transport != null) {
-                    transport.handleRequest(this, call)
-                } else {
-                    call.respond(HttpStatusCode.BadRequest, "Missing or invalid mcp-session-id header")
-                }
-            }
-
-            // Handle POST requests for JSON-RPC messages
-            post {
-                val sessionId = call.request.header("mcp-session-id")
-
-                if (sessionId != null && mcpSessions.containsKey(sessionId)) {
-                    // Existing session
-                    val transport = mcpSessions[sessionId]!!
-                    transport.handleRequest(null, call)
-                } else {
-                    // New session (initialization request)
-                    val transport = StreamableHttpServerTransport(enableJsonResponse = false)
-
-                    transport.setOnSessionInitialized { newSessionId ->
-                        mcpSessions[newSessionId] = transport
-                        logger.info("MCP session initialized: $newSessionId")
-                    }
-
-                    transport.setOnSessionClosed { closedSessionId ->
-                        mcpSessions.remove(closedSessionId)
-                        logger.info("MCP session closed: $closedSessionId")
-                    }
-
-                    val server = mcpHandler.createServer()
-
-                    CoroutineScope(Dispatchers.IO).launch {
-                        server.createSession(transport)
-                    }
-
-                    // Small delay to ensure transport is ready
-                    kotlinx.coroutines.delay(100)
-
-                    transport.handleRequest(null, call)
-                }
-            }
-
-            // Handle DELETE requests for session termination
-            delete {
-                val sessionId = call.request.header("mcp-session-id")
-                val transport = sessionId?.let { mcpSessions[it] }
-                if (transport != null) {
-                    transport.handleRequest(null, call)
-                } else {
-                    call.respond(HttpStatusCode.NotFound, "Session not found")
-                }
+            mcp {
+                mcpHandler.createServer()
             }
         }
     }

@@ -88,10 +88,9 @@ fun MainScreen(
                             // Automation mode display
                             if (uiState.automationMode.isNotEmpty()) {
                                 val modeDisplay = when (uiState.automationMode) {
-                                    "WAKE_UP_COMPENSATION" -> "Auto-compensating"
-                                    "DAYLIGHT" -> "Daylight mode"
-                                    "EVENING_TRANSITION" -> "Evening light (transitioning)"
-                                    "NIGHT_MODE" -> "Evening light (minimal)"
+                                    "AUTO_COMPENSATION" -> "Auto-compensating"
+                                    "EVENING" -> "Evening light"
+                                    "NIGHT" -> "Night mode"
                                     "USER_ASLEEP" -> "Lamps off"
                                     else -> uiState.automationMode
                                 }
@@ -345,6 +344,7 @@ fun MainScreen(
                                 }
                             }
                         }
+
                         1 -> {
                             // Option 2: Standard MCP Config (with password auth)
                             Column(
@@ -384,6 +384,7 @@ fun MainScreen(
                                 }
                             }
                         }
+
                         2 -> {
                             // Option 3: Using mcp-remote proxy
                             Column(
