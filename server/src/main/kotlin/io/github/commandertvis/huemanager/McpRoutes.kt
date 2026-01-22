@@ -345,7 +345,7 @@ fun Route.mcpRoutes(
         call.respond(
             buildJsonObject {
                 put("access_token", accessToken)
-                put("token_type", "Bearer")
+                put("token_type", "bearer")
                 put("expires_in", MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS)
                 put("resource", codeEntry.resource)
                 if (!issuedScope.isNullOrBlank()) {
