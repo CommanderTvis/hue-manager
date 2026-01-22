@@ -35,6 +35,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import org.slf4j.LoggerFactory
+import java.security.MessageDigest
+import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.io.path.Path
 import kotlin.io.path.isDirectory
@@ -539,6 +541,7 @@ fun Application.module(
                 val clientId = call.parameters["client_id"]
                 val codeChallenge = call.parameters["code_challenge"]
                 val codeChallengeMethod = call.parameters["code_challenge_method"]
+                val resourceParam = call.parameters["resource"]
                 val effectiveResponseType = responseType ?: "code"
 
                 call.respondText(
@@ -549,6 +552,7 @@ fun Application.module(
                         clientId = clientId,
                         codeChallenge = codeChallenge,
                         codeChallengeMethod = codeChallengeMethod,
+                        resource = resourceParam,
                         errorMessage = null
                     ),
                     ContentType.Text.Html
@@ -569,6 +573,7 @@ fun Application.module(
             val clientId = params["client_id"]
             val codeChallenge = params["code_challenge"]
             val codeChallengeMethod = params["code_challenge_method"]
+            val resourceParam = params["resource"]
             val password = params["password"]
             if (password == null || !ConfigLoader.verifyPassword(password, config.passwordHash)) {
                 call.respondText(
@@ -579,6 +584,7 @@ fun Application.module(
                         clientId = clientId,
                         codeChallenge = codeChallenge,
                         codeChallengeMethod = codeChallengeMethod,
+                        resource = resourceParam,
                         errorMessage = "Invalid password"
                     ),
                     ContentType.Text.Html,
@@ -589,7 +595,32 @@ fun Application.module(
 
             when (responseType) {
                 "code" -> {
-                    val code = createMcpOauthCode(mcpOauthCodes, redirectUri, password)
+                    val resource = resolveMcpResource(call, resourceParam)
+                    if (resource == null) {
+                        call.respondText(
+                            renderMcpOauthPage(
+                                redirectUri = redirectUri,
+                                state = state,
+                                responseType = responseType,
+                                clientId = clientId,
+                                codeChallenge = codeChallenge,
+                                codeChallengeMethod = codeChallengeMethod,
+                                resource = resourceParam,
+                                errorMessage = "Invalid resource"
+                            ),
+                            ContentType.Text.Html,
+                            status = HttpStatusCode.BadRequest
+                        )
+                        return@post
+                    }
+                    val code = createMcpOauthCode(
+                        mcpOauthCodes = mcpOauthCodes,
+                        redirectUri = redirectUri,
+                        password = password,
+                        resource = resource,
+                        codeChallenge = codeChallenge,
+                        codeChallengeMethod = codeChallengeMethod
+                    )
                     val redirectUrl = buildMcpOauthCodeRedirect(redirectUri, code, state)
                     call.respondRedirect(redirectUrl, permanent = false)
                 }
@@ -662,6 +693,10 @@ fun Application.module(
 
             val redirectUri = params?.get("redirect_uri")
                 ?: jsonBody?.get("redirect_uri")?.jsonPrimitive?.contentOrNull
+            val resourceParam = params?.get("resource")
+                ?: jsonBody?.get("resource")?.jsonPrimitive?.contentOrNull
+            val codeVerifier = params?.get("code_verifier")
+                ?: jsonBody?.get("code_verifier")?.jsonPrimitive?.contentOrNull
             val now = System.currentTimeMillis()
             val codeEntry = mcpOauthCodes.remove(code)
             if (codeEntry == null || now > codeEntry.expiresAtMillis) {
@@ -672,6 +707,28 @@ fun Application.module(
             if (!redirectUri.isNullOrBlank() && redirectUri != codeEntry.redirectUri) {
                 call.respond(HttpStatusCode.BadRequest, "redirect_uri does not match")
                 return@post
+            }
+
+            val resolvedResource = resolveMcpResource(call, resourceParam)
+            if (resolvedResource == null) {
+                call.respond(HttpStatusCode.BadRequest, "Invalid resource")
+                return@post
+            }
+            if (resolvedResource != codeEntry.resource) {
+                call.respond(HttpStatusCode.BadRequest, "resource does not match")
+                return@post
+            }
+
+            if (codeEntry.codeChallenge != null) {
+                if (codeVerifier.isNullOrBlank()) {
+                    call.respond(HttpStatusCode.BadRequest, "code_verifier is required")
+                    return@post
+                }
+                val method = codeEntry.codeChallengeMethod ?: "plain"
+                if (!verifyPkce(codeVerifier, codeEntry.codeChallenge, method)) {
+                    call.respond(HttpStatusCode.BadRequest, "Invalid code_verifier")
+                    return@post
+                }
             }
 
             call.respond(
@@ -799,6 +856,29 @@ private fun ApplicationCall.resolveBaseUrl(): String {
     return "$scheme://$hostWithPort/"
 }
 
+private fun resolveMcpResource(call: ApplicationCall, resourceParam: String?): String? {
+    val baseUrl = call.resolveBaseUrl().removeSuffix("/")
+    val canonical = "$baseUrl/api/mcp"
+    if (resourceParam.isNullOrBlank()) {
+        return canonical
+    }
+    val normalized = resourceParam.trim().removeSuffix("/")
+    return if (normalized == canonical) canonical else null
+}
+
+private fun verifyPkce(codeVerifier: String, codeChallenge: String, method: String): Boolean {
+    return when (method.lowercase()) {
+        "plain" -> codeVerifier == codeChallenge
+        "s256" -> sha256Base64Url(codeVerifier) == codeChallenge
+        else -> false
+    }
+}
+
+private fun sha256Base64Url(value: String): String {
+    val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+    return Base64.getUrlEncoder().withoutPadding().encodeToString(digest)
+}
+
 private fun ApplicationCall.extractBearerToken(): String? {
     val header = request.header(HttpHeaders.Authorization)?.trim()?.takeIf { it.isNotEmpty() } ?: return null
     val parts = header.split(" ", limit = 2)
@@ -848,7 +928,10 @@ private const val MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS = 365L * 24 * 60 * 60
 private data class McpOauthCode(
     val redirectUri: String,
     val expiresAtMillis: Long,
-    val password: String
+    val password: String,
+    val resource: String,
+    val codeChallenge: String?,
+    val codeChallengeMethod: String?
 )
 
 @Serializable
@@ -873,7 +956,10 @@ private data class OAuthRegistrationResponse(
 private fun createMcpOauthCode(
     codes: ConcurrentHashMap<String, McpOauthCode>,
     redirectUri: String,
-    password: String
+    password: String,
+    resource: String,
+    codeChallenge: String?,
+    codeChallengeMethod: String?
 ): String {
     val now = System.currentTimeMillis()
     codes.entries.removeIf { it.value.expiresAtMillis <= now }
@@ -881,7 +967,10 @@ private fun createMcpOauthCode(
     codes[code] = McpOauthCode(
         redirectUri = redirectUri,
         expiresAtMillis = now + MCP_OAUTH_CODE_TTL_MILLIS,
-        password = password
+        password = password,
+        resource = resource,
+        codeChallenge = codeChallenge,
+        codeChallengeMethod = codeChallengeMethod
     )
     return code
 }
@@ -970,6 +1059,7 @@ private fun renderMcpOauthPage(
     clientId: String?,
     codeChallenge: String?,
     codeChallengeMethod: String?,
+    resource: String?,
     errorMessage: String?
 ): String {
     val errorBlock = if (errorMessage != null) {
@@ -997,6 +1087,11 @@ private fun renderMcpOauthPage(
     }
     val codeChallengeMethodInput = if (!codeChallengeMethod.isNullOrBlank()) {
         """<input type="hidden" name="code_challenge_method" value="${codeChallengeMethod.escapeHtml()}">"""
+    } else {
+        ""
+    }
+    val resourceInput = if (!resource.isNullOrBlank()) {
+        """<input type="hidden" name="resource" value="${resource.escapeHtml()}">"""
     } else {
         ""
     }
@@ -1075,6 +1170,7 @@ private fun renderMcpOauthPage(
                     $clientIdInput
                     $codeChallengeInput
                     $codeChallengeMethodInput
+                    $resourceInput
                     <button type="submit">Authorize</button>
                 </form>
                 $errorBlock
