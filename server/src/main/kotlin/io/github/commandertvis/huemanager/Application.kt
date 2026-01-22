@@ -637,20 +637,28 @@ fun Application.module(
         }
 
         post("/api/mcp/oauth/token") {
-            val params = call.receiveParameters()
-            val grantType = params["grant_type"]
+            val params = runCatching { call.receiveParameters() }.getOrNull()
+            val jsonBody = if (params == null) {
+                runCatching { call.receive<JsonObject>() }.getOrNull()
+            } else {
+                null
+            }
+            val grantType = params?.get("grant_type")
+                ?: jsonBody?.get("grant_type")?.jsonPrimitive?.contentOrNull
             if (grantType != "authorization_code") {
                 call.respond(HttpStatusCode.BadRequest, "Unsupported grant_type: $grantType")
                 return@post
             }
 
-            val code = params["code"]
+            val code = params?.get("code")
+                ?: jsonBody?.get("code")?.jsonPrimitive?.contentOrNull
             if (code.isNullOrBlank()) {
                 call.respond(HttpStatusCode.BadRequest, "code form parameter is required")
                 return@post
             }
 
-            val redirectUri = params["redirect_uri"]
+            val redirectUri = params?.get("redirect_uri")
+                ?: jsonBody?.get("redirect_uri")?.jsonPrimitive?.contentOrNull
             val now = System.currentTimeMillis()
             val codeEntry = mcpOauthCodes.remove(code)
             if (codeEntry == null || now > codeEntry.expiresAtMillis) {
