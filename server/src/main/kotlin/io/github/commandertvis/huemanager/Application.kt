@@ -938,11 +938,12 @@ private fun buildMcpProtectedResourceMetadata(
     resourcePath: String? = null
 ) = buildJsonObject {
     val baseUrl = call.resolveBaseUrl()
-    val resource = if (resourcePath.isNullOrBlank()) {
-        "${baseUrl}api/mcp"
-    } else {
-        baseUrl.removeSuffix("/") + resourcePath
+    val normalizedResourcePath = when {
+        resourcePath.isNullOrBlank() -> "/api/mcp"
+        resourcePath.startsWith("/api/mcp") -> "/api/mcp"
+        else -> resourcePath
     }
+    val resource = baseUrl.removeSuffix("/") + normalizedResourcePath
     put("resource", resource)
     // Point to the authorization server (same server in this case)
     putJsonArray("authorization_servers") {
