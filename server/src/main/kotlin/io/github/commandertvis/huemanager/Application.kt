@@ -660,19 +660,36 @@ fun Application.module(
         val mcpSessions = ConcurrentHashMap<String, SseServerTransport>()
         val mcpEndpoint = "/api/mcp"
 
-        sse(mcpEndpoint) {
-            if (!call.requireMcpPassword(config)) return@sse
-
-            val transport = SseServerTransport(mcpEndpoint, this)
-            mcpSessions[transport.sessionId] = transport
-
-            val server = mcpHandler.createServer()
-            server.onClose {
-                mcpSessions.remove(transport.sessionId)
+        // Use route with intercept to check auth BEFORE SSE handler runs
+        route(mcpEndpoint) {
+            // Intercept to check authentication before SSE sends headers
+            intercept(io.ktor.server.application.ApplicationCallPipeline.Plugins) {
+                if (call.request.httpMethod == HttpMethod.Get) {
+                    if (!call.checkMcpPassword(config)) {
+                        val baseUrl = call.resolveBaseUrl()
+                        val resourceMetadataUrl = "${baseUrl}.well-known/oauth-protected-resource"
+                        call.response.header(
+                            HttpHeaders.WWWAuthenticate,
+                            """Bearer resource_metadata="$resourceMetadataUrl""""
+                        )
+                        call.respond(HttpStatusCode.Unauthorized, ApiError("Invalid password", 401))
+                        finish()
+                    }
+                }
             }
 
-            server.createSession(transport)
-            awaitCancellation()
+            sse {
+                val transport = SseServerTransport(mcpEndpoint, this)
+                mcpSessions[transport.sessionId] = transport
+
+                val server = mcpHandler.createServer()
+                server.onClose {
+                    mcpSessions.remove(transport.sessionId)
+                }
+
+                server.createSession(transport)
+                awaitCancellation()
+            }
         }
 
         post(mcpEndpoint) {
@@ -766,12 +783,16 @@ private suspend fun ApplicationCall.requirePassword(config: Config): Boolean {
     return true
 }
 
-private suspend fun ApplicationCall.requireMcpPassword(config: Config): Boolean {
+private fun ApplicationCall.checkMcpPassword(config: Config): Boolean {
     val token = extractBearerToken()
         ?: request.queryParameters["access_token"]?.trim()?.takeIf { it.isNotEmpty() }
         ?: request.queryParameters["token"]?.trim()?.takeIf { it.isNotEmpty() }
 
-    if (token == null || token != config.password) {
+    return token != null && token == config.password
+}
+
+private suspend fun ApplicationCall.requireMcpPassword(config: Config): Boolean {
+    if (!checkMcpPassword(config)) {
         val baseUrl = resolveBaseUrl()
         val resourceMetadataUrl = "${baseUrl}.well-known/oauth-protected-resource"
         response.header(
@@ -894,6 +915,7 @@ private fun buildMcpProtectedResourceMetadata(call: ApplicationCall) = buildJson
         add(baseUrl.removeSuffix("/"))
     }
 }
+
 
 private fun renderMcpOauthPage(
     redirectUri: String,
