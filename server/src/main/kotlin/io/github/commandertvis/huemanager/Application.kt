@@ -567,11 +567,6 @@ fun Application.module(
             val codeChallenge = params["code_challenge"]
             val codeChallengeMethod = params["code_challenge_method"]
             val password = params["password"]
-            println("OAuth POST - password param present: ${password != null}, length: ${password?.length ?: 0}")
-            if (password != null) {
-                val inputHash = ConfigLoader.hashPassword(password)
-                println("OAuth POST - input hash: $inputHash, expected hash: ${config.passwordHash}, match: ${inputHash == config.passwordHash}")
-            }
             if (password == null || !ConfigLoader.verifyPassword(password, config.passwordHash)) {
                 call.respondText(
                     renderMcpOauthPage(
@@ -632,7 +627,6 @@ fun Application.module(
         }
 
         post("/api/mcp/oauth/token") {
-            println("TOKEN endpoint called")
             val params = call.receiveParameters()
             val grantType = params["grant_type"]
             if (grantType != "authorization_code") {
@@ -659,7 +653,6 @@ fun Application.module(
                 return@post
             }
 
-            println("TOKEN endpoint - returning access_token with length: ${codeEntry.password.length}")
             call.respond(
                 buildJsonObject {
                     put("access_token", codeEntry.password)
@@ -680,15 +673,13 @@ fun Application.module(
         route(mcpEndpoint) {
             // Intercept to check authentication before SSE sends headers
             intercept(io.ktor.server.application.ApplicationCallPipeline.Plugins) {
+                // Skip auth for OAuth sub-paths - they have their own auth
+                val path = call.request.path()
+                if (path.startsWith("/api/mcp/oauth")) {
+                    return@intercept
+                }
+
                 if (call.request.httpMethod == HttpMethod.Get) {
-                    val token = call.extractBearerToken()
-                        ?: call.request.queryParameters["access_token"]?.trim()?.takeIf { it.isNotEmpty() }
-                        ?: call.request.queryParameters["token"]?.trim()?.takeIf { it.isNotEmpty() }
-                    println("MCP SSE - token present: ${token != null}, length: ${token?.length ?: 0}")
-                    if (token != null) {
-                        val tokenHash = ConfigLoader.hashPassword(token)
-                        println("MCP SSE - token hash: $tokenHash, expected: ${config.passwordHash}, match: ${tokenHash == config.passwordHash}")
-                    }
                     if (!call.checkMcpPassword(config)) {
                         val baseUrl = call.resolveBaseUrl()
                         val resourceMetadataUrl = "${baseUrl}.well-known/oauth-protected-resource"
