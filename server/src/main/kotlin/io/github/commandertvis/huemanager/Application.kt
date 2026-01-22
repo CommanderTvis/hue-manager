@@ -26,6 +26,9 @@ import io.modelcontextprotocol.kotlin.sdk.server.SseServerTransport
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.putJsonArray
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.io.path.Path
@@ -499,16 +502,36 @@ fun Application.module(
         val mcpHandler = McpHandler(hueService, automationManager)
 
         // MCP OAuth-style authorization (password-only)
+        val mcpOauthCodes = ConcurrentHashMap<String, McpOauthCode>()
+
         get("/api/mcp/oauth") {
             val redirectUri = call.parameters["redirect_uri"]
+            val responseType = call.parameters["response_type"]
+            if (redirectUri.isNullOrBlank() && responseType.isNullOrBlank()) {
+                call.respond(buildMcpOauthMetadata(call))
+                return@get
+            }
             if (redirectUri.isNullOrBlank()) {
                 call.respond(HttpStatusCode.BadRequest, "redirect_uri query parameter is required")
                 return@get
             }
 
             val state = call.parameters["state"]
+            val clientId = call.parameters["client_id"]
+            val codeChallenge = call.parameters["code_challenge"]
+            val codeChallengeMethod = call.parameters["code_challenge_method"]
+            val effectiveResponseType = responseType ?: "code"
+
             call.respondText(
-                renderMcpOauthPage(redirectUri, state, errorMessage = null),
+                renderMcpOauthPage(
+                    redirectUri = redirectUri,
+                    state = state,
+                    responseType = effectiveResponseType,
+                    clientId = clientId,
+                    codeChallenge = codeChallenge,
+                    codeChallengeMethod = codeChallengeMethod,
+                    errorMessage = null
+                ),
                 ContentType.Text.Html
             )
         }
@@ -521,19 +544,87 @@ fun Application.module(
                 return@post
             }
 
-            val password = params["password"]
+            val responseType = params["response_type"] ?: "code"
             val state = params["state"]
+            val clientId = params["client_id"]
+            val codeChallenge = params["code_challenge"]
+            val codeChallengeMethod = params["code_challenge_method"]
+            val password = params["password"]
             if (password != config.password) {
                 call.respondText(
-                    renderMcpOauthPage(redirectUri, state, errorMessage = "Invalid password"),
+                    renderMcpOauthPage(
+                        redirectUri = redirectUri,
+                        state = state,
+                        responseType = responseType,
+                        clientId = clientId,
+                        codeChallenge = codeChallenge,
+                        codeChallengeMethod = codeChallengeMethod,
+                        errorMessage = "Invalid password"
+                    ),
                     ContentType.Text.Html,
                     status = HttpStatusCode.Unauthorized
                 )
                 return@post
             }
 
-            val redirectUrl = buildMcpOauthRedirect(redirectUri, password, state)
-            call.respondRedirect(redirectUrl, permanent = false)
+            when (responseType) {
+                "code" -> {
+                    val code = createMcpOauthCode(mcpOauthCodes, redirectUri)
+                    val redirectUrl = buildMcpOauthCodeRedirect(redirectUri, code, state)
+                    call.respondRedirect(redirectUrl, permanent = false)
+                }
+
+                "token" -> {
+                    val redirectUrl = buildMcpOauthTokenRedirect(redirectUri, password, state)
+                    call.respondRedirect(redirectUrl, permanent = false)
+                }
+
+                else -> call.respond(HttpStatusCode.BadRequest, "Unsupported response_type: $responseType")
+            }
+        }
+
+        get("/api/mcp/oauth/.well-known/oauth-authorization-server") {
+            call.respond(buildMcpOauthMetadata(call))
+        }
+
+        get("/.well-known/oauth-authorization-server") {
+            call.respond(buildMcpOauthMetadata(call))
+        }
+
+        post("/api/mcp/oauth/token") {
+            val params = call.receiveParameters()
+            val grantType = params["grant_type"]
+            if (grantType != "authorization_code") {
+                call.respond(HttpStatusCode.BadRequest, "Unsupported grant_type: $grantType")
+                return@post
+            }
+
+            val code = params["code"]
+            if (code.isNullOrBlank()) {
+                call.respond(HttpStatusCode.BadRequest, "code form parameter is required")
+                return@post
+            }
+
+            val redirectUri = params["redirect_uri"]
+            val now = System.currentTimeMillis()
+            val codeEntry = mcpOauthCodes.remove(code)
+            if (codeEntry == null || now > codeEntry.expiresAtMillis) {
+                call.respond(HttpStatusCode.BadRequest, "Invalid or expired code")
+                return@post
+            }
+
+            if (!redirectUri.isNullOrBlank() && redirectUri != codeEntry.redirectUri) {
+                call.respond(HttpStatusCode.BadRequest, "redirect_uri does not match")
+                return@post
+            }
+
+            call.respond(
+                buildJsonObject {
+                    put("access_token", config.password)
+                    put("token_type", "Bearer")
+                    put("expires_in", 0)
+                }
+            )
         }
 
         // MCP endpoint using SSE transport
@@ -602,6 +693,25 @@ private fun ApplicationCall.resolveHueRedirectUri(config: Config): String {
     return "$scheme://$hostWithPort/api/hue/callback"
 }
 
+private fun ApplicationCall.resolveBaseUrl(): String {
+    val forwardedProto = request.headers["X-Forwarded-Proto"]
+    val forwardedHost = request.headers["X-Forwarded-Host"]
+    val forwardedPort = request.headers["X-Forwarded-Port"]
+
+    val scheme = forwardedProto ?: if (request.port() == 443) "https" else "http"
+    val host = forwardedHost ?: request.host()
+    val port = forwardedPort ?: request.port().toString()
+
+    val hostWithPort = if (":" in host) {
+        host
+    } else {
+        val isDefaultPort = (scheme == "http" && port == "80") || (scheme == "https" && port == "443")
+        if (isDefaultPort) host else "$host:$port"
+    }
+
+    return "$scheme://$hostWithPort/"
+}
+
 private suspend fun ApplicationCall.requirePassword(config: Config): Boolean {
     val token = request.header(HttpHeaders.Authorization)
         ?.removePrefix("Bearer ")
@@ -616,15 +726,48 @@ private suspend fun ApplicationCall.requirePassword(config: Config): Boolean {
     return true
 }
 
-private fun buildMcpOauthRedirect(
+private const val MCP_OAUTH_CODE_TTL_MILLIS = 5 * 60 * 1000L
+
+private data class McpOauthCode(
+    val redirectUri: String,
+    val expiresAtMillis: Long
+)
+
+private fun createMcpOauthCode(
+    codes: ConcurrentHashMap<String, McpOauthCode>,
+    redirectUri: String
+): String {
+    val now = System.currentTimeMillis()
+    codes.entries.removeIf { it.value.expiresAtMillis <= now }
+    val code = java.util.UUID.randomUUID().toString()
+    codes[code] = McpOauthCode(
+        redirectUri = redirectUri,
+        expiresAtMillis = now + MCP_OAUTH_CODE_TTL_MILLIS
+    )
+    return code
+}
+
+private fun buildMcpOauthCodeRedirect(
+    redirectUri: String,
+    code: String,
+    state: String?
+): String {
+    val separator = if (redirectUri.contains("?")) "&" else "?"
+    val params = mutableListOf("code=${code.encodeURLParameter()}")
+    if (!state.isNullOrBlank()) {
+        params.add("state=${state.encodeURLParameter()}")
+    }
+    return redirectUri + separator + params.joinToString("&")
+}
+
+private fun buildMcpOauthTokenRedirect(
     redirectUri: String,
     accessToken: String,
     state: String?
 ): String {
     val redirectParts = redirectUri.split("#", limit = 2)
     val baseUri = redirectParts[0]
-    val fragment = redirectParts.getOrNull(1)
-    val separator = if (baseUri.contains("?")) "&" else "?"
+    val existingFragment = redirectParts.getOrNull(1)
     val params = mutableListOf(
         "access_token=${accessToken.encodeURLParameter()}",
         "token_type=Bearer"
@@ -632,13 +775,41 @@ private fun buildMcpOauthRedirect(
     if (!state.isNullOrBlank()) {
         params.add("state=${state.encodeURLParameter()}")
     }
-    val redirectWithParams = baseUri + separator + params.joinToString("&")
-    return if (fragment != null) "$redirectWithParams#$fragment" else redirectWithParams
+    val fragment = when {
+        existingFragment.isNullOrBlank() -> params.joinToString("&")
+        else -> existingFragment + "&" + params.joinToString("&")
+    }
+    return "$baseUri#$fragment"
+}
+
+private fun buildMcpOauthMetadata(call: ApplicationCall) = buildJsonObject {
+    val baseUrl = call.resolveBaseUrl()
+    val issuer = "${baseUrl}api/mcp/oauth"
+    put("issuer", issuer)
+    put("authorization_endpoint", issuer)
+    put("token_endpoint", "${baseUrl}api/mcp/oauth/token")
+    putJsonArray("response_types_supported") {
+        add("code")
+    }
+    putJsonArray("grant_types_supported") {
+        add("authorization_code")
+    }
+    putJsonArray("token_endpoint_auth_methods_supported") {
+        add("none")
+    }
+    putJsonArray("code_challenge_methods_supported") {
+        add("S256")
+        add("plain")
+    }
 }
 
 private fun renderMcpOauthPage(
     redirectUri: String,
     state: String?,
+    responseType: String,
+    clientId: String?,
+    codeChallenge: String?,
+    codeChallengeMethod: String?,
     errorMessage: String?
 ): String {
     val errorBlock = if (errorMessage != null) {
@@ -651,6 +822,21 @@ private fun renderMcpOauthPage(
 
     val stateInput = if (!state.isNullOrBlank()) {
         """<input type="hidden" name="state" value="${state.escapeHtml()}">"""
+    } else {
+        ""
+    }
+    val clientIdInput = if (!clientId.isNullOrBlank()) {
+        """<input type="hidden" name="client_id" value="${clientId.escapeHtml()}">"""
+    } else {
+        ""
+    }
+    val codeChallengeInput = if (!codeChallenge.isNullOrBlank()) {
+        """<input type="hidden" name="code_challenge" value="${codeChallenge.escapeHtml()}">"""
+    } else {
+        ""
+    }
+    val codeChallengeMethodInput = if (!codeChallengeMethod.isNullOrBlank()) {
+        """<input type="hidden" name="code_challenge_method" value="${codeChallengeMethod.escapeHtml()}">"""
     } else {
         ""
     }
@@ -724,7 +910,11 @@ private fun renderMcpOauthPage(
                 <form method="post" action="/api/mcp/oauth">
                     <input type="password" name="password" placeholder="Password" autocomplete="current-password" required>
                     <input type="hidden" name="redirect_uri" value="${redirectUri.escapeHtml()}">
+                    <input type="hidden" name="response_type" value="${responseType.escapeHtml()}">
                     $stateInput
+                    $clientIdInput
+                    $codeChallengeInput
+                    $codeChallengeMethodInput
                     <button type="submit">Authorize</button>
                 </form>
                 $errorBlock

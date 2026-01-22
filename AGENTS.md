@@ -125,6 +125,8 @@ KEYSTORE_PASSWORD=<for HTTPS>
 
 ### MCP (Model Context Protocol)
 - `GET /api/mcp/oauth` - MCP OAuth-style authorization page
+- `GET /api/mcp/oauth/.well-known/oauth-authorization-server` - OAuth metadata for connectors
+- `POST /api/mcp/oauth/token` - OAuth token exchange
 - `/api/mcp` - MCP SSE endpoint (auth required for tools)
 
 ## MCP (Model Context Protocol)
