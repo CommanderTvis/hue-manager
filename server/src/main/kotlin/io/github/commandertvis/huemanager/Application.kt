@@ -567,10 +567,10 @@ fun Application.module(
             val codeChallenge = params["code_challenge"]
             val codeChallengeMethod = params["code_challenge_method"]
             val password = params["password"]
-            logger.info("OAuth POST - password param present: ${password != null}, length: ${password?.length ?: 0}")
+            println("OAuth POST - password param present: ${password != null}, length: ${password?.length ?: 0}")
             if (password != null) {
                 val inputHash = ConfigLoader.hashPassword(password)
-                logger.info("OAuth POST - input hash: $inputHash, expected hash: ${config.passwordHash}, match: ${inputHash == config.passwordHash}")
+                println("OAuth POST - input hash: $inputHash, expected hash: ${config.passwordHash}, match: ${inputHash == config.passwordHash}")
             }
             if (password == null || !ConfigLoader.verifyPassword(password, config.passwordHash)) {
                 call.respondText(
