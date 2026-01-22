@@ -35,6 +35,7 @@ import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.io.path.Path
 import kotlin.io.path.isDirectory
+import kotlin.io.path.isRegularFile
 
 private val logger = LoggerFactory.getLogger("Application")
 
@@ -524,24 +525,32 @@ fun Application.module(
                 return@get
             }
 
-            val state = call.parameters["state"]
-            val clientId = call.parameters["client_id"]
-            val codeChallenge = call.parameters["code_challenge"]
-            val codeChallengeMethod = call.parameters["code_challenge_method"]
-            val effectiveResponseType = responseType ?: "code"
+            // Serve the WASM SPA - it will detect the /api/mcp/oauth path and show OAuth UI
+            val webDir = Path("web")
+            val indexFile = webDir.resolve("index.html")
+            if (indexFile.isRegularFile()) {
+                call.respondFile(indexFile.toFile())
+            } else {
+                // Fallback to raw HTML if WASM app is not available
+                val state = call.parameters["state"]
+                val clientId = call.parameters["client_id"]
+                val codeChallenge = call.parameters["code_challenge"]
+                val codeChallengeMethod = call.parameters["code_challenge_method"]
+                val effectiveResponseType = responseType ?: "code"
 
-            call.respondText(
-                renderMcpOauthPage(
-                    redirectUri = redirectUri,
-                    state = state,
-                    responseType = effectiveResponseType,
-                    clientId = clientId,
-                    codeChallenge = codeChallenge,
-                    codeChallengeMethod = codeChallengeMethod,
-                    errorMessage = null
-                ),
-                ContentType.Text.Html
-            )
+                call.respondText(
+                    renderMcpOauthPage(
+                        redirectUri = redirectUri,
+                        state = state,
+                        responseType = effectiveResponseType,
+                        clientId = clientId,
+                        codeChallenge = codeChallenge,
+                        codeChallengeMethod = codeChallengeMethod,
+                        errorMessage = null
+                    ),
+                    ContentType.Text.Html
+                )
+            }
         }
 
         post("/api/mcp/oauth") {
