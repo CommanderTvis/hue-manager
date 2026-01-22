@@ -4,14 +4,14 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import io.github.commandertvis.huemanager.storage.initializeServerUrlStorage
+import io.github.commandertvis.huemanager.storage.initializePlatformStorage
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         
-        initializeServerUrlStorage(this)
+        initializePlatformStorage(this)
 
         setContent {
             App()

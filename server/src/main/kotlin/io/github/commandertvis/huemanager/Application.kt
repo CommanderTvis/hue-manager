@@ -599,6 +599,11 @@ fun Application.module(
             call.respond(buildMcpOauthMetadata(call))
         }
 
+        // Protected Resource Metadata (RFC 9728) - required by MCP spec
+        get("/.well-known/oauth-protected-resource") {
+            call.respond(buildMcpProtectedResourceMetadata(call))
+        }
+
         post("/api/mcp/oauth/register") {
             val request = runCatching { call.receive<OAuthRegistrationRequest>() }.getOrNull()
             val response = OAuthRegistrationResponse(
@@ -767,6 +772,12 @@ private suspend fun ApplicationCall.requireMcpPassword(config: Config): Boolean 
         ?: request.queryParameters["token"]?.trim()?.takeIf { it.isNotEmpty() }
 
     if (token == null || token != config.password) {
+        val baseUrl = resolveBaseUrl()
+        val resourceMetadataUrl = "${baseUrl}.well-known/oauth-protected-resource"
+        response.header(
+            HttpHeaders.WWWAuthenticate,
+            """Bearer resource_metadata="$resourceMetadataUrl""""
+        )
         respond(HttpStatusCode.Unauthorized, ApiError("Invalid password", 401))
         return false
     }
@@ -852,9 +863,10 @@ private fun buildMcpOauthTokenRedirect(
 
 private fun buildMcpOauthMetadata(call: ApplicationCall) = buildJsonObject {
     val baseUrl = call.resolveBaseUrl()
-    val issuer = "${baseUrl}api/mcp/oauth"
+    // Issuer should be the base URL without trailing slash per RFC8414
+    val issuer = baseUrl.removeSuffix("/")
     put("issuer", issuer)
-    put("authorization_endpoint", issuer)
+    put("authorization_endpoint", "${baseUrl}api/mcp/oauth")
     put("token_endpoint", "${baseUrl}api/mcp/oauth/token")
     put("registration_endpoint", "${baseUrl}api/mcp/oauth/register")
     putJsonArray("response_types_supported") {
@@ -869,6 +881,17 @@ private fun buildMcpOauthMetadata(call: ApplicationCall) = buildJsonObject {
     putJsonArray("code_challenge_methods_supported") {
         add("S256")
         add("plain")
+    }
+}
+
+private fun buildMcpProtectedResourceMetadata(call: ApplicationCall) = buildJsonObject {
+    val baseUrl = call.resolveBaseUrl()
+    // Resource identifier is the MCP endpoint
+    val resource = "${baseUrl}api/mcp"
+    put("resource", resource)
+    // Point to the authorization server (same server in this case)
+    putJsonArray("authorization_servers") {
+        add(baseUrl.removeSuffix("/"))
     }
 }
 

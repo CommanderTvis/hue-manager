@@ -12,12 +12,12 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import io.github.commandertvis.huemanager.SERVER_PORT
-import io.github.commandertvis.huemanager.storage.ServerUrlStorage
+import io.github.commandertvis.huemanager.storage.PlatformStorage
 import io.github.commandertvis.huemanager.viewmodel.ServerConnectViewModel
 
 @Composable
 fun ServerConnectScreen(
-    storage: ServerUrlStorage,
+    storage: PlatformStorage,
     initialUrl: String?,
     onConnect: (String) -> Unit
 ) {

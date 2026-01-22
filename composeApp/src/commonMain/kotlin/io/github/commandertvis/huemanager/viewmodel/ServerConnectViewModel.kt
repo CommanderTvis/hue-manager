@@ -1,7 +1,7 @@
 package io.github.commandertvis.huemanager.viewmodel
 
 import io.github.commandertvis.huemanager.network.ApiClient
-import io.github.commandertvis.huemanager.storage.ServerUrlStorage
+import io.github.commandertvis.huemanager.storage.PlatformStorage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,7 +16,7 @@ data class ServerConnectUiState(
 )
 
 class ServerConnectViewModel(
-    private val storage: ServerUrlStorage,
+    private val storage: PlatformStorage,
     initialUrl: String?
 ) {
     private val scope = CoroutineScope(Dispatchers.Main)

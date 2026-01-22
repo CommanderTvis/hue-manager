@@ -20,7 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import io.github.commandertvis.huemanager.auth.AuthStorage
 import io.github.commandertvis.huemanager.network.ApiClient
-import io.github.commandertvis.huemanager.storage.createServerUrlStorage
+import io.github.commandertvis.huemanager.storage.platformStorage
 import io.github.commandertvis.huemanager.ui.*
 import io.github.commandertvis.huemanager.viewmodel.AuthViewModel
 import kotlinx.coroutines.launch
@@ -30,8 +30,7 @@ import kotlinx.coroutines.launch
 fun App(
     initialServerUrl: String? = null
 ) {
-    val serverUrlStorage = remember { createServerUrlStorage() }
-    val storedUrl = remember { serverUrlStorage.getServerUrl() }
+    val storedUrl = remember { platformStorage.getServerUrl() }
     var serverUrl by remember { mutableStateOf(initialServerUrl ?: storedUrl) }
 
     MaterialTheme {
@@ -43,7 +42,7 @@ fun App(
         ) {
             if (serverUrl == null) {
                 ServerConnectScreen(
-                    storage = serverUrlStorage,
+                    storage = platformStorage,
                     initialUrl = "http://localhost:$SERVER_PORT",
                     onConnect = { serverUrl = it }
                 )
