@@ -814,10 +814,12 @@ fun Application.module(
                 codeEntry.resource,
                 issuedScope
             )
+            call.response.header(HttpHeaders.CacheControl, "no-store")
+            call.response.header(HttpHeaders.Pragma, "no-cache")
             call.respond(
                 buildJsonObject {
                     put("access_token", accessToken)
-                    put("token_type", "bearer")
+                    put("token_type", "Bearer")
                     put("expires_in", MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS)
                     put("resource", codeEntry.resource)
                     if (!issuedScope.isNullOrBlank()) {
@@ -1048,7 +1050,15 @@ private fun ApplicationCall.checkMcpPassword(
         ?: request.queryParameters["token"]?.trim()?.takeIf { it.isNotEmpty() }
 
     if (token == null) {
-        logger.warn("MCP auth failed: missing token path={}", request.path())
+        val headerNames = request.headers.names().sorted().joinToString(",")
+        val queryKeys = request.queryParameters.names().sorted().joinToString(",")
+        logger.warn(
+            "MCP auth failed: missing token path={} ua={} headerNames={} queryKeys={}",
+            request.path(),
+            request.header(HttpHeaders.UserAgent),
+            headerNames,
+            queryKeys
+        )
         return false
     }
     if (ConfigLoader.verifyPassword(token, config.passwordHash)) {
@@ -1210,7 +1220,8 @@ private fun buildMcpOauthTokenRedirect(
     val existingFragment = redirectParts.getOrNull(1)
     val params = mutableListOf(
         "access_token=${accessToken.encodeURLParameter()}",
-        "token_type=bearer"
+        "token_type=Bearer",
+        "expires_in=$MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS"
     )
     if (!scope.isNullOrBlank()) {
         params.add("scope=${scope.encodeURLParameter()}")
