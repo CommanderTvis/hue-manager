@@ -25,6 +25,7 @@ import io.ktor.server.sse.*
 import io.modelcontextprotocol.kotlin.sdk.server.SseServerTransport
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
@@ -592,6 +593,19 @@ fun Application.module(
             call.respond(buildMcpOauthMetadata(call))
         }
 
+        post("/api/mcp/oauth/register") {
+            val request = runCatching { call.receive<OAuthRegistrationRequest>() }.getOrNull()
+            val response = OAuthRegistrationResponse(
+                client_id = java.util.UUID.randomUUID().toString(),
+                client_id_issued_at = System.currentTimeMillis() / 1000,
+                token_endpoint_auth_method = "none",
+                grant_types = listOf("authorization_code"),
+                response_types = listOf("code"),
+                redirect_uris = request?.redirect_uris
+            )
+            call.respond(response)
+        }
+
         post("/api/mcp/oauth/token") {
             val params = call.receiveParameters()
             val grantType = params["grant_type"]
@@ -734,6 +748,25 @@ private data class McpOauthCode(
     val expiresAtMillis: Long
 )
 
+@Serializable
+private data class OAuthRegistrationRequest(
+    val redirect_uris: List<String>? = null,
+    val client_name: String? = null,
+    val token_endpoint_auth_method: String? = null,
+    val grant_types: List<String>? = null,
+    val response_types: List<String>? = null
+)
+
+@Serializable
+private data class OAuthRegistrationResponse(
+    val client_id: String,
+    val client_id_issued_at: Long,
+    val token_endpoint_auth_method: String,
+    val grant_types: List<String>,
+    val response_types: List<String>,
+    val redirect_uris: List<String>? = null
+)
+
 private fun createMcpOauthCode(
     codes: ConcurrentHashMap<String, McpOauthCode>,
     redirectUri: String
@@ -789,6 +822,7 @@ private fun buildMcpOauthMetadata(call: ApplicationCall) = buildJsonObject {
     put("issuer", issuer)
     put("authorization_endpoint", issuer)
     put("token_endpoint", "${baseUrl}api/mcp/oauth/token")
+    put("registration_endpoint", "${baseUrl}api/mcp/oauth/register")
     putJsonArray("response_types_supported") {
         add("code")
     }
