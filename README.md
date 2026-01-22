@@ -182,47 +182,54 @@ Caddy will automatically provision Let's Encrypt SSL certificates for your domai
 
 ## API Endpoints
 
-| Method | Endpoint                     | Auth | Description                            |
-|--------|------------------------------|------|----------------------------------------|
-| GET    | `/api/status`                | No   | Connection status and automation state |
-| GET    | `/api/lamps`                 | No   | List all lamps                         |
-| GET    | `/api/lamps/{id}`            | No   | Get single lamp state                  |
-| PUT    | `/api/lamps/{id}`            | Yes  | Update lamp state                      |
-| PUT    | `/api/lamps/all`             | Yes  | Update all lamps                       |
-| POST   | `/api/auth`                  | No   | Verify password                        |
-| POST   | `/api/wakeup`                | Yes  | Trigger "I woke up!"                   |
-| POST   | `/api/sleep`                 | Yes  | Trigger "I'm asleep!"                  |
-| GET    | `/api/automation`            | No   | Automation status                      |
-| GET    | `/api/settings`              | No   | Get automation settings                |
-| PUT    | `/api/settings`              | Yes  | Update automation settings             |
-| DELETE | `/api/lamps/{id}/override`   | Yes  | Clear manual override                  |
-| GET    | `/api/hue/authorize`         | No   | Start OAuth2 flow                      |
-| GET    | `/api/hue/callback`          | No   | OAuth2 callback                        |
-| POST   | `/api/hue/link`              | No   | Complete bridge linking                |
-| GET    | `/api/mcp/oauth`             | No   | MCP OAuth-style authorization page     |
-| POST   | `/api/mcp`                   | Yes  | MCP (Model Context Protocol) endpoint  |
+| Method | Endpoint                                   | Auth  | Description                                 |
+|--------|--------------------------------------------|-------|---------------------------------------------|
+| GET    | `/api/status`                              | No    | Connection status and automation state      |
+| GET    | `/api/lamps`                               | No    | List all lamps                              |
+| GET    | `/api/lamps/{id}`                          | No    | Get single lamp state                       |
+| PUT    | `/api/lamps/{id}`                          | Yes   | Update lamp state                           |
+| PUT    | `/api/lamps/all`                           | Yes   | Update all lamps                            |
+| POST   | `/api/auth`                                | No    | Verify password                             |
+| POST   | `/api/wakeup`                              | Yes   | Trigger "I woke up!"                        |
+| POST   | `/api/sleep`                               | Yes   | Trigger "I'm asleep!"                       |
+| GET    | `/api/automation`                          | No    | Automation status                           |
+| GET    | `/api/settings`                            | No    | Get automation settings                     |
+| PUT    | `/api/settings`                            | Yes   | Update automation settings                  |
+| DELETE | `/api/lamps/{id}/override`                 | Yes   | Clear manual override                       |
+| GET    | `/api/hue/authorize`                       | No    | Start OAuth2 flow                           |
+| GET    | `/api/hue/callback`                        | No    | OAuth2 callback                             |
+| POST   | `/api/hue/link`                            | No    | Complete bridge linking                     |
+| GET    | `/api/mcp/oauth`                           | No    | MCP OAuth authorization UI                  |
+| POST   | `/api/mcp/oauth`                           | No    | MCP OAuth password submit                   |
+| POST   | `/api/mcp/oauth/token`                     | No    | MCP OAuth token exchange                    |
+| POST   | `/api/mcp/oauth/register`                  | No    | MCP OAuth dynamic client registration       |
+| GET    | `/.well-known/oauth-authorization-server`  | No    | OAuth server metadata                       |
+| GET    | `/.well-known/oauth-protected-resource`    | No    | OAuth protected resource metadata           |
+| GET    | `/api/mcp`                                 | OAuth | MCP SSE endpoint                            |
+| POST   | `/api/mcp`                                 | OAuth | MCP POST messages                           |
 
-Authenticated endpoints require `Authorization: Bearer <password>`.
+Authenticated endpoints (non-MCP) require `Authorization: Bearer <password>`. MCP uses OAuth access tokens.
 
 ## MCP Integration
 
-The server exposes an MCP endpoint for integration with Claude and other MCP-compatible clients.
-For OAuth-style authorization flows, use `/api/mcp/oauth` as the authorization URL.
+The MCP endpoint uses OAuth 2.1 Authorization Code with PKCE (S256). The `resource` parameter is required and should be
+`https://yourdomain.com/api/mcp`. Access tokens are short-lived and must be sent as `Authorization: Bearer <access_token>`.
+
+For Claude/ChatGPT connectors, point the client at the MCP URL and follow the OAuth prompt:
 
 ```json
 {
   "mcpServers": {
     "hue-manager": {
-      "url": "https://yourdomain.com/api/mcp",
-      "headers": {
-        "Authorization": "Bearer YOUR_PASSWORD_HERE"
-      }
+      "url": "https://yourdomain.com/api/mcp"
     }
   }
 }
 ```
 
-Replace `yourdomain.com` with your server domain and `YOUR_PASSWORD_HERE` with the same `PASSWORD` from your `.env` file.
+For custom clients:
+- Register via `/api/mcp/oauth/register` or host a client metadata document (use the HTTPS URL as `client_id`).
+- Use `/api/mcp/oauth` for authorization and `/api/mcp/oauth/token` for token exchange.
 
 ### Available MCP Resources
 

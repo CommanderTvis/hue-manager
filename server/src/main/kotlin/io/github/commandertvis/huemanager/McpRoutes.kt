@@ -576,7 +576,10 @@ private suspend fun fetchClientMetadataDocument(clientIdUrl: String): McpOauthCl
             ?.mapNotNull { it.jsonPrimitive.contentOrNull }
             ?.toSet()
             ?: setOf("authorization_code")
-        if (grantTypes.any { it != "authorization_code" }) {
+        if (!grantTypes.contains("authorization_code")) {
+            return@withContext null
+        }
+        if (grantTypes.any { it != "authorization_code" && it != "refresh_token" }) {
             return@withContext null
         }
         val responseTypes = doc["response_types"]?.jsonArray
