@@ -632,6 +632,7 @@ fun Application.module(
         }
 
         post("/api/mcp/oauth/token") {
+            println("TOKEN endpoint called")
             val params = call.receiveParameters()
             val grantType = params["grant_type"]
             if (grantType != "authorization_code") {
@@ -658,6 +659,7 @@ fun Application.module(
                 return@post
             }
 
+            println("TOKEN endpoint - returning access_token with length: ${codeEntry.password.length}")
             call.respond(
                 buildJsonObject {
                     put("access_token", codeEntry.password)
@@ -679,6 +681,14 @@ fun Application.module(
             // Intercept to check authentication before SSE sends headers
             intercept(io.ktor.server.application.ApplicationCallPipeline.Plugins) {
                 if (call.request.httpMethod == HttpMethod.Get) {
+                    val token = call.extractBearerToken()
+                        ?: call.request.queryParameters["access_token"]?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: call.request.queryParameters["token"]?.trim()?.takeIf { it.isNotEmpty() }
+                    println("MCP SSE - token present: ${token != null}, length: ${token?.length ?: 0}")
+                    if (token != null) {
+                        val tokenHash = ConfigLoader.hashPassword(token)
+                        println("MCP SSE - token hash: $tokenHash, expected: ${config.passwordHash}, match: ${tokenHash == config.passwordHash}")
+                    }
                     if (!call.checkMcpPassword(config)) {
                         val baseUrl = call.resolveBaseUrl()
                         val resourceMetadataUrl = "${baseUrl}.well-known/oauth-protected-resource"
