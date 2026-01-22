@@ -614,7 +614,7 @@ fun Application.module(
                         return@post
                     }
                     val code = createMcpOauthCode(
-                        mcpOauthCodes = mcpOauthCodes,
+                        codes = mcpOauthCodes,
                         redirectUri = redirectUri,
                         password = password,
                         resource = resource,
