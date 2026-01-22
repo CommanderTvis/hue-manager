@@ -696,7 +696,11 @@ private fun ApplicationCall.resolveHueRedirectUri(config: Config): String {
 
     val scheme = forwardedProto ?: if (request.port() == 443) "https" else "http"
     val host = forwardedHost ?: request.host()
-    val port = forwardedPort ?: request.port().toString()
+    val port = forwardedPort ?: when {
+        forwardedProto != null && scheme == "https" -> "443"
+        forwardedProto != null && scheme == "http" -> "80"
+        else -> request.port().toString()
+    }
 
     val hostWithPort = if (":" in host) {
         host
@@ -715,7 +719,11 @@ private fun ApplicationCall.resolveBaseUrl(): String {
 
     val scheme = forwardedProto ?: if (request.port() == 443) "https" else "http"
     val host = forwardedHost ?: request.host()
-    val port = forwardedPort ?: request.port().toString()
+    val port = forwardedPort ?: when {
+        forwardedProto != null && scheme == "https" -> "443"
+        forwardedProto != null && scheme == "http" -> "80"
+        else -> request.port().toString()
+    }
 
     val hostWithPort = if (":" in host) {
         host
