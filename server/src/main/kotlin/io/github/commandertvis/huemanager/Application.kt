@@ -864,7 +864,7 @@ fun Application.module(
                 logger.info(
                     "MCP SSE connected sessionId={} remote={} ua={}",
                     transport.sessionId,
-                    call.request.origin.remoteHost,
+                    call.request.local.remoteHost,
                     call.request.header(HttpHeaders.UserAgent)
                 )
                 try {
