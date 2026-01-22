@@ -9,6 +9,8 @@ import androidx.compose.ui.Modifier
 import io.github.commandertvis.huemanager.storage.platformStorage
 import io.github.commandertvis.huemanager.ui.McpOAuthScreen
 import kotlinx.browser.document
+import org.w3c.dom.HTMLFormElement
+import org.w3c.dom.HTMLInputElement
 
 /**
  * MCP OAuth authorization app entry point.
@@ -65,17 +67,18 @@ fun McpOAuthApp(params: OAuthParams) {
  * This is the most reliable way to handle OAuth redirects across browsers.
  */
 private fun submitViaForm(password: String, params: OAuthParams) {
-    val form = document.createElement("form") as org.w3c.dom.HTMLFormElement
-    form.method = "POST"
-    form.action = "/api/mcp/oauth"
-    form.style.display = "none"
+    val form = (document.createElement("form") as HTMLFormElement).apply {
+        method = "POST"
+        action = "/api/mcp/oauth"
+        style.display = "none"
+    }
 
-    fun addField(name: String, value: String) {
-        val input = document.createElement("input") as org.w3c.dom.HTMLInputElement
-        input.type = "hidden"
-        input.name = name
-        input.value = value
-        form.appendChild(input)
+    fun addField(n: String, v: String) {
+        form.appendChild((document.createElement("input") as HTMLInputElement).apply {
+            type = "hidden"
+            name = n
+            value = v
+        })
     }
 
     addField("password", password)
