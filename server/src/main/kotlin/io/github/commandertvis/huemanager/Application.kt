@@ -612,6 +612,16 @@ fun Application.module(
         get("/.well-known/oauth-protected-resource") {
             call.respond(buildMcpProtectedResourceMetadata(call))
         }
+        // Path-specific protected resource metadata (some clients request this form)
+        get("/.well-known/oauth-protected-resource/{resourcePath...}") {
+            val segments = call.parameters.getAll("resourcePath")
+            val resourcePath = if (segments.isNullOrEmpty()) {
+                null
+            } else {
+                "/" + segments.joinToString("/")
+            }
+            call.respond(buildMcpProtectedResourceMetadata(call, resourcePath))
+        }
 
         post("/api/mcp/oauth/register") {
             val request = runCatching { call.receive<OAuthRegistrationRequest>() }.getOrNull()
@@ -923,10 +933,16 @@ private fun buildMcpOauthMetadata(call: ApplicationCall) = buildJsonObject {
     }
 }
 
-private fun buildMcpProtectedResourceMetadata(call: ApplicationCall) = buildJsonObject {
+private fun buildMcpProtectedResourceMetadata(
+    call: ApplicationCall,
+    resourcePath: String? = null
+) = buildJsonObject {
     val baseUrl = call.resolveBaseUrl()
-    // Resource identifier is the MCP endpoint
-    val resource = "${baseUrl}api/mcp"
+    val resource = if (resourcePath.isNullOrBlank()) {
+        "${baseUrl}api/mcp"
+    } else {
+        baseUrl.removeSuffix("/") + resourcePath
+    }
     put("resource", resource)
     // Point to the authorization server (same server in this case)
     putJsonArray("authorization_servers") {
