@@ -643,7 +643,7 @@ fun Application.module(
                 buildJsonObject {
                     put("access_token", config.password)
                     put("token_type", "Bearer")
-                    put("expires_in", 0)
+                    put("expires_in", MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS)
                 }
             )
         }
@@ -656,7 +656,7 @@ fun Application.module(
         val mcpEndpoint = "/api/mcp"
 
         sse(mcpEndpoint) {
-            if (!call.requirePassword(config)) return@sse
+            if (!call.requireMcpPassword(config)) return@sse
 
             val transport = SseServerTransport(mcpEndpoint, this)
             mcpSessions[transport.sessionId] = transport
@@ -671,7 +671,7 @@ fun Application.module(
         }
 
         post(mcpEndpoint) {
-            if (!call.requirePassword(config)) return@post
+            if (!call.requireMcpPassword(config)) return@post
 
             val sessionId = call.request.queryParameters["sessionId"]
             if (sessionId == null) {
@@ -741,11 +741,30 @@ private fun ApplicationCall.resolveBaseUrl(): String {
     return "$scheme://$hostWithPort/"
 }
 
+private fun ApplicationCall.extractBearerToken(): String? {
+    val header = request.header(HttpHeaders.Authorization)?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val parts = header.split(" ", limit = 2)
+    if (parts.size == 2 && parts[0].equals("Bearer", ignoreCase = true)) {
+        return parts[1].trim().takeIf { it.isNotEmpty() }
+    }
+    return null
+}
+
 private suspend fun ApplicationCall.requirePassword(config: Config): Boolean {
-    val token = request.header(HttpHeaders.Authorization)
-        ?.removePrefix("Bearer ")
-        ?.trim()
-        ?.takeIf { it.isNotEmpty() }
+    val token = extractBearerToken()
+
+    if (token == null || token != config.password) {
+        respond(HttpStatusCode.Unauthorized, ApiError("Invalid password", 401))
+        return false
+    }
+
+    return true
+}
+
+private suspend fun ApplicationCall.requireMcpPassword(config: Config): Boolean {
+    val token = extractBearerToken()
+        ?: request.queryParameters["access_token"]?.trim()?.takeIf { it.isNotEmpty() }
+        ?: request.queryParameters["token"]?.trim()?.takeIf { it.isNotEmpty() }
 
     if (token == null || token != config.password) {
         respond(HttpStatusCode.Unauthorized, ApiError("Invalid password", 401))
@@ -756,6 +775,7 @@ private suspend fun ApplicationCall.requirePassword(config: Config): Boolean {
 }
 
 private const val MCP_OAUTH_CODE_TTL_MILLIS = 5 * 60 * 1000L
+private const val MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS = 365L * 24 * 60 * 60
 
 private data class McpOauthCode(
     val redirectUri: String,
