@@ -530,6 +530,12 @@ private suspend fun resolveMcpClient(
 ): McpOauthClient? {
     clients[clientId]?.let { return it }
 
+    resolveKnownClient(clientId)?.let { known ->
+        clients[clientId] = known
+        logger.info("MCP OAuth client metadata loaded clientId={} redirectUris={}", clientId, known.redirectUris)
+        return known
+    }
+
     val uri = runCatching { URI(clientId.trim()) }.getOrNull() ?: return null
     if (!uri.isAbsolute || uri.scheme.isNullOrBlank() || uri.host.isNullOrBlank()) {
         return null
@@ -545,6 +551,21 @@ private suspend fun resolveMcpClient(
     clients[clientId] = metadata
     logger.info("MCP OAuth client metadata loaded clientId={} redirectUris={}", clientId, metadata.redirectUris)
     return metadata
+}
+
+private fun resolveKnownClient(clientId: String): McpOauthClient? {
+    val normalized = clientId.trim().trimEnd('/')
+    return when (normalized) {
+        "https://claude.ai/oauth/mcp-oauth-client-metadata" -> McpOauthClient(
+            clientId = clientId,
+            redirectUris = setOf("https://claude.ai/api/mcp/auth_callback"),
+            grantTypes = setOf("authorization_code"),
+            responseTypes = setOf("code"),
+            tokenEndpointAuthMethod = "none"
+        )
+
+        else -> null
+    }
 }
 
 private suspend fun fetchClientMetadataDocument(clientIdUrl: String): McpOauthClient? {
