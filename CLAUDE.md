@@ -69,7 +69,10 @@ The server acts as a persistent process that:
 
 ```bash
 # Authentication
+# On first startup, PASSWORD is automatically hashed and stored in PASSWORD_HASH,
+# then PASSWORD is cleared for security. Subsequent auth uses PASSWORD_HASH.
 PASSWORD=<auth password>
+PASSWORD_HASH=<SHA-256 hash, auto-populated>
 
 # Location for sunrise/sunset calculation
 REGION=<latitude,longitude>

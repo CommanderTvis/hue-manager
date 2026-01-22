@@ -2,6 +2,7 @@ package io.github.commandertvis.huemanager.mcp
 
 import io.github.commandertvis.huemanager.automation.AutomationManager
 import io.github.commandertvis.huemanager.config.Config
+import io.github.commandertvis.huemanager.config.ConfigLoader
 import io.github.commandertvis.huemanager.config.GeoLocation
 import io.github.commandertvis.huemanager.hue.HueService
 import io.modelcontextprotocol.kotlin.sdk.client.Client
@@ -24,7 +25,7 @@ class McpServerTest {
         val config = testConfig()
         hueService = HueService(config)
         automationManager = AutomationManager(config, hueService)
-        mcpHandler = McpHandler(hueService, automationManager, config.password)
+        mcpHandler = McpHandler(hueService, automationManager)
 
         val (clientTransport, serverTransport) = InMemoryTransport.createLinkedPair()
         client = Client(
@@ -113,7 +114,7 @@ class McpServerTest {
     }
 
     private fun testConfig(): Config = Config(
-        password = "test-password",
+        passwordHash = ConfigLoader.hashPassword("test-password"),
         region = GeoLocation(latitude = 0.0, longitude = 0.0),
         pseudoSunset = "21:05",
         timezone = "UTC",

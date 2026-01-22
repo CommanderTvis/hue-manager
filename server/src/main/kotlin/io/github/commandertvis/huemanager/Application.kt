@@ -111,7 +111,7 @@ fun Application.module(
         // --- Authentication ---
         post("/api/auth") {
             val request = call.receive<AuthRequest>()
-            if (request.password == config.password) {
+            if (ConfigLoader.verifyPassword(request.password, config.passwordHash)) {
                 call.respond(AuthResponse.success())
             } else {
                 call.respond(HttpStatusCode.Unauthorized, AuthResponse.failure("Invalid password"))
@@ -567,7 +567,7 @@ fun Application.module(
             val codeChallenge = params["code_challenge"]
             val codeChallengeMethod = params["code_challenge_method"]
             val password = params["password"]
-            if (password != config.password) {
+            if (password == null || !ConfigLoader.verifyPassword(password, config.passwordHash)) {
                 call.respondText(
                     renderMcpOauthPage(
                         redirectUri = redirectUri,
@@ -586,13 +586,13 @@ fun Application.module(
 
             when (responseType) {
                 "code" -> {
-                    val code = createMcpOauthCode(mcpOauthCodes, redirectUri)
+                    val code = createMcpOauthCode(mcpOauthCodes, redirectUri, password)
                     val redirectUrl = buildMcpOauthCodeRedirect(redirectUri, code, state)
                     call.respondRedirect(redirectUrl, permanent = false)
                 }
 
                 "token" -> {
-                    val redirectUrl = buildMcpOauthTokenRedirect(redirectUri, password, state)
+                    val redirectUrl = buildMcpOauthTokenRedirect(redirectUri, password!!, state)
                     call.respondRedirect(redirectUrl, permanent = false)
                 }
 
@@ -655,7 +655,7 @@ fun Application.module(
 
             call.respond(
                 buildJsonObject {
-                    put("access_token", config.password)
+                    put("access_token", codeEntry.password)
                     put("token_type", "Bearer")
                     put("expires_in", MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS)
                 }
@@ -784,7 +784,7 @@ private fun ApplicationCall.extractBearerToken(): String? {
 private suspend fun ApplicationCall.requirePassword(config: Config): Boolean {
     val token = extractBearerToken()
 
-    if (token == null || token != config.password) {
+    if (token == null || !ConfigLoader.verifyPassword(token, config.passwordHash)) {
         respond(HttpStatusCode.Unauthorized, ApiError("Invalid password", 401))
         return false
     }
@@ -797,7 +797,7 @@ private fun ApplicationCall.checkMcpPassword(config: Config): Boolean {
         ?: request.queryParameters["access_token"]?.trim()?.takeIf { it.isNotEmpty() }
         ?: request.queryParameters["token"]?.trim()?.takeIf { it.isNotEmpty() }
 
-    return token != null && token == config.password
+    return token != null && ConfigLoader.verifyPassword(token, config.passwordHash)
 }
 
 private suspend fun ApplicationCall.requireMcpPassword(config: Config): Boolean {
@@ -820,7 +820,8 @@ private const val MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS = 365L * 24 * 60 * 60
 
 private data class McpOauthCode(
     val redirectUri: String,
-    val expiresAtMillis: Long
+    val expiresAtMillis: Long,
+    val password: String
 )
 
 @Serializable
@@ -844,14 +845,16 @@ private data class OAuthRegistrationResponse(
 
 private fun createMcpOauthCode(
     codes: ConcurrentHashMap<String, McpOauthCode>,
-    redirectUri: String
+    redirectUri: String,
+    password: String
 ): String {
     val now = System.currentTimeMillis()
     codes.entries.removeIf { it.value.expiresAtMillis <= now }
     val code = java.util.UUID.randomUUID().toString()
     codes[code] = McpOauthCode(
         redirectUri = redirectUri,
-        expiresAtMillis = now + MCP_OAUTH_CODE_TTL_MILLIS
+        expiresAtMillis = now + MCP_OAUTH_CODE_TTL_MILLIS,
+        password = password
     )
     return code
 }

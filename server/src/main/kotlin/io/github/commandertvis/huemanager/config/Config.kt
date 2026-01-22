@@ -3,6 +3,7 @@ package io.github.commandertvis.huemanager.config
 import io.github.cdimascio.dotenv.Dotenv
 import io.github.cdimascio.dotenv.dotenv
 import kotlinx.serialization.Serializable
+import java.security.MessageDigest
 import kotlin.io.path.Path
 import kotlin.io.path.exists
 import kotlin.io.path.readText
@@ -10,7 +11,7 @@ import kotlin.io.path.writeText
 
 @Serializable
 data class Config(
-    val password: String,
+    val passwordHash: String,
     val region: GeoLocation,
     val pseudoSunset: String,
     val timezone: String,
@@ -41,8 +42,8 @@ object ConfigLoader {
 
         val env = dotenv!!
 
-        val password = env["PASSWORD"]
-            ?: throw IllegalStateException("PASSWORD is required in .env")
+        // Handle password hashing migration
+        val passwordHash = getOrMigratePasswordHash(env)
 
         val regionStr = env["REGION"]
             ?: throw IllegalStateException("REGION is required in .env (format: latitude,longitude)")
@@ -68,7 +69,7 @@ object ConfigLoader {
         val hueRefreshToken = env["HUE_REFRESH_TOKEN"]?.trim()?.takeIf { it.isNotBlank() }
 
         return Config(
-            password = password,
+            passwordHash = passwordHash,
             region = region,
             pseudoSunset = pseudoSunset,
             timezone = timezone,
@@ -120,5 +121,77 @@ object ConfigLoader {
             latitude = parts[0].trim().toDouble(),
             longitude = parts[1].trim().toDouble()
         )
+    }
+
+    /**
+     * Gets the password hash, migrating from plaintext PASSWORD if needed.
+     * If PASSWORD is set (plaintext), it will be hashed, stored in PASSWORD_HASH,
+     * and PASSWORD will be cleared in the .env file.
+     */
+    private fun getOrMigratePasswordHash(env: Dotenv): String {
+        val existingHash = env["PASSWORD_HASH"]?.trim()?.takeIf { it.isNotBlank() }
+        val plaintextPassword = env["PASSWORD"]?.trim()?.takeIf { it.isNotBlank() }
+
+        return when {
+            // Already have a hash - use it
+            existingHash != null -> existingHash
+
+            // Have plaintext password - migrate it
+            plaintextPassword != null -> {
+                val hash = hashPassword(plaintextPassword)
+                migratePasswordToHash(hash)
+                println("Password migrated to hash in .env file")
+                hash
+            }
+
+            // No password at all
+            else -> throw IllegalStateException(
+                "PASSWORD or PASSWORD_HASH is required in .env"
+            )
+        }
+    }
+
+    /**
+     * Hash a password using SHA-256.
+     */
+    fun hashPassword(password: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val hashBytes = digest.digest(password.toByteArray(Charsets.UTF_8))
+        return hashBytes.joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * Verify a password against a hash.
+     */
+    fun verifyPassword(password: String, hash: String): Boolean {
+        return hashPassword(password) == hash
+    }
+
+    /**
+     * Updates .env file to store the hash and clear plaintext password.
+     */
+    private fun migratePasswordToHash(hash: String) {
+        val currentContent = if (envFile.exists()) {
+            envFile.readText()
+        } else {
+            ""
+        }
+
+        val lines = currentContent.lines().toMutableList()
+
+        fun updateOrAdd(key: String, value: String) {
+            val index = lines.indexOfFirst { it.startsWith("$key=") }
+            if (index >= 0) {
+                lines[index] = "$key=$value"
+            } else {
+                lines.add("$key=$value")
+            }
+        }
+
+        // Clear plaintext password and set hash
+        updateOrAdd("PASSWORD", "")
+        updateOrAdd("PASSWORD_HASH", hash)
+
+        envFile.writeText(lines.joinToString("\n"))
     }
 }
