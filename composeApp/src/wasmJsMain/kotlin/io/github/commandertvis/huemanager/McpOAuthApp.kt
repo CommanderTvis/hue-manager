@@ -6,6 +6,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import io.github.commandertvis.huemanager.storage.platformStorage
 import io.github.commandertvis.huemanager.ui.McpOAuthScreen
 import kotlinx.browser.document
 
@@ -17,6 +18,19 @@ import kotlinx.browser.document
 fun McpOAuthApp(params: OAuthParams) {
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var autoSubmitted by remember { mutableStateOf(false) }
+
+    // Check if user is already authenticated - auto-submit if so
+    LaunchedEffect(Unit) {
+        if (!autoSubmitted) {
+            val storedPassword = platformStorage.getPassword()
+            if (storedPassword != null) {
+                autoSubmitted = true
+                isLoading = true
+                submitViaForm(storedPassword, params)
+            }
+        }
+    }
 
     MaterialTheme {
         Surface(
