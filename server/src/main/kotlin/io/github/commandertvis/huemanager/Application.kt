@@ -626,7 +626,7 @@ fun Application.module(
                 }
 
                 "token" -> {
-                    val redirectUrl = buildMcpOauthTokenRedirect(redirectUri, password!!, state)
+                    val redirectUrl = buildMcpOauthTokenRedirect(redirectUri, password, state)
                     call.respondRedirect(redirectUrl, permanent = false)
                 }
 
@@ -680,6 +680,7 @@ fun Application.module(
             val grantType = params?.get("grant_type")
                 ?: jsonBody?.get("grant_type")?.jsonPrimitive?.contentOrNull
             if (grantType != "authorization_code") {
+                logger.warn("MCP token exchange rejected: unsupported grant_type={}", grantType)
                 call.respond(HttpStatusCode.BadRequest, "Unsupported grant_type: $grantType")
                 return@post
             }
@@ -687,6 +688,7 @@ fun Application.module(
             val code = params?.get("code")
                 ?: jsonBody?.get("code")?.jsonPrimitive?.contentOrNull
             if (code.isNullOrBlank()) {
+                logger.warn("MCP token exchange rejected: missing code")
                 call.respond(HttpStatusCode.BadRequest, "code form parameter is required")
                 return@post
             }
@@ -700,32 +702,46 @@ fun Application.module(
             val now = System.currentTimeMillis()
             val codeEntry = mcpOauthCodes.remove(code)
             if (codeEntry == null || now > codeEntry.expiresAtMillis) {
+                logger.warn("MCP token exchange rejected: invalid_or_expired_code")
                 call.respond(HttpStatusCode.BadRequest, "Invalid or expired code")
                 return@post
             }
 
             if (!redirectUri.isNullOrBlank() && redirectUri != codeEntry.redirectUri) {
+                logger.warn(
+                    "MCP token exchange rejected: redirect_uri_mismatch provided={} expected={}",
+                    redirectUri,
+                    codeEntry.redirectUri
+                )
                 call.respond(HttpStatusCode.BadRequest, "redirect_uri does not match")
                 return@post
             }
 
             val resolvedResource = resolveMcpResource(call, resourceParam)
             if (resolvedResource == null) {
+                logger.warn("MCP token exchange rejected: invalid_resource value={}", resourceParam)
                 call.respond(HttpStatusCode.BadRequest, "Invalid resource")
                 return@post
             }
             if (resolvedResource != codeEntry.resource) {
+                logger.warn(
+                    "MCP token exchange rejected: resource_mismatch provided={} expected={}",
+                    resolvedResource,
+                    codeEntry.resource
+                )
                 call.respond(HttpStatusCode.BadRequest, "resource does not match")
                 return@post
             }
 
             if (codeEntry.codeChallenge != null) {
                 if (codeVerifier.isNullOrBlank()) {
+                    logger.warn("MCP token exchange rejected: missing_code_verifier")
                     call.respond(HttpStatusCode.BadRequest, "code_verifier is required")
                     return@post
                 }
                 val method = codeEntry.codeChallengeMethod ?: "plain"
                 if (!verifyPkce(codeVerifier, codeEntry.codeChallenge, method)) {
+                    logger.warn("MCP token exchange rejected: pkce_verification_failed method={}", method)
                     call.respond(HttpStatusCode.BadRequest, "Invalid code_verifier")
                     return@post
                 }
@@ -736,6 +752,7 @@ fun Application.module(
                     put("access_token", codeEntry.password)
                     put("token_type", "Bearer")
                     put("expires_in", MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS)
+                    put("resource", codeEntry.resource)
                 }
             )
         }
@@ -750,7 +767,7 @@ fun Application.module(
         // Use route with intercept to check auth BEFORE SSE handler runs
         route(mcpEndpoint) {
             // Intercept to check authentication before SSE sends headers
-            intercept(io.ktor.server.application.ApplicationCallPipeline.Plugins) {
+            intercept(ApplicationCallPipeline.Plugins) {
                 // Skip auth for OAuth sub-paths - they have their own auth
                 val path = call.request.path()
                 if (path.startsWith("/api/mcp/oauth")) {
@@ -904,7 +921,19 @@ private fun ApplicationCall.checkMcpPassword(config: Config): Boolean {
         ?: request.queryParameters["access_token"]?.trim()?.takeIf { it.isNotEmpty() }
         ?: request.queryParameters["token"]?.trim()?.takeIf { it.isNotEmpty() }
 
-    return token != null && ConfigLoader.verifyPassword(token, config.passwordHash)
+    if (token == null) {
+        logger.warn("MCP auth failed: missing token path={}", request.path())
+        return false
+    }
+    if (!ConfigLoader.verifyPassword(token, config.passwordHash)) {
+        logger.warn(
+            "MCP auth failed: invalid token path={} tokenLength={}",
+            request.path(),
+            token.length
+        )
+        return false
+    }
+    return true
 }
 
 private suspend fun ApplicationCall.requireMcpPassword(config: Config): Boolean {
