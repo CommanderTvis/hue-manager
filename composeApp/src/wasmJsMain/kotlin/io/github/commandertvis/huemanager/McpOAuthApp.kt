@@ -88,6 +88,7 @@ private fun submitViaForm(password: String, params: OAuthParams) {
     params.clientId?.let { addField("client_id", it) }
     params.codeChallenge?.let { addField("code_challenge", it) }
     params.codeChallengeMethod?.let { addField("code_challenge_method", it) }
+    params.scope?.let { addField("scope", it) }
     params.resource?.let { addField("resource", it) }
 
     document.body?.appendChild(form)

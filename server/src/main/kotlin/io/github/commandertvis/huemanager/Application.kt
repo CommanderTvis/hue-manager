@@ -23,6 +23,7 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.sse.*
 import io.modelcontextprotocol.kotlin.sdk.server.SseServerTransport
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
@@ -35,7 +36,9 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import org.slf4j.LoggerFactory
+import java.net.URI
 import java.security.MessageDigest
+import java.security.SecureRandom
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.io.path.Path
@@ -43,6 +46,7 @@ import kotlin.io.path.isDirectory
 import kotlin.io.path.isRegularFile
 
 private val logger = LoggerFactory.getLogger("Application")
+private val mcpTokenRandom = SecureRandom()
 
 fun main() {
     val config = try {
@@ -511,6 +515,7 @@ fun Application.module(
 
         // MCP OAuth-style authorization (password-only)
         val mcpOauthCodes = ConcurrentHashMap<String, McpOauthCode>()
+        val mcpAccessTokens = ConcurrentHashMap<String, McpAccessToken>()
 
         get("/api/mcp/oauth") {
             val acceptHeader = call.request.header(HttpHeaders.Accept) ?: ""
@@ -541,6 +546,7 @@ fun Application.module(
                 val clientId = call.parameters["client_id"]
                 val codeChallenge = call.parameters["code_challenge"]
                 val codeChallengeMethod = call.parameters["code_challenge_method"]
+                val scope = call.parameters["scope"]
                 val resourceParam = call.parameters["resource"]
                 val effectiveResponseType = responseType ?: "code"
 
@@ -552,6 +558,7 @@ fun Application.module(
                         clientId = clientId,
                         codeChallenge = codeChallenge,
                         codeChallengeMethod = codeChallengeMethod,
+                        scope = scope,
                         resource = resourceParam,
                         errorMessage = null
                     ),
@@ -573,6 +580,7 @@ fun Application.module(
             val clientId = params["client_id"]
             val codeChallenge = params["code_challenge"]
             val codeChallengeMethod = params["code_challenge_method"]
+            val scope = params["scope"]
             val resourceParam = params["resource"]
             val password = params["password"]
             if (password == null || !ConfigLoader.verifyPassword(password, config.passwordHash)) {
@@ -584,6 +592,7 @@ fun Application.module(
                         clientId = clientId,
                         codeChallenge = codeChallenge,
                         codeChallengeMethod = codeChallengeMethod,
+                        scope = scope,
                         resource = resourceParam,
                         errorMessage = "Invalid password"
                     ),
@@ -605,6 +614,7 @@ fun Application.module(
                                 clientId = clientId,
                                 codeChallenge = codeChallenge,
                                 codeChallengeMethod = codeChallengeMethod,
+                                scope = scope,
                                 resource = resourceParam,
                                 errorMessage = "Invalid resource"
                             ),
@@ -616,17 +626,58 @@ fun Application.module(
                     val code = createMcpOauthCode(
                         codes = mcpOauthCodes,
                         redirectUri = redirectUri,
-                        password = password,
                         resource = resource,
+                        scope = scope,
                         codeChallenge = codeChallenge,
                         codeChallengeMethod = codeChallengeMethod
+                    )
+                    logger.info(
+                        "MCP OAuth code issued clientId={} resource={} scope={}",
+                        clientId,
+                        resource,
+                        scope
                     )
                     val redirectUrl = buildMcpOauthCodeRedirect(redirectUri, code, state)
                     call.respondRedirect(redirectUrl, permanent = false)
                 }
 
                 "token" -> {
-                    val redirectUrl = buildMcpOauthTokenRedirect(redirectUri, password, state)
+                    val resource = resolveMcpResource(call, resourceParam)
+                    if (resource == null) {
+                        call.respondText(
+                            renderMcpOauthPage(
+                                redirectUri = redirectUri,
+                                state = state,
+                                responseType = responseType,
+                                clientId = clientId,
+                                codeChallenge = codeChallenge,
+                                codeChallengeMethod = codeChallengeMethod,
+                                scope = scope,
+                                resource = resourceParam,
+                                errorMessage = "Invalid resource"
+                            ),
+                            ContentType.Text.Html,
+                            status = HttpStatusCode.BadRequest
+                        )
+                        return@post
+                    }
+                    val accessToken = issueMcpAccessToken(
+                        tokens = mcpAccessTokens,
+                        resource = resource,
+                        scope = scope
+                    )
+                    logger.info(
+                        "MCP OAuth implicit token issued clientId={} resource={} scope={}",
+                        clientId,
+                        resource,
+                        scope
+                    )
+                    val redirectUrl = buildMcpOauthTokenRedirect(
+                        redirectUri = redirectUri,
+                        accessToken = accessToken,
+                        state = state,
+                        scope = scope
+                    )
                     call.respondRedirect(redirectUrl, permanent = false)
                 }
 
@@ -699,6 +750,10 @@ fun Application.module(
                 ?: jsonBody?.get("resource")?.jsonPrimitive?.contentOrNull
             val codeVerifier = params?.get("code_verifier")
                 ?: jsonBody?.get("code_verifier")?.jsonPrimitive?.contentOrNull
+            val scopeParam = params?.get("scope")
+                ?: jsonBody?.get("scope")?.jsonPrimitive?.contentOrNull
+            val clientId = params?.get("client_id")
+                ?: jsonBody?.get("client_id")?.jsonPrimitive?.contentOrNull
             val now = System.currentTimeMillis()
             val codeEntry = mcpOauthCodes.remove(code)
             if (codeEntry == null || now > codeEntry.expiresAtMillis) {
@@ -747,12 +802,27 @@ fun Application.module(
                 }
             }
 
+            val issuedScope = codeEntry.scope ?: scopeParam
+            val accessToken = issueMcpAccessToken(
+                tokens = mcpAccessTokens,
+                resource = codeEntry.resource,
+                scope = issuedScope
+            )
+            logger.info(
+                "MCP OAuth token issued clientId={} resource={} scope={}",
+                clientId,
+                codeEntry.resource,
+                issuedScope
+            )
             call.respond(
                 buildJsonObject {
-                    put("access_token", codeEntry.password)
-                    put("token_type", "Bearer")
+                    put("access_token", accessToken)
+                    put("token_type", "bearer")
                     put("expires_in", MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS)
                     put("resource", codeEntry.resource)
+                    if (!issuedScope.isNullOrBlank()) {
+                        put("scope", issuedScope)
+                    }
                 }
             )
         }
@@ -775,14 +845,8 @@ fun Application.module(
                 }
 
                 if (call.request.httpMethod == HttpMethod.Get) {
-                    if (!call.checkMcpPassword(config)) {
-                        val baseUrl = call.resolveBaseUrl()
-                        val resourceMetadataUrl = "${baseUrl}.well-known/oauth-protected-resource"
-                        call.response.header(
-                            HttpHeaders.WWWAuthenticate,
-                            """Bearer resource_metadata="$resourceMetadataUrl""""
-                        )
-                        call.respond(HttpStatusCode.Unauthorized, ApiError("Invalid password", 401))
+                    if (!call.checkMcpPassword(config, mcpAccessTokens)) {
+                        call.respondMcpUnauthorized()
                         finish()
                     }
                 }
@@ -797,22 +861,40 @@ fun Application.module(
                     mcpSessions.remove(transport.sessionId)
                 }
 
-                server.createSession(transport)
-                awaitCancellation()
+                logger.info(
+                    "MCP SSE connected sessionId={} remote={} ua={}",
+                    transport.sessionId,
+                    call.request.origin.remoteHost,
+                    call.request.header(HttpHeaders.UserAgent)
+                )
+                try {
+                    server.createSession(transport)
+                    awaitCancellation()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.error("MCP SSE session failed sessionId={}", transport.sessionId, e)
+                    throw e
+                } finally {
+                    mcpSessions.remove(transport.sessionId)
+                    logger.info("MCP SSE closed sessionId={}", transport.sessionId)
+                }
             }
         }
 
         post(mcpEndpoint) {
-            if (!call.requireMcpPassword(config)) return@post
+            if (!call.requireMcpPassword(config, mcpAccessTokens)) return@post
 
             val sessionId = call.request.queryParameters["sessionId"]
             if (sessionId == null) {
+                logger.warn("MCP post missing sessionId")
                 call.respond(HttpStatusCode.BadRequest, "sessionId query parameter is not provided")
                 return@post
             }
 
             val transport = mcpSessions[sessionId]
             if (transport == null) {
+                logger.warn("MCP post unknown sessionId={}", sessionId)
                 call.respond(HttpStatusCode.NotFound, "Session not found")
                 return@post
             }
@@ -879,8 +961,49 @@ private fun resolveMcpResource(call: ApplicationCall, resourceParam: String?): S
     if (resourceParam.isNullOrBlank()) {
         return canonical
     }
-    val normalized = resourceParam.trim().removeSuffix("/")
-    return if (normalized == canonical) canonical else null
+    val resourceUri = runCatching { URI(resourceParam.trim()) }.getOrNull() ?: return null
+    if (!resourceUri.isAbsolute || resourceUri.host.isNullOrBlank()) {
+        return null
+    }
+    if (resourceUri.fragment != null) {
+        return null
+    }
+
+    val canonicalUri = runCatching { URI(canonical) }.getOrNull() ?: return null
+    if (!resourceUri.scheme.equals(canonicalUri.scheme, ignoreCase = true)) {
+        return null
+    }
+    if (!resourceUri.host.equals(canonicalUri.host, ignoreCase = true)) {
+        return null
+    }
+
+    fun normalizedPort(uri: URI): Int? {
+        return if (uri.port != -1) {
+            uri.port
+        } else {
+            when (uri.scheme?.lowercase()) {
+                "https" -> 443
+                "http" -> 80
+                else -> null
+            }
+        }
+    }
+
+    val canonicalPort = normalizedPort(canonicalUri)
+    val resourcePort = normalizedPort(resourceUri)
+    if (canonicalPort == null || resourcePort == null || canonicalPort != resourcePort) {
+        return null
+    }
+
+    val canonicalPath = canonicalUri.path.trimEnd('/')
+    val resourcePath = resourceUri.path.trimEnd('/')
+    if (resourcePath.isEmpty() || resourcePath == "/") {
+        return canonical
+    }
+    if (resourcePath == canonicalPath) {
+        return canonical
+    }
+    return if (resourcePath.startsWith("$canonicalPath/")) canonical else null
 }
 
 private fun verifyPkce(codeVerifier: String, codeChallenge: String, method: String): Boolean {
@@ -916,7 +1039,10 @@ private suspend fun ApplicationCall.requirePassword(config: Config): Boolean {
     return true
 }
 
-private fun ApplicationCall.checkMcpPassword(config: Config): Boolean {
+private fun ApplicationCall.checkMcpPassword(
+    config: Config,
+    mcpAccessTokens: ConcurrentHashMap<String, McpAccessToken>
+): Boolean {
     val token = extractBearerToken()
         ?: request.queryParameters["access_token"]?.trim()?.takeIf { it.isNotEmpty() }
         ?: request.queryParameters["token"]?.trim()?.takeIf { it.isNotEmpty() }
@@ -925,7 +1051,13 @@ private fun ApplicationCall.checkMcpPassword(config: Config): Boolean {
         logger.warn("MCP auth failed: missing token path={}", request.path())
         return false
     }
-    if (!ConfigLoader.verifyPassword(token, config.passwordHash)) {
+    if (ConfigLoader.verifyPassword(token, config.passwordHash)) {
+        return true
+    }
+
+    val now = System.currentTimeMillis()
+    val entry = mcpAccessTokens[token]
+    if (entry == null) {
         logger.warn(
             "MCP auth failed: invalid token path={} tokenLength={}",
             request.path(),
@@ -933,22 +1065,44 @@ private fun ApplicationCall.checkMcpPassword(config: Config): Boolean {
         )
         return false
     }
+    if (entry.expiresAtMillis <= now) {
+        mcpAccessTokens.remove(token)
+        logger.warn("MCP auth failed: expired token path={} tokenLength={}", request.path(), token.length)
+        return false
+    }
+    val canonicalResource = resolveMcpResource(this, null)
+    if (canonicalResource == null || entry.resource != canonicalResource) {
+        logger.warn(
+            "MCP auth failed: resource mismatch path={} tokenLength={} expectedResource={}",
+            request.path(),
+            token.length,
+            canonicalResource
+        )
+        return false
+    }
     return true
 }
 
-private suspend fun ApplicationCall.requireMcpPassword(config: Config): Boolean {
-    if (!checkMcpPassword(config)) {
-        val baseUrl = resolveBaseUrl()
-        val resourceMetadataUrl = "${baseUrl}.well-known/oauth-protected-resource"
-        response.header(
-            HttpHeaders.WWWAuthenticate,
-            """Bearer resource_metadata="$resourceMetadataUrl""""
-        )
-        respond(HttpStatusCode.Unauthorized, ApiError("Invalid password", 401))
+private suspend fun ApplicationCall.requireMcpPassword(
+    config: Config,
+    mcpAccessTokens: ConcurrentHashMap<String, McpAccessToken>
+): Boolean {
+    if (!checkMcpPassword(config, mcpAccessTokens)) {
+        respondMcpUnauthorized()
         return false
     }
 
     return true
+}
+
+private suspend fun ApplicationCall.respondMcpUnauthorized() {
+    val baseUrl = resolveBaseUrl()
+    val resourceMetadataUrl = "${baseUrl}.well-known/oauth-protected-resource"
+    response.header(
+        HttpHeaders.WWWAuthenticate,
+        """Bearer resource_metadata="$resourceMetadataUrl""""
+    )
+    respondBytes(ByteArray(0), ContentType.Text.Plain, status = HttpStatusCode.Unauthorized)
 }
 
 private const val MCP_OAUTH_CODE_TTL_MILLIS = 5 * 60 * 1000L
@@ -957,10 +1111,16 @@ private const val MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS = 365L * 24 * 60 * 60
 private data class McpOauthCode(
     val redirectUri: String,
     val expiresAtMillis: Long,
-    val password: String,
     val resource: String,
+    val scope: String?,
     val codeChallenge: String?,
     val codeChallengeMethod: String?
+)
+
+private data class McpAccessToken(
+    val resource: String,
+    val scope: String?,
+    val expiresAtMillis: Long
 )
 
 @Serializable
@@ -985,8 +1145,8 @@ private data class OAuthRegistrationResponse(
 private fun createMcpOauthCode(
     codes: ConcurrentHashMap<String, McpOauthCode>,
     redirectUri: String,
-    password: String,
     resource: String,
+    scope: String?,
     codeChallenge: String?,
     codeChallengeMethod: String?
 ): String {
@@ -996,12 +1156,34 @@ private fun createMcpOauthCode(
     codes[code] = McpOauthCode(
         redirectUri = redirectUri,
         expiresAtMillis = now + MCP_OAUTH_CODE_TTL_MILLIS,
-        password = password,
         resource = resource,
+        scope = scope?.takeIf { it.isNotBlank() },
         codeChallenge = codeChallenge,
         codeChallengeMethod = codeChallengeMethod
     )
     return code
+}
+
+private fun issueMcpAccessToken(
+    tokens: ConcurrentHashMap<String, McpAccessToken>,
+    resource: String,
+    scope: String?
+): String {
+    val now = System.currentTimeMillis()
+    tokens.entries.removeIf { it.value.expiresAtMillis <= now }
+    val accessToken = generateMcpAccessToken()
+    tokens[accessToken] = McpAccessToken(
+        resource = resource,
+        scope = scope?.takeIf { it.isNotBlank() },
+        expiresAtMillis = now + (MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS * 1000)
+    )
+    return accessToken
+}
+
+private fun generateMcpAccessToken(): String {
+    val bytes = ByteArray(32)
+    mcpTokenRandom.nextBytes(bytes)
+    return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
 }
 
 private fun buildMcpOauthCodeRedirect(
@@ -1020,15 +1202,19 @@ private fun buildMcpOauthCodeRedirect(
 private fun buildMcpOauthTokenRedirect(
     redirectUri: String,
     accessToken: String,
-    state: String?
+    state: String?,
+    scope: String? = null
 ): String {
     val redirectParts = redirectUri.split("#", limit = 2)
     val baseUri = redirectParts[0]
     val existingFragment = redirectParts.getOrNull(1)
     val params = mutableListOf(
         "access_token=${accessToken.encodeURLParameter()}",
-        "token_type=Bearer"
+        "token_type=bearer"
     )
+    if (!scope.isNullOrBlank()) {
+        params.add("scope=${scope.encodeURLParameter()}")
+    }
     if (!state.isNullOrBlank()) {
         params.add("state=${state.encodeURLParameter()}")
     }
@@ -1088,6 +1274,7 @@ private fun renderMcpOauthPage(
     clientId: String?,
     codeChallenge: String?,
     codeChallengeMethod: String?,
+    scope: String?,
     resource: String?,
     errorMessage: String?
 ): String {
@@ -1116,6 +1303,11 @@ private fun renderMcpOauthPage(
     }
     val codeChallengeMethodInput = if (!codeChallengeMethod.isNullOrBlank()) {
         """<input type="hidden" name="code_challenge_method" value="${codeChallengeMethod.escapeHtml()}">"""
+    } else {
+        ""
+    }
+    val scopeInput = if (!scope.isNullOrBlank()) {
+        """<input type="hidden" name="scope" value="${scope.escapeHtml()}">"""
     } else {
         ""
     }
@@ -1199,6 +1391,7 @@ private fun renderMcpOauthPage(
                     $clientIdInput
                     $codeChallengeInput
                     $codeChallengeMethodInput
+                    $scopeInput
                     $resourceInput
                     <button type="submit">Authorize</button>
                 </form>
