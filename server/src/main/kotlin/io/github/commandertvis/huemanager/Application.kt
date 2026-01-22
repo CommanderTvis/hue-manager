@@ -507,10 +507,16 @@ fun Application.module(
         val mcpOauthCodes = ConcurrentHashMap<String, McpOauthCode>()
 
         get("/api/mcp/oauth") {
+            val acceptHeader = call.request.header(HttpHeaders.Accept) ?: ""
+            val wantsHtml = acceptHeader.contains("text/html") ||
+                    acceptHeader.contains("application/xhtml+xml")
             val redirectUri = call.parameters["redirect_uri"]
             val responseType = call.parameters["response_type"]
-            if (redirectUri.isNullOrBlank() && responseType.isNullOrBlank()) {
-                call.respond(buildMcpOauthMetadata(call))
+            if (!wantsHtml || (redirectUri.isNullOrBlank() && responseType.isNullOrBlank())) {
+                call.respondText(
+                    buildMcpOauthMetadata(call).toString(),
+                    ContentType.Application.Json
+                )
                 return@get
             }
             if (redirectUri.isNullOrBlank()) {
