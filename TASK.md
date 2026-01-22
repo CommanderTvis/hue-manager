@@ -87,7 +87,7 @@ E.g. if the user wakes up at 6:00 and the sun has not risen yet, the lamps go su
 - 8:00 - sun rises, lamps go dimmer #FFFFFF 
 - 12:00 - sun is shining, lamps turn off
 - 17:00 - actual sunset, lamps are super bright
-- 21:05 - "pseudo sunset", lamps are going orange ##FF5500 100% brightness (for the whole time before "you need to sleep period!)
+- 21:05 - "pseudo sunset", lamps are going orange ##FF3300 100% brightness (for the whole time before "you need to sleep period!)
 - 00:05 (pseduo sunset + 3 hours) - lamps are preparing user to sleep, ##FF5500, 1% brightness
 
 The UI name of pseudo sunset is "Evening light".

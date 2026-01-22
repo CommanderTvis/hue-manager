@@ -172,14 +172,14 @@ class AutomationManager(
         val crossesMidnight = pseudoSunsetEnd < pseudoSunset
         val isInEvening = if (crossesMidnight) {
             // Evening window spans midnight: e.g., 21:05 to 00:05
-            currentTime >= pseudoSunset || currentTime < pseudoSunsetEnd
+            currentTime !in pseudoSunsetEnd..<pseudoSunset
         } else {
-            currentTime >= pseudoSunset && currentTime < pseudoSunsetEnd
+            currentTime in pseudoSunset..<pseudoSunsetEnd
         }
 
         // Night mode: after evening window ends until next pseudo-sunset
         val isInNightMode = if (crossesMidnight) {
-            currentTime >= pseudoSunsetEnd && currentTime < pseudoSunset
+            currentTime in pseudoSunsetEnd..<pseudoSunset
         } else {
             currentTime >= pseudoSunsetEnd
         }
@@ -382,13 +382,13 @@ class AutomationManager(
         // Handle midnight rollover for evening window
         val crossesMidnight = pseudoSunsetEnd < pseudoSunset
         val isInEvening = if (crossesMidnight) {
-            currentTime >= pseudoSunset || currentTime < pseudoSunsetEnd
+            currentTime !in pseudoSunsetEnd..<pseudoSunset
         } else {
-            currentTime >= pseudoSunset && currentTime < pseudoSunsetEnd
+            currentTime in pseudoSunset..<pseudoSunsetEnd
         }
 
         val isInNightMode = if (crossesMidnight) {
-            currentTime >= pseudoSunsetEnd && currentTime < pseudoSunset
+            currentTime in pseudoSunsetEnd..<pseudoSunset
         } else {
             currentTime >= pseudoSunsetEnd
         }

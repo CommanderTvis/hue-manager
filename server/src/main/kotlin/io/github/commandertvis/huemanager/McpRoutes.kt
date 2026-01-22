@@ -59,7 +59,11 @@ fun Route.mcpRoutes(
                 acceptHeader.contains("application/xhtml+xml")
         val redirectUri = call.parameters["redirect_uri"]
         val responseType = call.parameters["response_type"]
-        if (!wantsHtml || (redirectUri.isNullOrBlank() && responseType.isNullOrBlank())) {
+        val hasOauthParams = !redirectUri.isNullOrBlank() ||
+                !responseType.isNullOrBlank() ||
+                !call.parameters["client_id"].isNullOrBlank() ||
+                !call.parameters["code_challenge"].isNullOrBlank()
+        if (!hasOauthParams && !wantsHtml) {
             call.respondText(
                 buildMcpOauthMetadata(call).toString(),
                 ContentType.Application.Json
@@ -263,22 +267,6 @@ fun Route.mcpRoutes(
             call.respond(HttpStatusCode.BadRequest, "redirect_uri is required")
             return@post
         }
-        val resourceValues = if (resourceCandidates.isNotEmpty()) {
-            resourceCandidates
-        } else {
-            listOfNotNull(jsonResource)
-        }
-        if (resourceValues.isEmpty()) {
-            logger.warn("MCP token exchange rejected: missing resource")
-            call.respond(HttpStatusCode.BadRequest, "resource is required")
-            return@post
-        }
-        val resolvedResource = resolveMcpResourceCandidates(call, resourceValues)
-        if (resolvedResource == null) {
-            logger.warn("MCP token exchange rejected: invalid_resource values={}", resourceValues)
-            call.respond(HttpStatusCode.BadRequest, "Invalid resource")
-            return@post
-        }
         val now = System.currentTimeMillis()
         val codeEntry = mcpOauthCodes.remove(code)
         if (codeEntry == null || now > codeEntry.expiresAtMillis) {
@@ -306,6 +294,21 @@ fun Route.mcpRoutes(
             return@post
         }
 
+        val resourceValues = if (resourceCandidates.isNotEmpty()) {
+            resourceCandidates
+        } else {
+            listOfNotNull(jsonResource)
+        }
+        val resolvedResource = if (resourceValues.isEmpty()) {
+            codeEntry.resource
+        } else {
+            resolveMcpResourceCandidates(call, resourceValues)
+        }
+        if (resolvedResource == null) {
+            logger.warn("MCP token exchange rejected: invalid_resource values={}", resourceValues)
+            call.respond(HttpStatusCode.BadRequest, "Invalid resource")
+            return@post
+        }
         if (resolvedResource != codeEntry.resource) {
             logger.warn(
                 "MCP token exchange rejected: resource_mismatch provided={} expected={}",
