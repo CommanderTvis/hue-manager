@@ -12,6 +12,12 @@ fun Route.webRoutes() {
     if (webDir.isDirectory()) {
         singlePageApplication {
             filesPath = "web"
+            // Exclude MCP and API paths from SPA routing
+            ignoreFiles { path ->
+                path.startsWith("/mcp") ||
+                        path.startsWith("/api") ||
+                        path.startsWith("/.well-known")
+            }
         }
     } else {
         get("/") {

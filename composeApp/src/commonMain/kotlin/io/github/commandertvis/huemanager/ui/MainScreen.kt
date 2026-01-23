@@ -237,22 +237,17 @@ fun MainScreen(
         }
     }
 
-    // MCP Configuration Dialog
     if (showMcpDialog) {
-        val baseUrl = apiClient.getBaseUrl()
-        val mcpUrl = "${baseUrl}api/mcp"
-        val oauthUrl = "${baseUrl}api/mcp/oauth"
+        val mcpUrl = "${apiClient.getBaseUrl()}mcp"
+
         val mcpJson = """
-{
-  "mcpServers": {
-    "hue-manager": {
-      "url": "$mcpUrl",
-      "headers": {
-        "Authorization": "Bearer YOUR_PASSWORD_HERE"
-      }
-    }
-  }
-}
+            {
+              "mcpServers": {
+                "hue-manager": {
+                  "url": "$mcpUrl"
+                }
+              }
+            }
         """.trimIndent()
 
         var copiedJson by remember { mutableStateOf(false) }
@@ -261,19 +256,17 @@ fun MainScreen(
         var selectedTab by remember { mutableStateOf(0) }
 
         val mcpRemoteJson = """
-{
-  "mcpServers": {
-    "hue-manager": {
-      "command": "npx",
-      "args": [
-        "mcp-remote",
-        "$mcpUrl",
-        "--header",
-        "Authorization: Bearer YOUR_PASSWORD_HERE"
-      ]
-    }
-  }
-}
+            {
+              "mcpServers": {
+                "hue-manager": {
+                  "command": "npx",
+                  "args": [
+                    "mcp-remote",
+                    "$mcpUrl"
+                  ]
+                }
+              }
+            }
         """.trimIndent()
 
         AlertDialog(
@@ -327,7 +320,7 @@ fun MainScreen(
                                     color = MaterialTheme.colorScheme.surfaceVariant
                                 ) {
                                     Text(
-                                        text = oauthUrl,
+                                        text = mcpUrl,
                                         modifier = Modifier.padding(12.dp),
                                         style = MaterialTheme.typography.bodySmall,
                                         fontFamily = FontFamily.Monospace
@@ -335,7 +328,7 @@ fun MainScreen(
                                 }
                                 Button(
                                     onClick = {
-                                        getPlatform().copyToClipboard(oauthUrl)
+                                        getPlatform().copyToClipboard(mcpUrl)
                                         copiedUrl = true
                                     },
                                     modifier = Modifier.align(Alignment.End)
