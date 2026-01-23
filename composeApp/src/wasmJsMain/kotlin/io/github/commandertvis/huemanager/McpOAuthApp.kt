@@ -20,18 +20,13 @@ import org.w3c.dom.HTMLInputElement
 fun McpOAuthApp(params: OAuthParams) {
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var autoSubmitted by remember { mutableStateOf(false) }
+    var storedPassword by remember { mutableStateOf<String?>(null) }
+    var checkedStorage by remember { mutableStateOf(false) }
 
-    // Check if user is already authenticated - auto-submit if so
+    // Check if user has stored password
     LaunchedEffect(Unit) {
-        if (!autoSubmitted) {
-            val storedPassword = platformStorage.getPassword()
-            if (storedPassword != null) {
-                autoSubmitted = true
-                isLoading = true
-                submitViaForm(storedPassword, params)
-            }
-        }
+        storedPassword = platformStorage.getPassword()
+        checkedStorage = true
     }
 
     MaterialTheme {
@@ -41,23 +36,45 @@ fun McpOAuthApp(params: OAuthParams) {
                 .safeContentPadding(),
             color = MaterialTheme.colorScheme.background
         ) {
-            McpOAuthScreen(
-                redirectUri = params.redirectUri,
-                state = params.state,
-                responseType = params.responseType,
-                clientId = params.clientId,
-                codeChallenge = params.codeChallenge,
-                codeChallengeMethod = params.codeChallengeMethod,
-                onAuthorize = { password ->
-                    isLoading = true
-                    error = null
-
-                    // Submit via form - simplest and most reliable for OAuth redirects
-                    submitViaForm(password, params)
-                },
-                isLoading = isLoading,
-                error = error
-            )
+            if (!checkedStorage) {
+                // Still loading
+                McpOAuthScreen(
+                    redirectUri = params.redirectUri,
+                    state = params.state,
+                    responseType = params.responseType,
+                    clientId = params.clientId,
+                    codeChallenge = params.codeChallenge,
+                    codeChallengeMethod = params.codeChallengeMethod,
+                    onAuthorize = {},
+                    isLoading = true,
+                    error = null,
+                    hasStoredPassword = false
+                )
+            } else {
+                McpOAuthScreen(
+                    redirectUri = params.redirectUri,
+                    state = params.state,
+                    responseType = params.responseType,
+                    clientId = params.clientId,
+                    codeChallenge = params.codeChallenge,
+                    codeChallengeMethod = params.codeChallengeMethod,
+                    onAuthorize = { password ->
+                        isLoading = true
+                        error = null
+                        submitViaForm(password, params)
+                    },
+                    onAuthorizeWithStoredPassword = {
+                        storedPassword?.let { pwd ->
+                            isLoading = true
+                            error = null
+                            submitViaForm(pwd, params)
+                        }
+                    },
+                    isLoading = isLoading,
+                    error = error,
+                    hasStoredPassword = storedPassword != null
+                )
+            }
         }
     }
 }
