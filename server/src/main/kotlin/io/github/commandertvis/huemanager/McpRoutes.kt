@@ -11,7 +11,7 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.sse.*
-import io.modelcontextprotocol.kotlin.sdk.server.StreamableHttpServerTransport
+import io.modelcontextprotocol.kotlin.sdk.server.SseServerTransport
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
@@ -55,16 +55,7 @@ fun Route.mcpRoutes(
     val mcpOauthCodes = ConcurrentHashMap<String, McpOauthCode>()
     val mcpAccessTokens = ConcurrentHashMap<String, McpAccessToken>()
 
-    // Session management for Streamable HTTP transport
-    data class McpSession(
-        val transport: StreamableHttpServerTransport,
-        val server: io.modelcontextprotocol.kotlin.sdk.server.Server
-    )
-
-    val mcpSessions = ConcurrentHashMap<String, McpSession>()
-
-    fun ApplicationCall.getMcpSessionId(): String? =
-        request.header("mcp-session-id")?.trim()?.takeIf { it.isNotEmpty() }
+    val mcpSessions = ConcurrentHashMap<String, SseServerTransport>()
 
     // Protected Resource Metadata (RFC 9728)
     // Client starts here to discover authorization server
@@ -303,114 +294,79 @@ fun Route.mcpRoutes(
         )
     }
 
-    // Main MCP endpoint - Streamable HTTP transport
-    // Supports both POST (required) and GET (optional SSE stream) methods
-    // POST: Initialize session or send messages
-    // GET: Open SSE stream for server-initiated messages
-    // DELETE: Close session
-
-    // POST handler - main entry point for Streamable HTTP
-    post(MCP_ENDPOINT) {
-        // Check for existing session via header
-        val sessionIdHeader = call.getMcpSessionId()
-        val existingSession = sessionIdHeader?.let { mcpSessions[it] }
-
-        if (sessionIdHeader != null) {
-            if (existingSession == null) {
-                call.respond(HttpStatusCode.NotFound, "Session not found")
-                return@post
-            }
-            // Use existing session's transport
-            existingSession.transport.handleRequest(null, call)
-        } else {
-            if (!call.checkMcpAccessToken(mcpAccessTokens)) {
-                call.respondMcpUnauthorized()
-                return@post
+    // Main MCP endpoint - handles SSE connections with OAuth tokens
+    route(MCP_ENDPOINT) {
+        // Intercept to check OAuth token before SSE handler runs
+        intercept(ApplicationCallPipeline.Plugins) {
+            val path = call.request.path()
+            // Skip auth for OAuth sub-paths
+            if (path.startsWith("$MCP_ENDPOINT/register") ||
+                path.startsWith("$MCP_ENDPOINT/authorize") ||
+                path.startsWith("$MCP_ENDPOINT/token")
+            ) {
+                return@intercept
             }
 
-            // Create new session with transport
-            val transport = StreamableHttpServerTransport(
-                enableJsonResponse = true  // Return JSON for POST responses
-            )
+            if (call.request.httpMethod == HttpMethod.Get) {
+                // Check for valid OAuth access token
+                if (!call.checkMcpAccessToken(mcpAccessTokens)) {
+                    call.respondMcpUnauthorized()
+                    finish()
+                }
+            }
+        }
+
+        sse {
+            val transport = SseServerTransport(MCP_ENDPOINT, this)
+            mcpSessions[transport.sessionId] = transport
 
             val server = mcpHandler.createServer()
-
-            transport.setOnSessionInitialized { newSessionId ->
-                mcpSessions[newSessionId] = McpSession(transport, server)
-                logger.info("MCP session initialized sessionId={}", newSessionId)
-            }
-
-            transport.setOnSessionClosed { closedSessionId ->
-                mcpSessions.remove(closedSessionId)
-                logger.info("MCP session closed sessionId={}", closedSessionId)
-            }
-
             server.onClose {
-                transport.sessionId?.let { mcpSessions.remove(it) }
+                mcpSessions.remove(transport.sessionId)
             }
 
-            // Create server session (starts transport internally)
-            server.createSession(transport)
-
-            // Store session once we have the ID (fallback if callback hasn't fired yet)
-            transport.sessionId?.let { sid ->
-                mcpSessions.putIfAbsent(sid, McpSession(transport, server))
-            }
-
-            // Handle the request
-            transport.handleRequest(null, call)
-        }
-    }
-
-    // GET handler - optional SSE stream for server-initiated messages
-    route(MCP_ENDPOINT) {
-        sse {
-            val sessionIdHeader = call.getMcpSessionId()
-            if (sessionIdHeader == null) {
-                call.respond(HttpStatusCode.BadRequest, "mcp-session-id header is required for GET requests")
-                return@sse
-            }
-
-            val session = mcpSessions[sessionIdHeader]
-            if (session == null) {
-                call.respond(HttpStatusCode.NotFound, "Session not found")
-                return@sse
-            }
-
-            logger.info("MCP SSE stream opened sessionId={}", sessionIdHeader)
+            logger.info(
+                "MCP SSE connected sessionId={} remote={}",
+                transport.sessionId,
+                call.request.local.remoteHost
+            )
             try {
-                session.transport.handleRequest(this, call)
+                server.createSession(transport)
                 awaitCancellation()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                logger.error("MCP SSE stream failed sessionId={}", sessionIdHeader, e)
+                logger.error("MCP SSE session failed sessionId={}", transport.sessionId, e)
+                throw e
             } finally {
-                logger.info("MCP SSE stream closed sessionId={}", sessionIdHeader)
+                mcpSessions.remove(transport.sessionId)
+                logger.info("MCP SSE closed sessionId={}", transport.sessionId)
             }
         }
     }
 
-    // DELETE handler - close session
-    delete(MCP_ENDPOINT) {
+    // POST to MCP endpoint for client messages (SSE transport)
+    post(MCP_ENDPOINT) {
         if (!call.checkMcpAccessToken(mcpAccessTokens)) {
             call.respondMcpUnauthorized()
-            return@delete
+            return@post
         }
 
-        val sessionIdHeader = call.getMcpSessionId()
-        if (sessionIdHeader == null) {
-            call.respond(HttpStatusCode.BadRequest, "mcp-session-id header is required")
-            return@delete
+        val sessionId = call.request.queryParameters["sessionId"]
+        if (sessionId == null) {
+            logger.warn("MCP POST missing sessionId")
+            call.respond(HttpStatusCode.BadRequest, "sessionId query parameter is required")
+            return@post
         }
 
-        val session = mcpSessions[sessionIdHeader]
-        if (session == null) {
+        val transport = mcpSessions[sessionId]
+        if (transport == null) {
+            logger.warn("MCP POST unknown sessionId={}", sessionId)
             call.respond(HttpStatusCode.NotFound, "Session not found")
-            return@delete
+            return@post
         }
 
-        session.transport.handleRequest(null, call)
+        transport.handlePostMessage(call)
     }
 }
 

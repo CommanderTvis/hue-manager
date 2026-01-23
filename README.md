@@ -212,24 +212,8 @@ Authenticated endpoints (non-MCP) require `Authorization: Bearer <password>`. MC
 
 ## MCP Integration
 
-The MCP endpoint uses OAuth 2.1 Authorization Code with PKCE (S256). The `resource` parameter is required and should be
-`https://yourdomain.com/mcp`. Access tokens are short-lived and must be sent as `Authorization: Bearer <access_token>`.
-
-For Claude/ChatGPT connectors, point the client at the MCP URL and follow the OAuth prompt:
-
-```json
-{
-  "mcpServers": {
-    "hue-manager": {
-      "url": "https://yourdomain.com/mcp"
-    }
-  }
-}
-```
-
-For custom clients:
-- Register via `/mcp/register` or host a client metadata document (use the HTTPS URL as `client_id`).
-- Use `/mcp/authorize` for authorization and `/mcp/token` for token exchange.
+Claude Desktop connects via HTTP OAuth (Authorization Code + PKCE). Add the connector URL
+`https://yourdomain.com/mcp` and follow the OAuth prompt in your browser.
 
 ### Available MCP Resources
 

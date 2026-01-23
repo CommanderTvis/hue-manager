@@ -134,11 +134,11 @@ KEYSTORE_PASSWORD=<for HTTPS>
 
 ## MCP (Model Context Protocol)
 
-The server exposes an MCP endpoint for integration with Claude and other MCP-compatible clients.
+The server exposes an MCP endpoint for integration with Claude Desktop via HTTP OAuth.
 
-**Connection:** Configure as `{"url":"<domain>/mcp"}` in your MCP client.
+**Connection:** Add `https://<domain>/mcp` as a Claude Desktop connector URL.
 
-**Authentication:** Requires `Authorization: Bearer <password>`. For interactive auth (Claude connector), use `/mcp/authorize` as the authorization URL.
+**Authentication:** OAuth 2.1 over HTTP (Authorization Code + PKCE). Use `/mcp/authorize` as the authorization URL.
 
 **Implementation:**
 - Uses official MCP Kotlin SDK (`io.modelcontextprotocol:kotlin-sdk:0.8.1`)
@@ -162,9 +162,8 @@ The server exposes an MCP endpoint for integration with Claude and other MCP-com
 | `go_to_sleep` | Trigger "I'm asleep!" action - turns off all automated lamps |
 
 **UI Integration:**
-- Main screen includes "MCP" button that opens a dialog with pre-configured MCP JSON
-- Dialog displays MCP server configuration with the current server URL automatically filled in
-- One-click copy button copies the MCP configuration to clipboard for easy setup in Claude or other MCP clients
+- Main screen includes "MCP" button that opens a dialog with the Claude Desktop connector URL
+- One-click copy button copies the URL to the clipboard
 - Platform-specific clipboard implementation (JVM, WasmJS, Android)
 
 ## Rate Limiting
