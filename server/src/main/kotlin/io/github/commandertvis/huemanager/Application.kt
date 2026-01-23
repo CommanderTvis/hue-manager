@@ -73,9 +73,11 @@ fun Application.module(
     install(SSE)
 
     routing {
-        webRoutes()
+        // MCP routes must be before webRoutes (SPA) to avoid being caught by SPA
+        mcpRoutes(config, hueService, automationManager)
         authRoutes(config)
         apiRoutes(config, hueService, automationManager)
-        mcpRoutes(config, hueService, automationManager)
+        // SPA catch-all must be last
+        webRoutes()
     }
 }
