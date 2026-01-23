@@ -27,7 +27,7 @@ import io.github.commandertvis.huemanager.viewmodel.LampsViewModel
 fun MainScreen(
     apiClient: ApiClient,
     onLogout: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val lampsViewModel = remember { LampsViewModel(apiClient) }
     val uiState by lampsViewModel.uiState.collectAsState()
@@ -303,10 +303,8 @@ fun MainScreen(
                         )
                     }
 
-                    // Tab Content
                     when (selectedTab) {
                         0 -> {
-                            // Option 1: Claude Desktop Capabilities
                             Column(
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
@@ -339,7 +337,6 @@ fun MainScreen(
                         }
 
                         1 -> {
-                            // Option 2: Standard MCP Config (with password auth)
                             Column(
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
@@ -379,7 +376,6 @@ fun MainScreen(
                         }
 
                         2 -> {
-                            // Option 3: Using mcp-remote proxy
                             Column(
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {

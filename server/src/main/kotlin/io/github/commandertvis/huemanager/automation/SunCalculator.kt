@@ -1,8 +1,13 @@
 package io.github.commandertvis.huemanager.automation
 
 import io.github.commandertvis.huemanager.config.GeoLocation
-import kotlinx.datetime.*
 import kotlin.math.*
+import kotlin.time.Instant
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.offsetIn
+import kotlinx.datetime.toLocalDateTime
 
 /**
  * Calculates sunrise, sunset, and solar noon times based on geographic location.
@@ -86,7 +91,7 @@ object SunCalculator {
 
         // Convert from UTC to local timezone
         // The calculation gives us UTC times, we need to adjust for timezone offset
-        val offsetSeconds = timeZone.offsetAt(instant).totalSeconds
+        val offsetSeconds = instant.offsetIn(timeZone).totalSeconds
         val offsetMinutes = offsetSeconds / 60
 
         return SunTimes(
