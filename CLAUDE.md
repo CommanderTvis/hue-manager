@@ -191,18 +191,32 @@ Philips Hue Remote API has rate limits:
 
 ## Daylight Simulation Logic
 
+The automation simulates natural daylight based on actual sunrise/sunset times calculated from the configured location (REGION in .env). Lamp brightness is inversely proportional to sunlight intensity - brighter outside means dimmer lamps.
+
+**Daily Flow Example (Berlin, January):**
 ```
-Before pseudo_sunset: Bright white light (auto compensation)
-pseudo_sunset -> pseudo_sunset+3h: Bright orange (#FF5500, 100% brightness)
-pseudo_sunset+3h onwards: Dim orange light (1% brightness)
+06:00 - User presses "I woke up!", sun not risen yet → AUTO_COMPENSATION (100% brightness)
+08:15 - Sunrise → brightness starts decreasing smoothly
+12:30 - Solar noon → brightness at minimum (0%, lamps off)
+12:30 - After noon → brightness starts increasing smoothly  
+16:30 - Sunset → AUTO_COMPENSATION (100% brightness)
+21:05 - Pseudo-sunset → EVENING (bright orange 100%)
+00:05 - Pseudo-sunset+3h → NIGHT (dim orange 1%)
 sleep_action: Turn off all automated lamps
 ```
 
 **Automation Modes:**
-- `AUTO_COMPENSATION` - Before pseudo-sunset: bright white light
-- `EVENING` - From pseudo-sunset to +3h: bright orange light
-- `NIGHT` - After pseudo-sunset+3h: dim orange light
+- `AUTO_COMPENSATION` - Smooth brightness inversely proportional to sun position:
+  - Before sunrise / after sunset: 100% brightness (white)
+  - During daylight: parabolic curve from 100% at sunrise → 0% at solar noon → 100% at sunset
+- `EVENING` - From pseudo-sunset to +3h: bright orange light (#FF5500, 100%)
+- `NIGHT` - After pseudo-sunset+3h until sunrise: dim orange light (#FF5500, 1%)
 - `USER_ASLEEP` - User pressed "I'm asleep!", lamps off
+
+**Sun Calculation:**
+- Uses NOAA Solar Calculator algorithm
+- Calculates sunrise, sunset, and solar noon based on latitude/longitude from REGION config
+- Handles polar regions gracefully (falls back to 6 AM as sunrise if sun doesn't rise/set)
 
 **Out-of-sync Detection:**
 - System detects when lamp state differs from automation target (e.g., changed by other apps)
@@ -269,6 +283,7 @@ hue-manager/
 - `server/.../hue/HueService.kt` - Service layer managing Hue connection via Remote API
 - `server/.../hue/RateLimiter.kt` - Token bucket and minimum delay rate limiters
 - `server/.../automation/AutomationManager.kt` - User state, lamp overrides, heartbeat, automation mode calculation
+- `server/.../automation/SunCalculator.kt` - NOAA-based sunrise/sunset/solar noon calculation
 - `server/.../mcp/McpHandler.kt` - MCP server configuration and tool implementations
 
 ## Key Shared Files

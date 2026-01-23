@@ -62,9 +62,9 @@ data class DesiredLampState(
 
 @Serializable
 enum class AutomationReason {
-    AUTO_COMPENSATION,     // Compensating for lack of daylight (dark mornings, after sunset, 0% daylight)
-    EVENING,               // Warm orange light (pseudo-sunset period)
-    NIGHT,                 // Dim warm light
+    AUTO_COMPENSATION,     // Compensating for lack of daylight - brightness inversely proportional to sunlight
+    EVENING,               // Warm orange light (pseudo-sunset to pseudo-sunset+3h)
+    NIGHT,                 // Dim warm light (pseudo-sunset+3h until sleep)
     MANUAL_OVERRIDE,       // User manually controlled this lamp
     ENTERTAINMENT_PAUSE,   // Paused for Hue Sync
     USER_ASLEEP            // User is asleep, lamps off

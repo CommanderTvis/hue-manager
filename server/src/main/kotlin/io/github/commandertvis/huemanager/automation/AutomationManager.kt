@@ -5,23 +5,23 @@ import io.github.commandertvis.huemanager.config.GeoLocation
 import io.github.commandertvis.huemanager.hue.HueLightStateUpdate
 import io.github.commandertvis.huemanager.hue.HueService
 import kotlinx.coroutines.*
+import kotlinx.datetime.Clock
+import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import org.slf4j.LoggerFactory
-import kotlin.time.Clock
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
-import kotlin.time.Instant
 
 enum class UserState {
     AWAKE, ASLEEP
 }
 
 enum class AutomationMode {
-    AUTO_COMPENSATION,  // Compensating for lack of daylight (dark mornings, after sunset, 0% daylight)
-    EVENING,            // Warm orange light (pseudo-sunset period)
-    NIGHT,              // Dim warm light
+    AUTO_COMPENSATION,  // Compensating for lack of daylight - brightness inversely proportional to sunlight
+    EVENING,            // Warm orange light (pseudo-sunset to pseudo-sunset+3h)
+    NIGHT,              // Dim warm light (pseudo-sunset+3h until sleep)
     USER_ASLEEP         // User is asleep, lamps off
 }
 
@@ -159,52 +159,89 @@ class AutomationManager(
         }
 
         val timeZone = TimeZone.of(config.timezone)
-        val localNow = Clock.System.now().toLocalDateTime(timeZone)
+        val now = Clock.System.now()
+        val localNow = now.toLocalDateTime(timeZone)
         val currentTime = localNow.time
 
+        // Calculate sun times for today
+        val sunTimes = SunCalculator.calculateSunTimes(now, config.region, timeZone)
+
+        // Calculate pseudo-sunset window (3 hours after pseudo-sunset)
         val pseudoSunsetEnd = LocalTime(
             (pseudoSunset.hour + 3) % 24,
             pseudoSunset.minute
         )
 
-        // Handle midnight rollover: if pseudoSunsetEnd crosses midnight (e.g., 21:05 + 3h = 00:05),
-        // we need special logic to determine if we're in the evening window
-        val crossesMidnight = pseudoSunsetEnd < pseudoSunset
+        // Check evening/night modes first (these take priority over daylight modes)
+        val currentMinutes = currentTime.hour * 60 + currentTime.minute
+        val pseudoSunsetMinutes = pseudoSunset.hour * 60 + pseudoSunset.minute
+        val pseudoSunsetEndMinutes = pseudoSunsetEnd.hour * 60 + pseudoSunsetEnd.minute
+
+        // Handle midnight rollover for pseudo-sunset window
+        val crossesMidnight = pseudoSunsetEndMinutes < pseudoSunsetMinutes
+
         val isInEvening = if (crossesMidnight) {
-            // Evening window spans midnight: e.g., 21:05 to 00:05
-            currentTime !in pseudoSunsetEnd..<pseudoSunset
+            // Evening spans midnight: e.g., 21:05 to 00:05
+            currentMinutes >= pseudoSunsetMinutes || currentMinutes < pseudoSunsetEndMinutes
         } else {
-            currentTime in pseudoSunset..<pseudoSunsetEnd
+            currentMinutes in pseudoSunsetMinutes until pseudoSunsetEndMinutes
         }
 
-        // Night mode: after evening window ends until next pseudo-sunset
-        val isInNightMode = if (crossesMidnight) {
-            currentTime in pseudoSunsetEnd..<pseudoSunset
-        } else {
-            currentTime >= pseudoSunsetEnd
+        if (isInEvening) {
+            return AutomationMode.EVENING
         }
 
-        return when {
-            isInEvening -> AutomationMode.EVENING
-            isInNightMode -> AutomationMode.NIGHT
-            else -> AutomationMode.AUTO_COMPENSATION
+        // Night mode: after pseudo-sunset+3h until sunrise
+        if (crossesMidnight) {
+            // Pseudo-sunset+3h crosses midnight (e.g., 00:05)
+            // Night is from 00:05 until sunrise
+            if (currentMinutes in pseudoSunsetEndMinutes until pseudoSunsetMinutes) {
+                val sunriseMinutes = sunTimes?.sunrise?.let { it.hour * 60 + it.minute } ?: 360
+                if (currentMinutes < sunriseMinutes) {
+                    return AutomationMode.NIGHT
+                }
+            }
+        } else {
+            // Pseudo-sunset+3h doesn't cross midnight
+            // Night is from pseudo-sunset+3h until midnight, then midnight until sunrise
+            if (currentMinutes >= pseudoSunsetEndMinutes) {
+                return AutomationMode.NIGHT
+            }
+            if (currentMinutes < pseudoSunsetMinutes) {
+                val sunriseMinutes = sunTimes?.sunrise?.let { it.hour * 60 + it.minute } ?: 360
+                if (currentMinutes < sunriseMinutes) {
+                    return AutomationMode.NIGHT
+                }
+            }
         }
+
+        // Everything else is AUTO_COMPENSATION (with smooth brightness based on sun position)
+        return AutomationMode.AUTO_COMPENSATION
     }
 
     fun getAutomationColor(): LampColorInfo {
         val mode = getCurrentAutomationMode()
 
         return when (mode) {
-            AutomationMode.AUTO_COMPENSATION -> LampColorInfo(
-                hue = null,
-                saturation = null,
-                colorTemperature = 153,
-                brightness = 254,
-                description = "Bright white"
-            )
+            AutomationMode.AUTO_COMPENSATION -> {
+                // Calculate smooth brightness based on sun position
+                val brightness = calculateAutoCompensationBrightness()
+                val description = if (brightness >= 254) "Bright white"
+                else if (brightness >= 100) "Dimmed white (${brightness * 100 / 254}%)"
+                else if (brightness > 0) "Low white (${brightness * 100 / 254}%)"
+                else "Off (bright daylight)"
+
+                LampColorInfo(
+                    hue = null,
+                    saturation = null,
+                    colorTemperature = if (brightness > 0) 153 else null, // Cool white (6500K)
+                    brightness = brightness,
+                    description = description
+                )
+            }
 
             AutomationMode.EVENING -> LampColorInfo(
-                hue = 5000,
+                hue = 5000, // Orange
                 saturation = 254,
                 colorTemperature = null,
                 brightness = 254,
@@ -212,7 +249,7 @@ class AutomationManager(
             )
 
             AutomationMode.NIGHT -> LampColorInfo(
-                hue = 5000,
+                hue = 5000, // Orange
                 saturation = 254,
                 colorTemperature = null,
                 brightness = 1,
@@ -227,6 +264,52 @@ class AutomationManager(
                 description = "Off"
             )
         }
+    }
+
+    /**
+     * Calculate brightness for AUTO_COMPENSATION mode based on sun position.
+     * - Before sunrise: 100% brightness
+     * - Sunrise to solar noon: brightness decreases smoothly (100% -> 0%)
+     * - Solar noon to sunset: brightness increases smoothly (0% -> 100%)
+     * - After sunset: 100% brightness
+     */
+    private fun calculateAutoCompensationBrightness(): Int {
+        val timeZone = TimeZone.of(config.timezone)
+        val now = Clock.System.now()
+        val localNow = now.toLocalDateTime(timeZone)
+        val currentTime = localNow.time
+        val currentMinutes = currentTime.hour * 60 + currentTime.minute
+
+        val sunTimes = SunCalculator.calculateSunTimes(now, config.region, timeZone)
+            ?: return 254 // No sun times (polar region) - full brightness
+
+        val sunriseMinutes = sunTimes.sunrise.hour * 60 + sunTimes.sunrise.minute
+        val sunsetMinutes = sunTimes.sunset.hour * 60 + sunTimes.sunset.minute
+        val solarNoonMinutes = sunTimes.solarNoon.hour * 60 + sunTimes.solarNoon.minute
+
+        // Before sunrise or after sunset: full brightness
+        if (currentMinutes < sunriseMinutes || currentMinutes > sunsetMinutes) {
+            return 254
+        }
+
+        // Calculate sun position as a fraction (0 = sunrise, 0.5 = noon, 1 = sunset)
+        val daylightDuration = sunsetMinutes - sunriseMinutes
+        if (daylightDuration <= 0) return 254
+
+        val minutesSinceSunrise = currentMinutes - sunriseMinutes
+        val sunPosition = minutesSinceSunrise.toDouble() / daylightDuration
+
+        // Convert sun position to brightness (inverted parabola)
+        // At sunrise (0) and sunset (1): brightness = 100%
+        // At solar noon (0.5): brightness = 0%
+        // Using: brightness = 1 - 4 * (position - 0.5)^2 inverted = 4 * (position - 0.5)^2
+        val sunIntensity = 1.0 - 4.0 * (sunPosition - 0.5) * (sunPosition - 0.5)
+
+        // Invert: when sun is brightest, lamp should be dimmest
+        val lampBrightness = 1.0 - sunIntensity
+
+        // Scale to 0-254 range
+        return (lampBrightness * 254).toInt().coerceIn(0, 254)
     }
 
     fun isEntertainmentActive(): Boolean {
@@ -373,40 +456,32 @@ class AutomationManager(
     }
 
     private fun calculateDesiredState(currentTime: LocalTime): HueLightStateUpdate {
-        // Calculate pseudo-sunset end (3 hours after pseudo-sunset)
-        val pseudoSunsetEnd = LocalTime(
-            (pseudoSunset.hour + 3) % 24,
-            pseudoSunset.minute
-        )
+        val mode = getCurrentAutomationMode()
 
-        // Handle midnight rollover for evening window
-        val crossesMidnight = pseudoSunsetEnd < pseudoSunset
-        val isInEvening = if (crossesMidnight) {
-            currentTime !in pseudoSunsetEnd..<pseudoSunset
-        } else {
-            currentTime in pseudoSunset..<pseudoSunsetEnd
-        }
+        return when (mode) {
+            AutomationMode.AUTO_COMPENSATION -> {
+                // Smooth brightness based on sun position
+                val brightness = calculateAutoCompensationBrightness()
+                if (brightness > 0) {
+                    HueLightStateUpdate(on = true, bri = brightness, ct = 153)
+                } else {
+                    HueLightStateUpdate(on = false)
+                }
+            }
 
-        val isInNightMode = if (crossesMidnight) {
-            currentTime in pseudoSunsetEnd..<pseudoSunset
-        } else {
-            currentTime >= pseudoSunsetEnd
-        }
-
-        return when {
-            // Evening mode: bright orange (pseudo-sunset to pseudo-sunset+3h)
-            isInEvening -> {
+            AutomationMode.EVENING -> {
+                // Bright orange (pseudo-sunset to pseudo-sunset+3h)
                 HueLightStateUpdate(on = true, bri = 254, hue = 5000, sat = 254)
             }
 
-            // Night mode: dim orange (after pseudo-sunset+3h until next pseudo-sunset)
-            isInNightMode -> {
+            AutomationMode.NIGHT -> {
+                // Dim orange (after pseudo-sunset+3h)
                 HueLightStateUpdate(on = true, bri = 1, hue = 5000, sat = 254)
             }
 
-            // Auto compensation: bright white (before pseudo-sunset)
-            else -> {
-                HueLightStateUpdate(on = true, bri = 254, ct = 153)
+            AutomationMode.USER_ASLEEP -> {
+                // Off when user is asleep
+                HueLightStateUpdate(on = false)
             }
         }
     }
