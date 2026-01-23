@@ -326,10 +326,10 @@ fun Route.mcpRoutes(
                 enableJsonResponse = true  // Return JSON for POST responses
             )
 
+            val server = mcpHandler.createServer()
+
             transport.setOnSessionInitialized { newSessionId ->
-                val server = mcpHandler.createServer()
-                val session = McpSession(transport, server)
-                mcpSessions[newSessionId] = session
+                mcpSessions[newSessionId] = McpSession(transport, server)
                 logger.info("MCP session initialized sessionId={}", newSessionId)
             }
 
@@ -338,18 +338,16 @@ fun Route.mcpRoutes(
                 logger.info("MCP session closed sessionId={}", closedSessionId)
             }
 
-            val server = mcpHandler.createServer()
             server.onClose {
                 transport.sessionId?.let { mcpSessions.remove(it) }
             }
 
-            // Start transport and create server session
-            transport.start()
+            // Create server session (starts transport internally)
             server.createSession(transport)
 
-            // Store session once we have the ID
+            // Store session once we have the ID (fallback if callback hasn't fired yet)
             transport.sessionId?.let { sid ->
-                mcpSessions[sid] = McpSession(transport, server)
+                mcpSessions.putIfAbsent(sid, McpSession(transport, server))
             }
 
             // Handle the request
