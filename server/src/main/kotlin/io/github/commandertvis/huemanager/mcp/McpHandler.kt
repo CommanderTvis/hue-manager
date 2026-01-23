@@ -113,7 +113,7 @@ class McpHandler(
         // set_all_lamps
         server.addTool(
             name = "set_all_lamps",
-            description = "Set the state of all lamps at once. Useful for 'I left home' / 'I am back' scenarios. This creates manual overrides for all lamps.",
+            description = "Set the state of all lamps at once. Useful for 'I left home' / 'I am back' scenarios or setting all lamps to one color. This creates manual overrides for all lamps.",
             inputSchema = ToolSchema(
                 properties = buildJsonObject {
                     putJsonObject("on") {
@@ -123,6 +123,18 @@ class McpHandler(
                     putJsonObject("brightness") {
                         put("type", "integer")
                         put("description", "Brightness level from 0 to 254")
+                    }
+                    putJsonObject("hue") {
+                        put("type", "integer")
+                        put("description", "Hue value from 0 to 65535 (red=0, green=25500, blue=46920)")
+                    }
+                    putJsonObject("saturation") {
+                        put("type", "integer")
+                        put("description", "Color saturation from 0 to 254")
+                    }
+                    putJsonObject("color_temperature") {
+                        put("type", "integer")
+                        put("description", "Color temperature in Mirek (153=cold/6500K to 500=warm/2000K)")
                     }
                 },
                 required = listOf("on")
@@ -365,6 +377,9 @@ class McpHandler(
 
         return try {
             val brightness = arguments["brightness"]?.jsonPrimitive?.intOrNull
+            val hue = arguments["hue"]?.jsonPrimitive?.intOrNull
+            val saturation = arguments["saturation"]?.jsonPrimitive?.intOrNull
+            val colorTemperature = arguments["color_temperature"]?.jsonPrimitive?.intOrNull
 
             // Add overrides for all lamps
             val allLampIds = hueService.getLights().keys
@@ -372,17 +387,25 @@ class McpHandler(
 
             val state = HueLightStateUpdate(
                 on = on,
-                bri = brightness
+                bri = brightness,
+                hue = hue,
+                sat = saturation,
+                ct = colorTemperature
             )
 
             val success = hueService.setAllLightsState(state)
 
             if (success) {
-                val action = if (on) "turned ON" else "turned OFF"
-                val brightnessInfo = brightness?.let { " at brightness $it/254" } ?: ""
-                CallToolResult(
-                    content = listOf(TextContent("All lamps ${action}${brightnessInfo}. Manual override active for ~1 hour."))
-                )
+                val changes = buildString {
+                    val action = if (on) "turned ON" else "turned OFF"
+                    append("All lamps $action")
+                    brightness?.let { append(" at brightness $it/254") }
+                    hue?.let { append(", hue $it (${hueToColorName(it)})") }
+                    saturation?.let { append(", saturation $it") }
+                    colorTemperature?.let { append(", color temp $it Mirek") }
+                    append(". Manual override active for ~1 hour.")
+                }
+                CallToolResult(content = listOf(TextContent(changes)))
             } else {
                 CallToolResult(
                     content = listOf(TextContent("Failed to update all lamps")),

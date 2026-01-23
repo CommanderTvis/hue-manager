@@ -158,7 +158,7 @@ The server exposes an MCP endpoint for integration with Claude and other MCP-com
 |------|-------------|
 | `get_lamp_state` | Get detailed state of a specific lamp including automation/override/Hue Sync status |
 | `set_lamp_state` | Control a lamp (on/off, brightness, hue, saturation, color temperature). Creates 1-hour override. |
-| `set_all_lamps` | Control all lamps at once (on/off, brightness). Creates overrides for all lamps. |
+| `set_all_lamps` | Control all lamps at once (on/off, brightness, hue, saturation, color temperature). Creates overrides for all lamps. |
 | `clear_lamp_override` | Clear manual override for a lamp, returning it to automation control |
 | `get_automation_status` | Get current automation mode, user state, target color, and overridden lamps |
 | `wake_up` | Trigger "I woke up!" action - starts daylight automation sequence |
