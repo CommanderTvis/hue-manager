@@ -360,6 +360,9 @@ fun Route.mcpRoutes(
     // GET handler - optional SSE stream for server-initiated messages
     route(MCP_ENDPOINT) {
         intercept(ApplicationCallPipeline.Plugins) {
+            if (call.request.path() != MCP_ENDPOINT) {
+                return@intercept
+            }
             if (!call.checkMcpAccessToken(mcpAccessTokens)) {
                 call.respondMcpUnauthorized()
                 finish()
