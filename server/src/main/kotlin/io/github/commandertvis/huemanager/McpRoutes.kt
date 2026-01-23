@@ -41,6 +41,8 @@ import kotlin.io.path.isRegularFile
 private val mcpTokenRandom = SecureRandom()
 private val mcpJson = Json { ignoreUnknownKeys = true }
 
+private const val MCP_ENDPOINT = "/mcp"
+
 fun Route.mcpRoutes(
     config: Config,
     hueService: HueService,
@@ -48,28 +50,76 @@ fun Route.mcpRoutes(
 ) {
     val mcpHandler = McpHandler(hueService, automationManager)
 
-    // MCP OAuth-style authorization (password-only)
+    // OAuth state storage
     val mcpOauthClients = ConcurrentHashMap<String, McpOauthClient>()
     val mcpOauthCodes = ConcurrentHashMap<String, McpOauthCode>()
     val mcpAccessTokens = ConcurrentHashMap<String, McpAccessToken>()
+    val mcpSessions = ConcurrentHashMap<String, SseServerTransport>()
 
-    get("/api/mcp/oauth") {
-        val acceptHeader = call.request.header(HttpHeaders.Accept) ?: ""
-        val wantsHtml = acceptHeader.contains("text/html") ||
-                acceptHeader.contains("application/xhtml+xml")
-        val redirectUri = call.parameters["redirect_uri"]
-        val responseType = call.parameters["response_type"]
-        val hasOauthParams = !redirectUri.isNullOrBlank() ||
-                !responseType.isNullOrBlank() ||
-                !call.parameters["client_id"].isNullOrBlank() ||
-                !call.parameters["code_challenge"].isNullOrBlank()
-        if (!hasOauthParams && !wantsHtml) {
-            call.respondText(
-                buildMcpOauthMetadata(call).toString(),
-                ContentType.Application.Json
-            )
-            return@get
+    // Protected Resource Metadata (RFC 9728)
+    // Client starts here to discover authorization server
+    get("/.well-known/oauth-protected-resource") {
+        call.respond(buildMcpProtectedResourceMetadata(call))
+    }
+
+    // OAuth Authorization Server Metadata (RFC 8414)
+    get("/.well-known/oauth-authorization-server") {
+        call.respond(buildMcpOauthMetadata(call))
+    }
+
+    // Dynamic Client Registration
+    post("$MCP_ENDPOINT/register") {
+        val request = runCatching { call.receive<OAuthRegistrationRequest>() }.getOrNull()
+        val redirectUris = request?.redirect_uris
+            ?.mapNotNull { it.trim().takeIf { trimmed -> trimmed.isNotBlank() } }
+            ?: emptyList()
+        if (redirectUris.isEmpty()) {
+            call.respond(HttpStatusCode.BadRequest, "redirect_uris is required")
+            return@post
         }
+        if (redirectUris.any { !isValidRedirectUri(it) }) {
+            call.respond(HttpStatusCode.BadRequest, "Invalid redirect_uri")
+            return@post
+        }
+        val tokenEndpointAuthMethod = request?.token_endpoint_auth_method
+        if (!tokenEndpointAuthMethod.isNullOrBlank() && tokenEndpointAuthMethod != "none") {
+            call.respond(HttpStatusCode.BadRequest, "Unsupported token_endpoint_auth_method")
+            return@post
+        }
+        val grantTypes = request?.grant_types ?: listOf("authorization_code")
+        if (grantTypes.any { it != "authorization_code" && it != "refresh_token" }) {
+            call.respond(HttpStatusCode.BadRequest, "Unsupported grant_types")
+            return@post
+        }
+        val responseTypes = request?.response_types ?: listOf("code")
+        if (responseTypes.any { it != "code" }) {
+            call.respond(HttpStatusCode.BadRequest, "Unsupported response_types")
+            return@post
+        }
+
+        val clientId = UUID.randomUUID().toString()
+        mcpOauthClients[clientId] = McpOauthClient(
+            clientId = clientId,
+            redirectUris = redirectUris.toSet(),
+            grantTypes = grantTypes.toSet(),
+            responseTypes = responseTypes.toSet(),
+            tokenEndpointAuthMethod = "none"
+        )
+        logger.info("MCP OAuth client registered clientId={} redirectUris={}", clientId, redirectUris)
+        call.respond(
+            OAuthRegistrationResponse(
+                client_id = clientId,
+                client_id_issued_at = System.currentTimeMillis() / 1000,
+                token_endpoint_auth_method = "none",
+                grant_types = grantTypes,
+                response_types = responseTypes,
+                redirect_uris = redirectUris
+            )
+        )
+    }
+
+    // Authorization endpoint - GET shows login page, POST processes it
+    get("$MCP_ENDPOINT/authorize") {
         val validation = validateMcpAuthRequest(call, call.parameters, mcpOauthClients)
         if (validation.error != null) {
             call.respond(HttpStatusCode.BadRequest, validation.error)
@@ -77,13 +127,12 @@ fun Route.mcpRoutes(
         }
         val request = validation.request!!
 
-        // Serve the WASM SPA - it will detect the /api/mcp/oauth path and show OAuth UI
+        // Serve the WASM SPA or fallback HTML
         val webDir = Path("web")
         val indexFile = webDir.resolve("index.html")
         if (indexFile.isRegularFile()) {
             call.respondFile(indexFile.toFile())
         } else {
-            // Fallback to raw HTML if WASM app is not available
             call.respondText(
                 renderMcpOauthPage(
                     redirectUri = request.redirectUri,
@@ -101,7 +150,7 @@ fun Route.mcpRoutes(
         }
     }
 
-    post("/api/mcp/oauth") {
+    post("$MCP_ENDPOINT/authorize") {
         val params = call.receiveParameters()
         val validation = validateMcpAuthRequest(call, params, mcpOauthClients)
         if (validation.error != null) {
@@ -148,79 +197,8 @@ fun Route.mcpRoutes(
         call.respondRedirect(redirectUrl, permanent = false)
     }
 
-    get("/api/mcp/oauth/.well-known/oauth-authorization-server") {
-        call.respond(buildMcpOauthMetadata(call))
-    }
-
-    get("/.well-known/oauth-authorization-server") {
-        call.respond(buildMcpOauthMetadata(call))
-    }
-
-    // Protected Resource Metadata (RFC 9728) - required by MCP spec
-    get("/.well-known/oauth-protected-resource") {
-        call.respond(buildMcpProtectedResourceMetadata(call))
-    }
-    // Path-specific protected resource metadata (some clients request this form)
-    get("/.well-known/oauth-protected-resource/{resourcePath...}") {
-        val segments = call.parameters.getAll("resourcePath")
-        val resourcePath = if (segments.isNullOrEmpty()) {
-            null
-        } else {
-            "/" + segments.joinToString("/")
-        }
-        call.respond(buildMcpProtectedResourceMetadata(call, resourcePath))
-    }
-
-    post("/api/mcp/oauth/register") {
-        val request = runCatching { call.receive<OAuthRegistrationRequest>() }.getOrNull()
-        val redirectUris = request?.redirect_uris
-            ?.mapNotNull { it.trim().takeIf { trimmed -> trimmed.isNotBlank() } }
-            ?: emptyList()
-        if (redirectUris.isEmpty()) {
-            call.respond(HttpStatusCode.BadRequest, "redirect_uris is required")
-            return@post
-        }
-        if (redirectUris.any { !isValidRedirectUri(it) }) {
-            call.respond(HttpStatusCode.BadRequest, "Invalid redirect_uri")
-            return@post
-        }
-        val tokenEndpointAuthMethod = request?.token_endpoint_auth_method
-        if (!tokenEndpointAuthMethod.isNullOrBlank() && tokenEndpointAuthMethod != "none") {
-            call.respond(HttpStatusCode.BadRequest, "Unsupported token_endpoint_auth_method")
-            return@post
-        }
-        val grantTypes = request?.grant_types ?: listOf("authorization_code")
-        if (grantTypes.any { it != "authorization_code" }) {
-            call.respond(HttpStatusCode.BadRequest, "Unsupported grant_types")
-            return@post
-        }
-        val responseTypes = request?.response_types ?: listOf("code")
-        if (responseTypes.any { it != "code" }) {
-            call.respond(HttpStatusCode.BadRequest, "Unsupported response_types")
-            return@post
-        }
-
-        val clientId = UUID.randomUUID().toString()
-        mcpOauthClients[clientId] = McpOauthClient(
-            clientId = clientId,
-            redirectUris = redirectUris.toSet(),
-            grantTypes = grantTypes.toSet(),
-            responseTypes = responseTypes.toSet(),
-            tokenEndpointAuthMethod = "none"
-        )
-        logger.info("MCP OAuth client registered clientId={} redirectUris={}", clientId, redirectUris)
-        val response = OAuthRegistrationResponse(
-            client_id = clientId,
-            client_id_issued_at = System.currentTimeMillis() / 1000,
-            token_endpoint_auth_method = "none",
-            grant_types = listOf("authorization_code"),
-            response_types = listOf("code"),
-            redirect_uris = redirectUris
-        )
-        call.respond(response)
-    }
-
-    post("/api/mcp/oauth/token") {
+    // Token endpoint
+    post("$MCP_ENDPOINT/token") {
         val params = runCatching { call.receiveParameters() }.getOrNull()
         val jsonBody = if (params == null) {
             runCatching { call.receive<JsonObject>() }.getOrNull()
@@ -239,7 +217,7 @@ fun Route.mcpRoutes(
             ?: jsonBody?.get("code")?.jsonPrimitive?.contentOrNull
         if (code.isNullOrBlank()) {
             logger.warn("MCP token exchange rejected: missing code")
-            call.respond(HttpStatusCode.BadRequest, "code form parameter is required")
+            call.respond(HttpStatusCode.BadRequest, "code is required")
             return@post
         }
 
@@ -247,16 +225,9 @@ fun Route.mcpRoutes(
             ?: jsonBody?.get("redirect_uri")?.jsonPrimitive?.contentOrNull
         val codeVerifier = params?.get("code_verifier")
             ?: jsonBody?.get("code_verifier")?.jsonPrimitive?.contentOrNull
-        val scopeParam = params?.get("scope")
-            ?: jsonBody?.get("scope")?.jsonPrimitive?.contentOrNull
         val clientId = params?.get("client_id")
             ?: jsonBody?.get("client_id")?.jsonPrimitive?.contentOrNull
-        val resourceCandidates = params?.getAll("resource")
-            ?.mapNotNull { it.trim().takeIf { trimmed -> trimmed.isNotBlank() } }
-            ?: emptyList()
-        val jsonResource = jsonBody?.get("resource")?.jsonPrimitive?.contentOrNull
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
+
         if (clientId.isNullOrBlank()) {
             logger.warn("MCP token exchange rejected: missing client_id")
             call.respond(HttpStatusCode.BadRequest, "client_id is required")
@@ -267,6 +238,7 @@ fun Route.mcpRoutes(
             call.respond(HttpStatusCode.BadRequest, "redirect_uri is required")
             return@post
         }
+
         val now = System.currentTimeMillis()
         val codeEntry = mcpOauthCodes.remove(code)
         if (codeEntry == null || now > codeEntry.expiresAtMillis) {
@@ -276,72 +248,38 @@ fun Route.mcpRoutes(
         }
 
         if (redirectUri != codeEntry.redirectUri) {
-            logger.warn(
-                "MCP token exchange rejected: redirect_uri_mismatch provided={} expected={}",
-                redirectUri,
-                codeEntry.redirectUri
-            )
+            logger.warn("MCP token exchange rejected: redirect_uri mismatch")
             call.respond(HttpStatusCode.BadRequest, "redirect_uri does not match")
             return@post
         }
         if (clientId != codeEntry.clientId) {
-            logger.warn(
-                "MCP token exchange rejected: client_id_mismatch provided={} expected={}",
-                clientId,
-                codeEntry.clientId
-            )
+            logger.warn("MCP token exchange rejected: client_id mismatch")
             call.respond(HttpStatusCode.BadRequest, "client_id does not match")
             return@post
         }
 
-        val resourceValues = if (resourceCandidates.isNotEmpty()) {
-            resourceCandidates
-        } else {
-            listOfNotNull(jsonResource)
-        }
-        val resolvedResource = if (resourceValues.isEmpty()) {
-            codeEntry.resource
-        } else {
-            resolveMcpResourceCandidates(call, resourceValues)
-        }
-        if (resolvedResource == null) {
-            logger.warn("MCP token exchange rejected: invalid_resource values={}", resourceValues)
-            call.respond(HttpStatusCode.BadRequest, "Invalid resource")
-            return@post
-        }
-        if (resolvedResource != codeEntry.resource) {
-            logger.warn(
-                "MCP token exchange rejected: resource_mismatch provided={} expected={}",
-                resolvedResource,
-                codeEntry.resource
-            )
-            call.respond(HttpStatusCode.BadRequest, "resource does not match")
-            return@post
-        }
-
         if (codeVerifier.isNullOrBlank()) {
-            logger.warn("MCP token exchange rejected: missing_code_verifier")
+            logger.warn("MCP token exchange rejected: missing code_verifier")
             call.respond(HttpStatusCode.BadRequest, "code_verifier is required")
             return@post
         }
         val method = codeEntry.codeChallengeMethod ?: "S256"
         if (codeEntry.codeChallenge.isNullOrBlank() || !verifyPkce(codeVerifier, codeEntry.codeChallenge, method)) {
-            logger.warn("MCP token exchange rejected: pkce_verification_failed method={}", method)
+            logger.warn("MCP token exchange rejected: PKCE verification failed")
             call.respond(HttpStatusCode.BadRequest, "Invalid code_verifier")
             return@post
         }
 
-        val issuedScope = codeEntry.scope ?: scopeParam
         val accessToken = issueMcpAccessToken(
             tokens = mcpAccessTokens,
             resource = codeEntry.resource,
-            scope = issuedScope
+            scope = codeEntry.scope
         )
         logger.info(
             "MCP OAuth token issued clientId={} resource={} scope={}",
             clientId,
             codeEntry.resource,
-            issuedScope
+            codeEntry.scope
         )
         call.response.header(HttpHeaders.CacheControl, "no-store")
         call.response.header(HttpHeaders.Pragma, "no-cache")
@@ -350,33 +288,26 @@ fun Route.mcpRoutes(
                 put("access_token", accessToken)
                 put("token_type", "bearer")
                 put("expires_in", MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS)
-                put("resource", codeEntry.resource)
-                if (!issuedScope.isNullOrBlank()) {
-                    put("scope", issuedScope)
-                }
             }
         )
     }
 
-    // MCP endpoint using SSE transport
-    // SSE connection: GET /api/mcp (establishes connection, receives server messages)
-    // Client messages: POST /api/mcp?sessionId=<id> (sends client messages)
-    // Authentication: Bearer access token
-    val mcpSessions = ConcurrentHashMap<String, SseServerTransport>()
-    val mcpEndpoint = "/api/mcp"
-
-    // Use route with intercept to check auth BEFORE SSE handler runs
-    route(mcpEndpoint) {
-        // Intercept to check authentication before SSE sends headers
+    // Main MCP endpoint - handles SSE connections with OAuth tokens
+    route(MCP_ENDPOINT) {
+        // Intercept to check OAuth token before SSE handler runs
         intercept(ApplicationCallPipeline.Plugins) {
-            // Skip auth for OAuth sub-paths - they have their own auth
             val path = call.request.path()
-            if (path.startsWith("/api/mcp/oauth")) {
+            // Skip auth for OAuth sub-paths
+            if (path.startsWith("$MCP_ENDPOINT/register") ||
+                path.startsWith("$MCP_ENDPOINT/authorize") ||
+                path.startsWith("$MCP_ENDPOINT/token")
+            ) {
                 return@intercept
             }
 
             if (call.request.httpMethod == HttpMethod.Get) {
-                if (!call.checkMcpPassword(mcpAccessTokens)) {
+                // Check for valid OAuth access token
+                if (!call.checkMcpAccessToken(mcpAccessTokens)) {
                     call.respondMcpUnauthorized()
                     finish()
                 }
@@ -384,7 +315,7 @@ fun Route.mcpRoutes(
         }
 
         sse {
-            val transport = SseServerTransport(mcpEndpoint, this)
+            val transport = SseServerTransport(MCP_ENDPOINT, this)
             mcpSessions[transport.sessionId] = transport
 
             val server = mcpHandler.createServer()
@@ -393,10 +324,9 @@ fun Route.mcpRoutes(
             }
 
             logger.info(
-                "MCP SSE connected sessionId={} remote={} ua={}",
+                "MCP SSE connected sessionId={} remote={}",
                 transport.sessionId,
-                call.request.local.remoteHost,
-                call.request.header(HttpHeaders.UserAgent)
+                call.request.local.remoteHost
             )
             try {
                 server.createSession(transport)
@@ -413,19 +343,23 @@ fun Route.mcpRoutes(
         }
     }
 
-    post(mcpEndpoint) {
-        if (!call.requireMcpPassword(mcpAccessTokens)) return@post
+    // POST to MCP endpoint for client messages (SSE transport)
+    post(MCP_ENDPOINT) {
+        if (!call.checkMcpAccessToken(mcpAccessTokens)) {
+            call.respondMcpUnauthorized()
+            return@post
+        }
 
         val sessionId = call.request.queryParameters["sessionId"]
         if (sessionId == null) {
-            logger.warn("MCP post missing sessionId")
-            call.respond(HttpStatusCode.BadRequest, "sessionId query parameter is not provided")
+            logger.warn("MCP POST missing sessionId")
+            call.respond(HttpStatusCode.BadRequest, "sessionId query parameter is required")
             return@post
         }
 
         val transport = mcpSessions[sessionId]
         if (transport == null) {
-            logger.warn("MCP post unknown sessionId={}", sessionId)
+            logger.warn("MCP POST unknown sessionId={}", sessionId)
             call.respond(HttpStatusCode.NotFound, "Session not found")
             return@post
         }
@@ -434,6 +368,7 @@ fun Route.mcpRoutes(
     }
 }
 
+// Data classes
 private data class McpOauthClient(
     val clientId: String,
     val redirectUris: Set<String>,
@@ -457,364 +392,6 @@ private data class McpAuthValidation(
     val request: McpAuthRequest?,
     val error: String?
 )
-
-private suspend fun validateMcpAuthRequest(
-    call: ApplicationCall,
-    params: Parameters,
-    clients: ConcurrentHashMap<String, McpOauthClient>
-): McpAuthValidation {
-    val responseType = params["response_type"]?.trim()?.ifBlank { null } ?: "code"
-    if (responseType != "code") {
-        return McpAuthValidation(null, "Unsupported response_type: $responseType")
-    }
-
-    val redirectUri = params["redirect_uri"]?.trim()?.takeIf { it.isNotBlank() }
-        ?: return McpAuthValidation(null, "redirect_uri is required")
-    if (!isValidRedirectUri(redirectUri)) {
-        return McpAuthValidation(null, "Invalid redirect_uri")
-    }
-
-    val clientId = params["client_id"]?.trim()?.takeIf { it.isNotBlank() }
-        ?: return McpAuthValidation(null, "client_id is required")
-    val client = resolveMcpClient(clientId, clients)
-        ?: return McpAuthValidation(null, "Unknown client_id")
-    if (!client.grantTypes.contains("authorization_code")) {
-        return McpAuthValidation(null, "Unsupported grant_types")
-    }
-    if (!client.responseTypes.contains(responseType)) {
-        return McpAuthValidation(null, "Unsupported response_type: $responseType")
-    }
-    if (!client.redirectUris.contains(redirectUri)) {
-        return McpAuthValidation(null, "redirect_uri does not match registered value")
-    }
-
-    val codeChallenge = params["code_challenge"]?.trim()?.takeIf { it.isNotBlank() }
-        ?: return McpAuthValidation(null, "code_challenge is required")
-    val rawCodeChallengeMethod = params["code_challenge_method"]?.trim()?.takeIf { it.isNotBlank() }
-        ?: return McpAuthValidation(null, "code_challenge_method is required")
-    val codeChallengeMethod = rawCodeChallengeMethod.uppercase()
-    if (codeChallengeMethod != "S256") {
-        return McpAuthValidation(null, "Unsupported code_challenge_method: $rawCodeChallengeMethod")
-    }
-
-    val resourceCandidates = params.getAll("resource")
-        ?.mapNotNull { it.trim().takeIf { trimmed -> trimmed.isNotBlank() } }
-        ?: emptyList()
-    if (resourceCandidates.isEmpty()) {
-        return McpAuthValidation(null, "resource is required")
-    }
-    val resource = resolveMcpResourceCandidates(call, resourceCandidates)
-        ?: return McpAuthValidation(null, "Invalid resource")
-
-    val scope = params["scope"]?.trim()?.takeIf { it.isNotBlank() }
-    val state = params["state"]?.trim()?.takeIf { it.isNotBlank() }
-
-    return McpAuthValidation(
-        McpAuthRequest(
-            redirectUri = redirectUri,
-            responseType = responseType,
-            clientId = clientId,
-            state = state,
-            codeChallenge = codeChallenge,
-            codeChallengeMethod = codeChallengeMethod,
-            scope = scope,
-            resource = resource
-        ),
-        null
-    )
-}
-
-private suspend fun resolveMcpClient(
-    clientId: String,
-    clients: ConcurrentHashMap<String, McpOauthClient>
-): McpOauthClient? {
-    clients[clientId]?.let { return it }
-
-    resolveKnownClient(clientId)?.let { known ->
-        clients[clientId] = known
-        logger.info("MCP OAuth client metadata loaded clientId={} redirectUris={}", clientId, known.redirectUris)
-        return known
-    }
-
-    val uri = runCatching { URI(clientId.trim()) }.getOrNull() ?: return null
-    if (!uri.isAbsolute || uri.scheme.isNullOrBlank() || uri.host.isNullOrBlank()) {
-        return null
-    }
-    if (!uri.scheme.equals("https", ignoreCase = true)) {
-        return null
-    }
-    if (uri.fragment != null || uri.path.isNullOrBlank() || uri.path == "/") {
-        return null
-    }
-
-    val metadata = fetchClientMetadataDocument(clientId) ?: return null
-    clients[clientId] = metadata
-    logger.info("MCP OAuth client metadata loaded clientId={} redirectUris={}", clientId, metadata.redirectUris)
-    return metadata
-}
-
-private fun resolveKnownClient(clientId: String): McpOauthClient? {
-    val normalized = clientId.trim().trimEnd('/')
-    return when (normalized) {
-        "https://claude.ai/oauth/mcp-oauth-client-metadata" -> McpOauthClient(
-            clientId = clientId,
-            redirectUris = setOf("https://claude.ai/api/mcp/auth_callback"),
-            grantTypes = setOf("authorization_code"),
-            responseTypes = setOf("code"),
-            tokenEndpointAuthMethod = "none"
-        )
-
-        else -> null
-    }
-}
-
-private suspend fun fetchClientMetadataDocument(clientIdUrl: String): McpOauthClient? {
-    return withContext(Dispatchers.IO) {
-        val connection = (URL(clientIdUrl).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            instanceFollowRedirects = false
-            connectTimeout = 5000
-            readTimeout = 5000
-        }
-        val status = connection.responseCode
-        if (status !in 200..299) {
-            return@withContext null
-        }
-        val body = connection.inputStream.bufferedReader().use { it.readText() }
-        val doc = runCatching { mcpJson.parseToJsonElement(body).jsonObject }.getOrNull()
-            ?: return@withContext null
-
-        val docClientId = doc["client_id"]?.jsonPrimitive?.contentOrNull
-            ?: return@withContext null
-        if (docClientId != clientIdUrl) {
-            return@withContext null
-        }
-        val redirectUris = doc["redirect_uris"]?.jsonArray
-            ?.mapNotNull { it.jsonPrimitive.contentOrNull }
-            ?.mapNotNull { it.trim().takeIf { trimmed -> trimmed.isNotBlank() } }
-            ?: return@withContext null
-        if (redirectUris.any { !isValidRedirectUri(it) }) {
-            return@withContext null
-        }
-        val grantTypes = doc["grant_types"]?.jsonArray
-            ?.mapNotNull { it.jsonPrimitive.contentOrNull }
-            ?.toSet()
-            ?: setOf("authorization_code")
-        if (!grantTypes.contains("authorization_code")) {
-            return@withContext null
-        }
-        if (grantTypes.any { it != "authorization_code" && it != "refresh_token" }) {
-            return@withContext null
-        }
-        val responseTypes = doc["response_types"]?.jsonArray
-            ?.mapNotNull { it.jsonPrimitive.contentOrNull }
-            ?.toSet()
-            ?: setOf("code")
-        if (responseTypes.any { it != "code" }) {
-            return@withContext null
-        }
-        val tokenEndpointAuthMethod = doc["token_endpoint_auth_method"]?.jsonPrimitive?.contentOrNull ?: "none"
-        if (tokenEndpointAuthMethod != "none") {
-            return@withContext null
-        }
-
-        McpOauthClient(
-            clientId = docClientId,
-            redirectUris = redirectUris.toSet(),
-            grantTypes = grantTypes,
-            responseTypes = responseTypes,
-            tokenEndpointAuthMethod = tokenEndpointAuthMethod
-        )
-    }
-}
-
-private fun resolveMcpResourceCandidates(call: ApplicationCall, resourceCandidates: List<String>): String? {
-    for (candidate in resourceCandidates) {
-        val resolved = resolveMcpResource(call, candidate)
-        if (resolved != null) {
-            return resolved
-        }
-    }
-    return null
-}
-
-private fun isValidRedirectUri(redirectUri: String): Boolean {
-    val uri = runCatching { URI(redirectUri.trim()) }.getOrNull() ?: return false
-    if (!uri.isAbsolute || uri.fragment != null) {
-        return false
-    }
-    if (!uri.userInfo.isNullOrBlank()) {
-        return false
-    }
-    val scheme = uri.scheme?.lowercase() ?: return false
-    val host = uri.host?.lowercase() ?: return false
-    if (scheme == "https") {
-        return true
-    }
-    if (scheme == "http") {
-        return host == "localhost" || host == "127.0.0.1" || host == "::1"
-    }
-    return false
-}
-
-private fun ApplicationCall.resolveBaseUrl(): String {
-    val forwardedProto = request.headers["X-Forwarded-Proto"]
-    val forwardedHost = request.headers["X-Forwarded-Host"]
-    val forwardedPort = request.headers["X-Forwarded-Port"]
-
-    val scheme = forwardedProto ?: if (request.port() == 443) "https" else "http"
-    val host = forwardedHost ?: request.host()
-    val port = forwardedPort ?: when {
-        forwardedProto != null && scheme == "https" -> "443"
-        forwardedProto != null && scheme == "http" -> "80"
-        else -> request.port().toString()
-    }
-
-    val hostWithPort = if (":" in host) {
-        host
-    } else {
-        val isDefaultPort = (scheme == "http" && port == "80") || (scheme == "https" && port == "443")
-        if (isDefaultPort) host else "$host:$port"
-    }
-
-    return "$scheme://$hostWithPort/"
-}
-
-private fun resolveMcpResource(call: ApplicationCall, resourceParam: String?): String? {
-    val baseUrl = call.resolveBaseUrl().removeSuffix("/")
-    val canonical = "$baseUrl/api/mcp"
-    if (resourceParam.isNullOrBlank()) {
-        return canonical
-    }
-    val resourceUri = runCatching { URI(resourceParam.trim()) }.getOrNull() ?: return null
-    if (!resourceUri.isAbsolute || resourceUri.host.isNullOrBlank()) {
-        return null
-    }
-    if (resourceUri.fragment != null) {
-        return null
-    }
-
-    val canonicalUri = runCatching { URI(canonical) }.getOrNull() ?: return null
-    if (!resourceUri.scheme.equals(canonicalUri.scheme, ignoreCase = true)) {
-        return null
-    }
-    if (!resourceUri.host.equals(canonicalUri.host, ignoreCase = true)) {
-        return null
-    }
-
-    fun normalizedPort(uri: URI): Int? {
-        return if (uri.port != -1) {
-            uri.port
-        } else {
-            when (uri.scheme?.lowercase()) {
-                "https" -> 443
-                "http" -> 80
-                else -> null
-            }
-        }
-    }
-
-    val canonicalPort = normalizedPort(canonicalUri)
-    val resourcePort = normalizedPort(resourceUri)
-    if (canonicalPort == null || resourcePort == null || canonicalPort != resourcePort) {
-        return null
-    }
-
-    val canonicalPath = canonicalUri.path.trimEnd('/')
-    val resourcePath = resourceUri.path.trimEnd('/')
-    if (resourcePath.isEmpty() || resourcePath == "/") {
-        return canonical
-    }
-    if (resourcePath == canonicalPath) {
-        return canonical
-    }
-    return if (resourcePath.startsWith("$canonicalPath/")) canonical else null
-}
-
-private fun verifyPkce(codeVerifier: String, codeChallenge: String, method: String): Boolean {
-    return when (method.lowercase()) {
-        "plain" -> codeVerifier == codeChallenge
-        "s256" -> sha256Base64Url(codeVerifier) == codeChallenge
-        else -> false
-    }
-}
-
-private fun sha256Base64Url(value: String): String {
-    val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
-    return Base64.getUrlEncoder().withoutPadding().encodeToString(digest)
-}
-
-private fun ApplicationCall.checkMcpPassword(
-    mcpAccessTokens: ConcurrentHashMap<String, McpAccessToken>
-): Boolean {
-    val token = extractBearerToken()
-        ?: request.queryParameters["access_token"]?.trim()?.takeIf { it.isNotEmpty() }
-        ?: request.queryParameters["token"]?.trim()?.takeIf { it.isNotEmpty() }
-
-    if (token == null) {
-        val headerNames = request.headers.names().sorted().joinToString(",")
-        val queryKeys = request.queryParameters.names().sorted().joinToString(",")
-        logger.warn(
-            "MCP auth failed: missing token path={} ua={} headerNames={} queryKeys={}",
-            request.path(),
-            request.header(HttpHeaders.UserAgent),
-            headerNames,
-            queryKeys
-        )
-        return false
-    }
-
-    val now = System.currentTimeMillis()
-    val entry = mcpAccessTokens[token]
-    if (entry == null) {
-        logger.warn(
-            "MCP auth failed: invalid token path={} tokenLength={}",
-            request.path(),
-            token.length
-        )
-        return false
-    }
-    if (entry.expiresAtMillis <= now) {
-        mcpAccessTokens.remove(token)
-        logger.warn("MCP auth failed: expired token path={} tokenLength={}", request.path(), token.length)
-        return false
-    }
-    val canonicalResource = resolveMcpResource(this, null)
-    if (canonicalResource == null || entry.resource != canonicalResource) {
-        logger.warn(
-            "MCP auth failed: resource mismatch path={} tokenLength={} expectedResource={}",
-            request.path(),
-            token.length,
-            canonicalResource
-        )
-        return false
-    }
-    return true
-}
-
-private suspend fun ApplicationCall.requireMcpPassword(
-    mcpAccessTokens: ConcurrentHashMap<String, McpAccessToken>
-): Boolean {
-    if (!checkMcpPassword(mcpAccessTokens)) {
-        respondMcpUnauthorized()
-        return false
-    }
-
-    return true
-}
-
-private suspend fun ApplicationCall.respondMcpUnauthorized() {
-    val baseUrl = resolveBaseUrl()
-    val resourceMetadataUrl = "${baseUrl}.well-known/oauth-protected-resource"
-    response.header(
-        HttpHeaders.WWWAuthenticate,
-        """Bearer resource_metadata=\"$resourceMetadataUrl\""""
-    )
-    respondBytes(ByteArray(0), ContentType.Text.Plain, status = HttpStatusCode.Unauthorized)
-}
-
-private const val MCP_OAUTH_CODE_TTL_MILLIS = 5 * 60 * 1000L
-private const val MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS = 60L * 60
 
 private data class McpOauthCode(
     val clientId: String,
@@ -851,6 +428,217 @@ private data class OAuthRegistrationResponse(
     val redirect_uris: List<String>? = null
 )
 
+// Constants
+private const val MCP_OAUTH_CODE_TTL_MILLIS = 5 * 60 * 1000L
+private const val MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS = 60L * 60
+
+// Helper functions
+private fun ApplicationCall.resolveBaseUrl(): String {
+    val forwardedProto = request.headers["X-Forwarded-Proto"]
+    val forwardedHost = request.headers["X-Forwarded-Host"]
+    val forwardedPort = request.headers["X-Forwarded-Port"]
+
+    val scheme = forwardedProto ?: if (request.port() == 443) "https" else "http"
+    val host = forwardedHost ?: request.host()
+    val port = forwardedPort ?: when {
+        forwardedProto != null && scheme == "https" -> "443"
+        forwardedProto != null && scheme == "http" -> "80"
+        else -> request.port().toString()
+    }
+
+    val hostWithPort = if (":" in host) {
+        host
+    } else {
+        val isDefaultPort = (scheme == "http" && port == "80") || (scheme == "https" && port == "443")
+        if (isDefaultPort) host else "$host:$port"
+    }
+
+    return "$scheme://$hostWithPort"
+}
+
+private fun buildMcpProtectedResourceMetadata(call: ApplicationCall) = buildJsonObject {
+    val baseUrl = call.resolveBaseUrl()
+    val resource = "$baseUrl$MCP_ENDPOINT"
+    put("resource", resource)
+    putJsonArray("authorization_servers") {
+        add(baseUrl)
+    }
+}
+
+private fun buildMcpOauthMetadata(call: ApplicationCall) = buildJsonObject {
+    val baseUrl = call.resolveBaseUrl()
+    put("issuer", baseUrl)
+    put("authorization_endpoint", "$baseUrl$MCP_ENDPOINT/authorize")
+    put("token_endpoint", "$baseUrl$MCP_ENDPOINT/token")
+    put("registration_endpoint", "$baseUrl$MCP_ENDPOINT/register")
+    putJsonArray("response_types_supported") { add("code") }
+    putJsonArray("grant_types_supported") { add("authorization_code") }
+    putJsonArray("token_endpoint_auth_methods_supported") { add("none") }
+    putJsonArray("code_challenge_methods_supported") { add("S256") }
+    put("client_id_metadata_document_supported", true)
+}
+
+private suspend fun validateMcpAuthRequest(
+    call: ApplicationCall,
+    params: Parameters,
+    clients: ConcurrentHashMap<String, McpOauthClient>
+): McpAuthValidation {
+    val responseType = params["response_type"]?.trim()?.ifBlank { null } ?: "code"
+    if (responseType != "code") {
+        return McpAuthValidation(null, "Unsupported response_type: $responseType")
+    }
+
+    val redirectUri = params["redirect_uri"]?.trim()?.takeIf { it.isNotBlank() }
+        ?: return McpAuthValidation(null, "redirect_uri is required")
+    if (!isValidRedirectUri(redirectUri)) {
+        return McpAuthValidation(null, "Invalid redirect_uri")
+    }
+
+    val clientId = params["client_id"]?.trim()?.takeIf { it.isNotBlank() }
+        ?: return McpAuthValidation(null, "client_id is required")
+    val client = resolveMcpClient(clientId, clients)
+        ?: return McpAuthValidation(null, "Unknown client_id")
+    if (!client.redirectUris.contains(redirectUri)) {
+        return McpAuthValidation(null, "redirect_uri does not match registered value")
+    }
+
+    val codeChallenge = params["code_challenge"]?.trim()?.takeIf { it.isNotBlank() }
+        ?: return McpAuthValidation(null, "code_challenge is required")
+    val rawCodeChallengeMethod = params["code_challenge_method"]?.trim()?.takeIf { it.isNotBlank() }
+        ?: return McpAuthValidation(null, "code_challenge_method is required")
+    val codeChallengeMethod = rawCodeChallengeMethod.uppercase()
+    if (codeChallengeMethod != "S256") {
+        return McpAuthValidation(null, "Unsupported code_challenge_method: $rawCodeChallengeMethod")
+    }
+
+    // Resource defaults to the MCP endpoint
+    val baseUrl = call.resolveBaseUrl()
+    val resource = "$baseUrl$MCP_ENDPOINT"
+
+    val scope = params["scope"]?.trim()?.takeIf { it.isNotBlank() }
+    val state = params["state"]?.trim()?.takeIf { it.isNotBlank() }
+
+    return McpAuthValidation(
+        McpAuthRequest(
+            redirectUri = redirectUri,
+            responseType = responseType,
+            clientId = clientId,
+            state = state,
+            codeChallenge = codeChallenge,
+            codeChallengeMethod = codeChallengeMethod,
+            scope = scope,
+            resource = resource
+        ),
+        null
+    )
+}
+
+private suspend fun resolveMcpClient(
+    clientId: String,
+    clients: ConcurrentHashMap<String, McpOauthClient>
+): McpOauthClient? {
+    clients[clientId]?.let { return it }
+
+    // Known clients (hardcoded)
+    resolveKnownClient(clientId)?.let { known ->
+        clients[clientId] = known
+        logger.info("MCP OAuth known client loaded clientId={}", clientId)
+        return known
+    }
+
+    // Try to fetch client metadata document from URL
+    val uri = runCatching { URI(clientId.trim()) }.getOrNull() ?: return null
+    if (!uri.isAbsolute || uri.scheme.isNullOrBlank() || uri.host.isNullOrBlank()) return null
+    if (!uri.scheme.equals("https", ignoreCase = true)) return null
+
+    val metadata = fetchClientMetadataDocument(clientId) ?: return null
+    clients[clientId] = metadata
+    logger.info("MCP OAuth client metadata fetched clientId={}", clientId)
+    return metadata
+}
+
+private fun resolveKnownClient(clientId: String): McpOauthClient? {
+    val normalized = clientId.trim().trimEnd('/')
+    return when (normalized) {
+        "https://claude.ai/oauth/mcp-oauth-client-metadata" -> McpOauthClient(
+            clientId = clientId,
+            redirectUris = setOf("https://claude.ai/api/mcp/auth_callback"),
+            grantTypes = setOf("authorization_code"),
+            responseTypes = setOf("code"),
+            tokenEndpointAuthMethod = "none"
+        )
+
+        else -> null
+    }
+}
+
+private suspend fun fetchClientMetadataDocument(clientIdUrl: String): McpOauthClient? {
+    return withContext(Dispatchers.IO) {
+        val connection = (URL(clientIdUrl).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            instanceFollowRedirects = false
+            connectTimeout = 5000
+            readTimeout = 5000
+        }
+        val status = connection.responseCode
+        if (status !in 200..299) return@withContext null
+
+        val body = connection.inputStream.bufferedReader().use { it.readText() }
+        val doc = runCatching { mcpJson.parseToJsonElement(body).jsonObject }.getOrNull()
+            ?: return@withContext null
+
+        val docClientId = doc["client_id"]?.jsonPrimitive?.contentOrNull ?: return@withContext null
+        if (docClientId != clientIdUrl) return@withContext null
+
+        val redirectUris = doc["redirect_uris"]?.jsonArray
+            ?.mapNotNull { it.jsonPrimitive.contentOrNull?.trim()?.takeIf { s -> s.isNotBlank() } }
+            ?: return@withContext null
+        if (redirectUris.any { !isValidRedirectUri(it) }) return@withContext null
+
+        val grantTypes = doc["grant_types"]?.jsonArray
+            ?.mapNotNull { it.jsonPrimitive.contentOrNull }?.toSet()
+            ?: setOf("authorization_code")
+        val responseTypes = doc["response_types"]?.jsonArray
+            ?.mapNotNull { it.jsonPrimitive.contentOrNull }?.toSet()
+            ?: setOf("code")
+        val tokenEndpointAuthMethod = doc["token_endpoint_auth_method"]?.jsonPrimitive?.contentOrNull ?: "none"
+
+        McpOauthClient(
+            clientId = docClientId,
+            redirectUris = redirectUris.toSet(),
+            grantTypes = grantTypes,
+            responseTypes = responseTypes,
+            tokenEndpointAuthMethod = tokenEndpointAuthMethod
+        )
+    }
+}
+
+private fun isValidRedirectUri(redirectUri: String): Boolean {
+    val uri = runCatching { URI(redirectUri.trim()) }.getOrNull() ?: return false
+    if (!uri.isAbsolute || uri.fragment != null) return false
+    if (!uri.userInfo.isNullOrBlank()) return false
+    val scheme = uri.scheme?.lowercase() ?: return false
+    val host = uri.host?.lowercase() ?: return false
+    if (scheme == "https") return true
+    if (scheme == "http") {
+        return host == "localhost" || host == "127.0.0.1" || host == "::1"
+    }
+    return false
+}
+
+private fun verifyPkce(codeVerifier: String, codeChallenge: String, method: String): Boolean {
+    return when (method.lowercase()) {
+        "plain" -> codeVerifier == codeChallenge
+        "s256" -> sha256Base64Url(codeVerifier) == codeChallenge
+        else -> false
+    }
+}
+
+private fun sha256Base64Url(value: String): String {
+    val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+    return Base64.getUrlEncoder().withoutPadding().encodeToString(digest)
+}
+
 private fun createMcpOauthCode(
     codes: ConcurrentHashMap<String, McpOauthCode>,
     clientId: String,
@@ -882,7 +670,9 @@ private fun issueMcpAccessToken(
 ): String {
     val now = System.currentTimeMillis()
     tokens.entries.removeIf { it.value.expiresAtMillis <= now }
-    val accessToken = generateMcpAccessToken()
+    val bytes = ByteArray(32)
+    mcpTokenRandom.nextBytes(bytes)
+    val accessToken = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
     tokens[accessToken] = McpAccessToken(
         resource = resource,
         scope = scope?.takeIf { it.isNotBlank() },
@@ -891,10 +681,40 @@ private fun issueMcpAccessToken(
     return accessToken
 }
 
-private fun generateMcpAccessToken(): String {
-    val bytes = ByteArray(32)
-    mcpTokenRandom.nextBytes(bytes)
-    return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+private fun ApplicationCall.checkMcpAccessToken(
+    mcpAccessTokens: ConcurrentHashMap<String, McpAccessToken>
+): Boolean {
+    val token = extractBearerToken()
+        ?: request.queryParameters["access_token"]?.trim()?.takeIf { it.isNotEmpty() }
+        ?: request.queryParameters["token"]?.trim()?.takeIf { it.isNotEmpty() }
+
+    if (token == null) {
+        logger.warn("MCP auth failed: missing token path={}", request.path())
+        return false
+    }
+
+    val now = System.currentTimeMillis()
+    val entry = mcpAccessTokens[token]
+    if (entry == null) {
+        logger.warn("MCP auth failed: invalid token path={}", request.path())
+        return false
+    }
+    if (entry.expiresAtMillis <= now) {
+        mcpAccessTokens.remove(token)
+        logger.warn("MCP auth failed: expired token path={}", request.path())
+        return false
+    }
+    return true
+}
+
+private suspend fun ApplicationCall.respondMcpUnauthorized() {
+    val baseUrl = resolveBaseUrl()
+    val resourceMetadataUrl = "$baseUrl/.well-known/oauth-protected-resource"
+    response.header(
+        HttpHeaders.WWWAuthenticate,
+        """Bearer resource_metadata="$resourceMetadataUrl""""
+    )
+    respondBytes(ByteArray(0), ContentType.Text.Plain, status = HttpStatusCode.Unauthorized)
 }
 
 private fun buildMcpOauthCodeRedirect(
@@ -910,47 +730,6 @@ private fun buildMcpOauthCodeRedirect(
     return redirectUri + separator + params.joinToString("&")
 }
 
-private fun buildMcpOauthMetadata(call: ApplicationCall) = buildJsonObject {
-    val baseUrl = call.resolveBaseUrl()
-    // Issuer should be the base URL without trailing slash per RFC8414
-    val issuer = baseUrl.removeSuffix("/")
-    put("issuer", issuer)
-    put("authorization_endpoint", "${baseUrl}api/mcp/oauth")
-    put("token_endpoint", "${baseUrl}api/mcp/oauth/token")
-    put("registration_endpoint", "${baseUrl}api/mcp/oauth/register")
-    putJsonArray("response_types_supported") {
-        add("code")
-    }
-    putJsonArray("grant_types_supported") {
-        add("authorization_code")
-    }
-    putJsonArray("token_endpoint_auth_methods_supported") {
-        add("none")
-    }
-    putJsonArray("code_challenge_methods_supported") {
-        add("S256")
-    }
-    put("client_id_metadata_document_supported", true)
-}
-
-private fun buildMcpProtectedResourceMetadata(
-    call: ApplicationCall,
-    resourcePath: String? = null
-) = buildJsonObject {
-    val baseUrl = call.resolveBaseUrl()
-    val normalizedResourcePath = when {
-        resourcePath.isNullOrBlank() -> "/api/mcp"
-        resourcePath.startsWith("/api/mcp") -> "/api/mcp"
-        else -> resourcePath
-    }
-    val resource = baseUrl.removeSuffix("/") + normalizedResourcePath
-    put("resource", resource)
-    // Point to the authorization server (same server in this case)
-    putJsonArray("authorization_servers") {
-        add(baseUrl.removeSuffix("/"))
-    }
-}
-
 private fun renderMcpOauthPage(
     redirectUri: String,
     state: String?,
@@ -963,43 +742,11 @@ private fun renderMcpOauthPage(
     errorMessage: String?
 ): String {
     val errorBlock = if (errorMessage != null) {
-        """
-        <div class="error">${errorMessage.escapeHtml()}</div>
-        """.trimIndent()
-    } else {
-        ""
-    }
+        """<div class="error">${errorMessage.escapeHtml()}</div>"""
+    } else ""
 
-    val stateInput = if (!state.isNullOrBlank()) {
-        """<input type="hidden" name="state" value="${state.escapeHtml()}">"""
-    } else {
-        ""
-    }
-    val clientIdInput = if (!clientId.isNullOrBlank()) {
-        """<input type="hidden" name="client_id" value="${clientId.escapeHtml()}">"""
-    } else {
-        ""
-    }
-    val codeChallengeInput = if (!codeChallenge.isNullOrBlank()) {
-        """<input type="hidden" name="code_challenge" value="${codeChallenge.escapeHtml()}">"""
-    } else {
-        ""
-    }
-    val codeChallengeMethodInput = if (!codeChallengeMethod.isNullOrBlank()) {
-        """<input type="hidden" name="code_challenge_method" value="${codeChallengeMethod.escapeHtml()}">"""
-    } else {
-        ""
-    }
-    val scopeInput = if (!scope.isNullOrBlank()) {
-        """<input type="hidden" name="scope" value="${scope.escapeHtml()}">"""
-    } else {
-        ""
-    }
-    val resourceInput = if (!resource.isNullOrBlank()) {
-        """<input type="hidden" name="resource" value="${resource.escapeHtml()}">"""
-    } else {
-        ""
-    }
+    fun hiddenInput(name: String, value: String?) =
+        if (!value.isNullOrBlank()) """<input type="hidden" name="$name" value="${value.escapeHtml()}">""" else ""
 
     return """
         <!DOCTYPE html>
@@ -1008,75 +755,30 @@ private fun renderMcpOauthPage(
             <title>MCP Authorization - Hue Manager</title>
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <style>
-                body {
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-                    max-width: 500px;
-                    margin: 80px auto;
-                    padding: 20px;
-                    background: #f5f5f5;
-                }
-                .container {
-                    background: white;
-                    padding: 40px;
-                    border-radius: 8px;
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                }
-                h1 {
-                    margin: 0 0 10px 0;
-                    font-size: 24px;
-                    color: #333;
-                }
-                p {
-                    color: #666;
-                    margin: 0 0 30px 0;
-                }
-                input[type="password"] {
-                    width: 100%;
-                    padding: 12px;
-                    border: 1px solid #ddd;
-                    border-radius: 4px;
-                    font-size: 16px;
-                    box-sizing: border-box;
-                    margin-bottom: 20px;
-                }
-                button {
-                    width: 100%;
-                    padding: 12px;
-                    background: #007AFF;
-                    color: white;
-                    border: none;
-                    border-radius: 4px;
-                    font-size: 16px;
-                    font-weight: 600;
-                    cursor: pointer;
-                }
-                button:hover {
-                    background: #0051D5;
-                }
-                .error {
-                    margin-top: 16px;
-                    padding: 12px;
-                    border-radius: 4px;
-                    background: #f8d7da;
-                    color: #721c24;
-                    border: 1px solid #f5c6cb;
-                }
+                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 500px; margin: 80px auto; padding: 20px; background: #f5f5f5; }
+                .container { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+                h1 { margin: 0 0 10px 0; font-size: 24px; color: #333; }
+                p { color: #666; margin: 0 0 30px 0; }
+                input[type="password"] { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px; box-sizing: border-box; margin-bottom: 20px; }
+                button { width: 100%; padding: 12px; background: #007AFF; color: white; border: none; border-radius: 4px; font-size: 16px; font-weight: 600; cursor: pointer; }
+                button:hover { background: #0051D5; }
+                .error { margin-top: 16px; padding: 12px; border-radius: 4px; background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
             </style>
         </head>
         <body>
             <div class="container">
                 <h1>Authorize MCP Access</h1>
                 <p>Enter your Hue Manager password to authorize this MCP client.</p>
-                <form method="post" action="/api/mcp/oauth">
+                <form method="post" action="$MCP_ENDPOINT/authorize">
                     <input type="password" name="password" placeholder="Password" autocomplete="current-password" required>
-                    <input type="hidden" name="redirect_uri" value="${redirectUri.escapeHtml()}">
-                    <input type="hidden" name="response_type" value="${responseType.escapeHtml()}">
-                    $stateInput
-                    $clientIdInput
-                    $codeChallengeInput
-                    $codeChallengeMethodInput
-                    $scopeInput
-                    $resourceInput
+                    ${hiddenInput("redirect_uri", redirectUri)}
+                    ${hiddenInput("response_type", responseType)}
+                    ${hiddenInput("state", state)}
+                    ${hiddenInput("client_id", clientId)}
+                    ${hiddenInput("code_challenge", codeChallenge)}
+                    ${hiddenInput("code_challenge_method", codeChallengeMethod)}
+                    ${hiddenInput("scope", scope)}
+                    ${hiddenInput("resource", resource)}
                     <button type="submit">Authorize</button>
                 </form>
                 $errorBlock
@@ -1086,17 +788,15 @@ private fun renderMcpOauthPage(
     """.trimIndent()
 }
 
-private fun String.escapeHtml(): String {
-    return buildString(length) {
-        for (char in this@escapeHtml) {
-            when (char) {
-                '&' -> append("&amp;")
-                '<' -> append("&lt;")
-                '>' -> append("&gt;")
-                '"' -> append("&quot;")
-                '\'' -> append("&#39;")
-                else -> append(char)
-            }
+private fun String.escapeHtml(): String = buildString(length) {
+    for (char in this@escapeHtml) {
+        when (char) {
+            '&' -> append("&amp;")
+            '<' -> append("&lt;")
+            '>' -> append("&gt;")
+            '"' -> append("&quot;")
+            '\'' -> append("&#39;")
+            else -> append(char)
         }
     }
 }
