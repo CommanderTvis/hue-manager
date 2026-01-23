@@ -127,25 +127,28 @@ KEYSTORE_PASSWORD=<for HTTPS>
 **Note:** Settings API is fully implemented. Settings UI screen is not yet implemented - settings must be edited via API or in `.env` file.
 
 ### MCP (Model Context Protocol)
-- `GET /api/mcp/oauth` - MCP OAuth-style authorization page
-- `GET /api/mcp/oauth/.well-known/oauth-authorization-server` - OAuth metadata for connectors
-- `POST /api/mcp/oauth/register` - OAuth dynamic client registration
-- `POST /api/mcp/oauth/token` - OAuth token exchange
-- `/api/mcp` - MCP SSE endpoint (auth required for tools)
+- `GET /mcp/authorize` - MCP OAuth-style authorization page
+- `POST /mcp/authorize` - MCP OAuth password submit
+- `POST /mcp/register` - OAuth dynamic client registration
+- `POST /mcp/token` - OAuth token exchange
+- `GET /.well-known/oauth-authorization-server` - OAuth metadata for connectors
+- `GET /.well-known/oauth-protected-resource` - OAuth protected resource metadata
+- `/mcp` - MCP Streamable HTTP endpoint (auth required for tools)
 
 ## MCP (Model Context Protocol)
 
 The server exposes an MCP endpoint for integration with Claude and other MCP-compatible clients.
 
-**Connection:** Configure as `{"url":"<domain>/api/mcp"}` in your MCP client.
+**Connection:** Configure as `{"url":"<domain>/mcp"}` in your MCP client.
+**Important:** The MCP base path is `/mcp` (not `/api/mcp`). Using `/api/mcp` will fail authentication and/or return 500s.
 
-**Authentication:** Requires `Authorization: Bearer <password>`. For interactive auth (Claude connector), use `/api/mcp/oauth` as the authorization URL.
+**Authentication:** Requires `Authorization: Bearer <password>`. For interactive auth (Claude connector), use `/mcp/authorize` as the authorization URL.
 
 **Implementation:**
 - Uses official MCP Kotlin SDK (`io.modelcontextprotocol:kotlin-sdk:0.8.3`)
 - SSE transport is wired manually via `SseServerTransport` for correct endpoint advertisement
-- SSE connection: `GET /api/mcp` (establishes connection, receives server messages)
-- Client messages: `POST /api/mcp?sessionId=<id>` (sends client requests)
+- SSE connection: `GET /mcp` (establishes connection, receives server messages)
+- Client messages: `POST /mcp?sessionId=<id>` (sends client requests)
 - Server file: `server/.../mcp/McpHandler.kt`
 
 **Available Resources:**

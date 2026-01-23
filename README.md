@@ -199,21 +199,21 @@ Caddy will automatically provision Let's Encrypt SSL certificates for your domai
 | GET    | `/api/hue/authorize`                       | No    | Start OAuth2 flow                           |
 | GET    | `/api/hue/callback`                        | No    | OAuth2 callback                             |
 | POST   | `/api/hue/link`                            | No    | Complete bridge linking                     |
-| GET    | `/api/mcp/oauth`                           | No    | MCP OAuth authorization UI                  |
-| POST   | `/api/mcp/oauth`                           | No    | MCP OAuth password submit                   |
-| POST   | `/api/mcp/oauth/token`                     | No    | MCP OAuth token exchange                    |
-| POST   | `/api/mcp/oauth/register`                  | No    | MCP OAuth dynamic client registration       |
+| GET    | `/mcp/authorize`                           | No    | MCP OAuth authorization UI                  |
+| POST   | `/mcp/authorize`                           | No    | MCP OAuth password submit                   |
+| POST   | `/mcp/token`                               | No    | MCP OAuth token exchange                    |
+| POST   | `/mcp/register`                            | No    | MCP OAuth dynamic client registration       |
 | GET    | `/.well-known/oauth-authorization-server`  | No    | OAuth server metadata                       |
 | GET    | `/.well-known/oauth-protected-resource`    | No    | OAuth protected resource metadata           |
-| GET    | `/api/mcp`                                 | OAuth | MCP SSE endpoint                            |
-| POST   | `/api/mcp`                                 | OAuth | MCP POST messages                           |
+| GET    | `/mcp`                                     | OAuth | MCP SSE endpoint                            |
+| POST   | `/mcp`                                     | OAuth | MCP POST messages                           |
 
 Authenticated endpoints (non-MCP) require `Authorization: Bearer <password>`. MCP uses OAuth access tokens.
 
 ## MCP Integration
 
 The MCP endpoint uses OAuth 2.1 Authorization Code with PKCE (S256). The `resource` parameter is required and should be
-`https://yourdomain.com/api/mcp`. Access tokens are short-lived and must be sent as `Authorization: Bearer <access_token>`.
+`https://yourdomain.com/mcp`. Access tokens are short-lived and must be sent as `Authorization: Bearer <access_token>`.
 
 For Claude/ChatGPT connectors, point the client at the MCP URL and follow the OAuth prompt:
 
@@ -221,15 +221,15 @@ For Claude/ChatGPT connectors, point the client at the MCP URL and follow the OA
 {
   "mcpServers": {
     "hue-manager": {
-      "url": "https://yourdomain.com/api/mcp"
+      "url": "https://yourdomain.com/mcp"
     }
   }
 }
 ```
 
 For custom clients:
-- Register via `/api/mcp/oauth/register` or host a client metadata document (use the HTTPS URL as `client_id`).
-- Use `/api/mcp/oauth` for authorization and `/api/mcp/oauth/token` for token exchange.
+- Register via `/mcp/register` or host a client metadata document (use the HTTPS URL as `client_id`).
+- Use `/mcp/authorize` for authorization and `/mcp/token` for token exchange.
 
 ### Available MCP Resources
 

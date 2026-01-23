@@ -238,7 +238,7 @@ fun MainScreen(
     }
 
     if (showMcpDialog) {
-        val mcpUrl = "${apiClient.getBaseUrl()}mcp"
+        val mcpUrl = "${apiClient.getBaseUrl().trimEnd('/')}/mcp"
 
         val mcpJson = """
             {

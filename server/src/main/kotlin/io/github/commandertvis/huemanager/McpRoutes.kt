@@ -359,12 +359,14 @@ fun Route.mcpRoutes(
 
     // GET handler - optional SSE stream for server-initiated messages
     route(MCP_ENDPOINT) {
-        sse {
+        intercept(ApplicationCallPipeline.Plugins) {
             if (!call.checkMcpAccessToken(mcpAccessTokens)) {
                 call.respondMcpUnauthorized()
-                return@sse
+                finish()
             }
+        }
 
+        sse {
             val sessionIdHeader = call.request.header("mcp-session-id")
             if (sessionIdHeader == null) {
                 call.respond(HttpStatusCode.BadRequest, "mcp-session-id header is required for GET requests")
