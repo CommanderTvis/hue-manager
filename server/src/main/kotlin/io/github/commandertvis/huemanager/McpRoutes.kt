@@ -63,6 +63,9 @@ fun Route.mcpRoutes(
 
     val mcpSessions = ConcurrentHashMap<String, McpSession>()
 
+    fun ApplicationCall.getMcpSessionId(): String? =
+        request.header("mcp-session-id")?.trim()?.takeIf { it.isNotEmpty() }
+
     // Protected Resource Metadata (RFC 9728)
     // Client starts here to discover authorization server
     get("/.well-known/oauth-protected-resource") {
@@ -308,19 +311,23 @@ fun Route.mcpRoutes(
 
     // POST handler - main entry point for Streamable HTTP
     post(MCP_ENDPOINT) {
-        if (!call.checkMcpAccessToken(mcpAccessTokens)) {
-            call.respondMcpUnauthorized()
-            return@post
-        }
-
         // Check for existing session via header
-        val sessionIdHeader = call.request.header("mcp-session-id")
+        val sessionIdHeader = call.getMcpSessionId()
         val existingSession = sessionIdHeader?.let { mcpSessions[it] }
 
-        if (existingSession != null) {
+        if (sessionIdHeader != null) {
+            if (existingSession == null) {
+                call.respond(HttpStatusCode.NotFound, "Session not found")
+                return@post
+            }
             // Use existing session's transport
             existingSession.transport.handleRequest(null, call)
         } else {
+            if (!call.checkMcpAccessToken(mcpAccessTokens)) {
+                call.respondMcpUnauthorized()
+                return@post
+            }
+
             // Create new session with transport
             val transport = StreamableHttpServerTransport(
                 enableJsonResponse = true  // Return JSON for POST responses
@@ -357,18 +364,8 @@ fun Route.mcpRoutes(
 
     // GET handler - optional SSE stream for server-initiated messages
     route(MCP_ENDPOINT) {
-        intercept(ApplicationCallPipeline.Plugins) {
-            if (call.request.path() != MCP_ENDPOINT) {
-                return@intercept
-            }
-            if (!call.checkMcpAccessToken(mcpAccessTokens)) {
-                call.respondMcpUnauthorized()
-                finish()
-            }
-        }
-
         sse {
-            val sessionIdHeader = call.request.header("mcp-session-id")
+            val sessionIdHeader = call.getMcpSessionId()
             if (sessionIdHeader == null) {
                 call.respond(HttpStatusCode.BadRequest, "mcp-session-id header is required for GET requests")
                 return@sse
@@ -401,7 +398,7 @@ fun Route.mcpRoutes(
             return@delete
         }
 
-        val sessionIdHeader = call.request.header("mcp-session-id")
+        val sessionIdHeader = call.getMcpSessionId()
         if (sessionIdHeader == null) {
             call.respond(HttpStatusCode.BadRequest, "mcp-session-id header is required")
             return@delete
