@@ -35,6 +35,8 @@ import java.security.SecureRandom
 import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.io.path.Path
+import kotlin.io.path.isRegularFile
 
 private val mcpTokenRandom = SecureRandom()
 private val mcpJson = Json { ignoreUnknownKeys = true }
@@ -125,21 +127,28 @@ fun Route.mcpRoutes(
         }
         val request = validation.request!!
 
-        // Serve simple HTML login form
-        call.respondText(
-            renderMcpOauthPage(
-                redirectUri = request.redirectUri,
-                state = request.state,
-                responseType = request.responseType,
-                clientId = request.clientId,
-                codeChallenge = request.codeChallenge,
-                codeChallengeMethod = request.codeChallengeMethod,
-                scope = request.scope,
-                resource = request.resource,
-                errorMessage = null
-            ),
-            ContentType.Text.Html
-        )
+        // Serve the WASM SPA (it detects /mcp/authorize path and shows OAuth UI)
+        val webDir = Path("web")
+        val indexFile = webDir.resolve("index.html")
+        if (indexFile.isRegularFile()) {
+            call.respondFile(indexFile.toFile())
+        } else {
+            // Fallback to simple HTML form if WASM app not available
+            call.respondText(
+                renderMcpOauthPage(
+                    redirectUri = request.redirectUri,
+                    state = request.state,
+                    responseType = request.responseType,
+                    clientId = request.clientId,
+                    codeChallenge = request.codeChallenge,
+                    codeChallengeMethod = request.codeChallengeMethod,
+                    scope = request.scope,
+                    resource = request.resource,
+                    errorMessage = null
+                ),
+                ContentType.Text.Html
+            )
+        }
     }
 
     post("$MCP_ENDPOINT/authorize") {

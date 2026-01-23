@@ -14,7 +14,7 @@ fun main() {
     // Check if we're on the OAuth authorization page
     val pathname = window.location.pathname
     val searchParams = window.location.search
-    val oauthParams = if (pathname == "/api/mcp/oauth" || pathname == "/oauth") {
+    val oauthParams = if (pathname == "/mcp/authorize" || pathname == "/api/mcp/oauth" || pathname == "/oauth") {
         parseOAuthParams(searchParams)
     } else {
         null

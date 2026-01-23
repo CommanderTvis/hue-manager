@@ -69,7 +69,7 @@ fun McpOAuthApp(params: OAuthParams) {
 private fun submitViaForm(password: String, params: OAuthParams) {
     val form = (document.createElement("form") as HTMLFormElement).apply {
         method = "POST"
-        action = "/api/mcp/oauth"
+        action = "/mcp/authorize"
         style.display = "none"
     }
 
