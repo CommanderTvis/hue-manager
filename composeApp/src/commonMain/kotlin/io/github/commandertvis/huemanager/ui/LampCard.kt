@@ -36,7 +36,7 @@ fun LampCard(
     var sliderValue by remember(lamp.brightness) {
         mutableStateOf((lamp.brightness ?: 254).toFloat())
     }
-    
+
     var isColorPickerExpanded by remember { mutableStateOf(false) }
     val controller = rememberColorPickerController()
     var hexCode by remember { mutableStateOf("") }
@@ -163,7 +163,7 @@ fun LampCard(
                     )
                 }
             }
-            
+
             // Color Picker (hide when in entertainment mode)
             if (isColorPickerExpanded && onColorChange != null && lamp.on && lamp.reachable && !lamp.inEntertainment) {
                 Spacer(modifier = Modifier.height(16.dp))
@@ -232,8 +232,8 @@ fun LampCard(
                 }
             }
 
-            // Override indicator (hide when in entertainment mode)
-            if (isOverridden && !lamp.inEntertainment) {
+            // Override indicator (hide when in entertainment mode or unreachable)
+            if (isOverridden && !lamp.inEntertainment && lamp.reachable) {
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Row(
@@ -275,6 +275,7 @@ private fun getLampColor(lamp: Lamp): Color {
             val hue = hueValue * 360f / 65535f
             Color.hsv(hue, satValue / 254f, 1f)
         }
+
         ctValue != null -> {
             // Color temperature - warmer = more orange, cooler = more blue
             val warmth = (ctValue - 153f) / (500f - 153f)
@@ -284,6 +285,7 @@ private fun getLampColor(lamp: Lamp): Color {
                 blue = 0.6f + (1f - warmth) * 0.4f
             )
         }
+
         else -> Color.Yellow
     }
 }
