@@ -297,6 +297,9 @@ class LampsViewModel(
                         userState = response.state,
                         pendingLampIds = _uiState.value.pendingLampIds - allLampIds.toSet()
                     )
+                    // Immediately refresh lamp and sync state after wake/sleep change
+                    pollSync()
+                    pollLamps()
                 },
                 onFailure = { e ->
                     _uiState.value = _uiState.value.copy(
@@ -326,6 +329,9 @@ class LampsViewModel(
                         userState = response.state,
                         pendingLampIds = _uiState.value.pendingLampIds - allLampIds.toSet()
                     )
+                    // Immediately refresh lamp and sync state after wake/sleep change
+                    pollSync()
+                    pollLamps()
                 },
                 onFailure = { e ->
                     _uiState.value = _uiState.value.copy(
