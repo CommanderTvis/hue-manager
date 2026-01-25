@@ -177,17 +177,19 @@ fun App(
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
                                     CircularProgressIndicator()
-                                    Spacer(modifier = Modifier.height(16.dp))
-                                    Text(
-                                        text = "Change server",
-                                        color = MaterialTheme.colorScheme.primary,
-                                        style = MaterialTheme.typography.bodySmall.copy(
-                                            textDecoration = TextDecoration.Underline
-                                        ),
-                                        modifier = Modifier
-                                            .clickable { serverUrl = null }
-                                            .padding(8.dp)
-                                    )
+                                    if (!platform.isWeb) {
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Text(
+                                            text = "Change server",
+                                            color = MaterialTheme.colorScheme.primary,
+                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                textDecoration = TextDecoration.Underline
+                                            ),
+                                            modifier = Modifier
+                                                .clickable { serverUrl = null }
+                                                .padding(8.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
