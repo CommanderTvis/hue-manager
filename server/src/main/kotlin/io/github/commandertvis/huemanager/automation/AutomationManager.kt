@@ -43,6 +43,17 @@ data class PendingOperation(
     val startedAt: Instant
 )
 
+/**
+ * Tracks lamp reachability state to detect when lamps come back online.
+ * When a lamp transitions from unreachable to reachable, automation should
+ * be applied immediately without the 1-hour grace period.
+ */
+data class LampReachabilityState(
+    val lampId: String,
+    val wasReachable: Boolean,
+    val lastChecked: Instant
+)
+
 class AutomationManager(
     private val config: Config,
     private val hueService: HueService
@@ -57,6 +68,9 @@ class AutomationManager(
 
     // Pending operations for real-time sync across clients
     private val pendingOperations = mutableMapOf<String, PendingOperation>()
+
+    // Track lamp reachability to detect when lamps come back online
+    private val lampReachability = mutableMapOf<String, LampReachabilityState>()
 
     @Volatile
     private var syncVersion: Long = 0L
@@ -85,6 +99,8 @@ class AutomationManager(
                 if (lampOverrides.containsKey(lampId)) continue // Already tracked as manual override
 
                 val light = hueService.getLight(lampId) ?: continue
+                // Only consider reachable lamps as out-of-sync
+                if (light.state.reachable != true) continue
                 if (light.state.on) {
                     outOfSync.add(lampId)
                 }
@@ -104,6 +120,9 @@ class AutomationManager(
             if (entertainmentLamps.contains(lampId)) continue // Skip entertainment lamps
 
             val light = hueService.getLight(lampId) ?: continue
+            // Only consider reachable lamps as out-of-sync
+            // Unreachable lamps will be handled when they become reachable again
+            if (light.state.reachable != true) continue
             if (!isLampInSync(light.state, targetState)) {
                 outOfSync.add(lampId)
             }
@@ -502,13 +521,37 @@ class AutomationManager(
         val entertainmentLamps = getActiveEntertainmentLamps()
 
         for (lampId in automatedLampIds) {
-            if (lampOverrides.containsKey(lampId)) {
-                continue // Skip overridden lamps
-            }
             if (entertainmentLamps.contains(lampId)) {
                 continue // Skip lamps in active entertainment areas
             }
-            hueService.setLightState(lampId, desiredState)
+
+            // Check current lamp state for reachability tracking
+            val light = hueService.getLight(lampId)
+            val isReachable = light?.state?.reachable ?: false
+            val previousState = lampReachability[lampId]
+            val wasUnreachable = previousState?.wasReachable == false
+
+            // Update reachability tracking
+            lampReachability[lampId] = LampReachabilityState(lampId, isReachable, now)
+
+            // If lamp just became reachable, apply automation immediately (ignore overrides)
+            if (isReachable && wasUnreachable) {
+                logger.info("Lamp $lampId became reachable, applying automation immediately")
+                // Remove any existing override since lamp was unreachable
+                lampOverrides.remove(lampId)
+                hueService.setLightState(lampId, desiredState)
+                continue
+            }
+
+            // For normally reachable lamps, respect overrides
+            if (lampOverrides.containsKey(lampId)) {
+                continue // Skip overridden lamps
+            }
+
+            // Apply automation to reachable lamps without overrides
+            if (isReachable) {
+                hueService.setLightState(lampId, desiredState)
+            }
         }
     }
 
