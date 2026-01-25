@@ -147,6 +147,41 @@ class ApiClient(private val baseUrl: String, private val client: HttpClient = cr
         Result.failure(e)
     }
 
+    suspend fun getSync(): Result<SyncResponse> = try {
+        val response = client.get("$baseUrl/api/sync")
+        Result.success(response.body())
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    suspend fun addPendingOperations(lampIds: List<String>): Result<ApiSuccess> = try {
+        val response = client.post("$baseUrl/api/sync/pending") {
+            contentType(ContentType.Application.Json)
+            setBody(PendingOperationRequest(lampIds))
+        }
+        if (response.status.isSuccess()) {
+            Result.success(response.body())
+        } else {
+            Result.failure(ApiException("Failed to add pending: ${response.status}"))
+        }
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    suspend fun clearPendingOperations(lampIds: List<String>): Result<ApiSuccess> = try {
+        val response = client.delete("$baseUrl/api/sync/pending") {
+            contentType(ContentType.Application.Json)
+            setBody(PendingOperationRequest(lampIds))
+        }
+        if (response.status.isSuccess()) {
+            Result.success(response.body())
+        } else {
+            Result.failure(ApiException("Failed to clear pending: ${response.status}"))
+        }
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
     suspend fun getSettings(): Result<SettingsResponse> = try {
         val response = client.get("$baseUrl/api/settings")
         Result.success(response.body())

@@ -23,7 +23,7 @@ A Philips Hue lamp management system with:
 - kotlinx-datetime 0.7.1-0.6.x-compat
 - kotlinx-coroutines 1.10.2
 - dotenv-kotlin 6.5.1
-- MCP Kotlin SDK 0.8.1
+- MCP Kotlin SDK 0.8.3
 - Gradle with version catalog
 
 **Build Configuration:**
@@ -134,15 +134,18 @@ KEYSTORE_PASSWORD=<for HTTPS>
 
 ## MCP (Model Context Protocol)
 
-The server exposes an MCP endpoint for integration with Claude Desktop via HTTP OAuth.
+The server exposes an MCP endpoint for integration with MCP clients via HTTP OAuth.
 
-**Connection:** Add `https://<domain>/mcp` as a Claude Desktop connector URL.
+**Connection:** Add `https://<domain>/mcp` as a connector URL in your MCP client (Claude Desktop, Claude Code, etc.).
+**Important:** The MCP base path is `/mcp` (not `/api/mcp`). Using `/api/mcp` will result in errors.
 
 **Authentication:** OAuth 2.1 over HTTP (Authorization Code + PKCE). Use `/mcp/authorize` as the authorization URL.
 
 **Implementation:**
-- Uses official MCP Kotlin SDK (`io.modelcontextprotocol:kotlin-sdk:0.8.1`)
+- Uses official MCP Kotlin SDK (`io.modelcontextprotocol:kotlin-sdk:0.8.3`)
 - SSE transport is wired manually via `SseServerTransport` for correct endpoint advertisement
+- SSE connection: `GET /mcp` (establishes connection, receives server messages)
+- Client messages: `POST /mcp` (sends client requests with `sessionId` parameter)
 - Server file: `server/.../mcp/McpHandler.kt`
 
 **Available Resources:**
@@ -155,14 +158,14 @@ The server exposes an MCP endpoint for integration with Claude Desktop via HTTP 
 |------|-------------|
 | `get_lamp_state` | Get detailed state of a specific lamp including automation/override/Hue Sync status |
 | `set_lamp_state` | Control a lamp (on/off, brightness, hue, saturation, color temperature). Creates 1-hour override. |
-| `set_all_lamps` | Control all lamps at once (on/off, brightness). Creates overrides for all lamps. |
+| `set_all_lamps` | Control all lamps at once (on/off, brightness, hue, saturation, color temperature). Creates 1-hour overrides for all lamps. |
 | `clear_lamp_override` | Clear manual override for a lamp, returning it to automation control |
 | `get_automation_status` | Get current automation mode, user state, target color, and overridden lamps |
 | `wake_up` | Trigger "I woke up!" action - starts daylight automation sequence |
 | `go_to_sleep` | Trigger "I'm asleep!" action - turns off all automated lamps |
 
 **UI Integration:**
-- Main screen includes "MCP" button that opens a dialog with the Claude Desktop connector URL
+- Main screen includes "MCP" button that opens a dialog with the connector URL
 - One-click copy button copies the URL to the clipboard
 - Platform-specific clipboard implementation (JVM, WasmJS, Android)
 
@@ -187,19 +190,32 @@ Philips Hue Remote API has rate limits:
 
 ## Daylight Simulation Logic
 
+The automation simulates natural daylight based on actual sunrise/sunset times calculated from the configured location (REGION in .env). Lamp brightness is inversely proportional to sunlight intensity - brighter outside means dimmer lamps.
+
+**Daily Flow Example (Berlin, January):**
 ```
-wake_time -> pseudo_sunset: Compensate for sun (bright when dark outside)
-pseudo_sunset -> pseudo_sunset+3h: Transition from white to orange (#FF5500), gradually dim
-pseudo_sunset+3h onwards: Minimal brightness, orange light only
+06:00 - User presses "I woke up!", sun not risen yet → AUTO_COMPENSATION (100% brightness white)
+08:15 - Sunrise → brightness starts decreasing smoothly
+12:30 - Solar noon → brightness at minimum (0%, lamps off)
+12:30 - After noon → brightness starts increasing smoothly  
+16:30 - Sunset → AUTO_COMPENSATION (100% brightness white)
+21:05 - Pseudo-sunset → EVENING (bright orange #FF5500, 100%)
+00:05 - Pseudo-sunset+3h → NIGHT (dim orange #FF5500, 1%)
 sleep_action: Turn off all automated lamps
 ```
 
 **Automation Modes:**
-- `WAKE_UP_COMPENSATION` - Early morning, compensating for lack of sunlight
-- `DAYLIGHT` - Sun is up, lamps dimmed or off
-- `EVENING_TRANSITION` - Transitioning from white to orange after pseudo-sunset
-- `NIGHT_MODE` - Late night, minimal orange light
+- `AUTO_COMPENSATION` - Smooth brightness inversely proportional to sun position:
+  - Before sunrise / after sunset: 100% brightness (white)
+  - During daylight: parabolic curve from 100% at sunrise → 0% at solar noon → 100% at sunset
+- `EVENING` - From pseudo-sunset to +3h: bright orange light (#FF5500, 100%)
+- `NIGHT` - After pseudo-sunset+3h until sunrise: dim orange light (#FF5500, 1%)
 - `USER_ASLEEP` - User pressed "I'm asleep!", lamps off
+
+**Sun Calculation:**
+- Uses NOAA Solar Calculator algorithm
+- Calculates sunrise, sunset, and solar noon based on latitude/longitude from REGION config
+- Handles polar regions gracefully (falls back to 6 AM as sunrise if sun doesn't rise/set)
 
 **Out-of-sync Detection:**
 - System detects when lamp state differs from automation target (e.g., changed by other apps)
@@ -266,6 +282,7 @@ hue-manager/
 - `server/.../hue/HueService.kt` - Service layer managing Hue connection via Remote API
 - `server/.../hue/RateLimiter.kt` - Token bucket and minimum delay rate limiters
 - `server/.../automation/AutomationManager.kt` - User state, lamp overrides, heartbeat, automation mode calculation
+- `server/.../automation/SunCalculator.kt` - NOAA Solar Calculator algorithm for sunrise/sunset/solar noon calculation
 - `server/.../mcp/McpHandler.kt` - MCP server configuration and tool implementations
 
 ## Key Shared Files
@@ -352,6 +369,17 @@ hue-manager/
 ## Recent Changes
 
 **January 2026:**
+- Reverted MCP to SSE transport (`SseServerTransport`) and simplified Claude Desktop setup
+- Bumped MCP Kotlin SDK from 0.8.1 to 0.8.3
+- Added SunCalculator for dynamic sunrise/sunset calculations based on REGION config
+- Replaced deprecated `kotlinx.datetime.Instant/Clock` with `kotlin.time` equivalents
+- Enhanced MCP OAuth handling with explicit user confirmation for stored credentials
+- Temporarily switched MCP from SSE to Streamable HTTP transport for Claude Code compatibility, then reverted back to SSE
+- Added color support (hue, saturation, color_temperature) to `set_all_lamps` MCP tool
+- Fixed MCP OAuth authorize page: replaced SPA with HTML form
+- Fixed route order: MCP routes now registered before SPA catch-all
+- Excluded `/mcp`, `/api`, `/.well-known` from SPA routing
+- Improved WASM app to detect `/mcp/authorize` path for OAuth UI
 - Simplified automation mode handling and fixed evening transition brightness
 - Removed unused `initialServerUrl` parameter from App function
 - Updated README with MCP resources and tool descriptions

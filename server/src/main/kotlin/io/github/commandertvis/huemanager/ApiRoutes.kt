@@ -174,6 +174,50 @@ fun Route.apiRoutes(
         }
     }
 
+    // Lightweight sync endpoint for frequent polling (no Hue API calls)
+    get("/api/sync") {
+        val state = automationManager.getUserState()
+        val modelState = when (state) {
+            UserState.AWAKE -> io.github.commandertvis.huemanager.models.UserState.AWAKE
+            UserState.ASLEEP -> io.github.commandertvis.huemanager.models.UserState.ASLEEP
+        }
+        val mode = automationManager.getCurrentAutomationMode()
+        val color = automationManager.getAutomationColor()
+        val overriddenLamps = automationManager.getOverriddenLampIds()
+
+        call.respond(
+            SyncResponse(
+                version = automationManager.getSyncVersion(),
+                userState = modelState,
+                automationMode = mode.name,
+                automationColor = AutomationColorInfo(
+                    hue = color.hue,
+                    saturation = color.saturation,
+                    colorTemperature = color.colorTemperature,
+                    brightness = color.brightness,
+                    description = color.description
+                ),
+                overriddenLamps = overriddenLamps,
+                pendingLampIds = automationManager.getPendingLampIds(),
+                entertainmentActive = automationManager.isEntertainmentActive()
+            )
+        )
+    }
+
+    // Mark lamps as pending (called before starting an operation)
+    post("/api/sync/pending") {
+        val request = call.receive<PendingOperationRequest>()
+        automationManager.addPendingOperations(request.lampIds)
+        call.respond(ApiSuccess("Pending operations added"))
+    }
+
+    // Clear pending lamps (called after operation completes)
+    delete("/api/sync/pending") {
+        val request = call.receive<PendingOperationRequest>()
+        automationManager.clearPendingOperations(request.lampIds)
+        call.respond(ApiSuccess("Pending operations cleared"))
+    }
+
     // Status
     get("/api/status") {
         val userState = when (automationManager.getUserState()) {

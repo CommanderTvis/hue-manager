@@ -8,9 +8,12 @@ import io.github.commandertvis.huemanager.api.LampUpdateRequest
 import io.github.commandertvis.huemanager.models.Lamp
 import io.github.commandertvis.huemanager.models.UserState
 import io.github.commandertvis.huemanager.network.ApiClient
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 data class LampsUiState(
@@ -23,7 +26,9 @@ data class LampsUiState(
     val automationMode: String = "",
     val automationColor: AutomationColorInfo? = null,
     val loadingLampIds: Set<String> = emptySet(),
-    val isGlobalToggling: Boolean = false
+    val pendingLampIds: Set<String> = emptySet(),
+    val isGlobalToggling: Boolean = false,
+    val syncVersion: Long = 0L
 )
 
 class LampsViewModel(
@@ -33,8 +38,66 @@ class LampsViewModel(
     private val _uiState = MutableStateFlow(LampsUiState())
     val uiState: StateFlow<LampsUiState> = _uiState.asStateFlow()
 
+    private var fastPollJob: Job? = null
+    private var slowPollJob: Job? = null
+
+    companion object {
+        private const val FAST_POLL_INTERVAL_MS = 500L  // Sync state every 500ms
+        private const val SLOW_POLL_INTERVAL_MS = 10_000L  // Lamp state every 10s
+    }
+
     init {
+        // Initial full load
         refresh()
+        // Start auto-polling
+        startPolling()
+    }
+
+    private fun startPolling() {
+        // Fast polling for sync state (lightweight, no Hue API calls)
+        fastPollJob?.cancel()
+        fastPollJob = viewModelScope.launch {
+            while (isActive) {
+                delay(FAST_POLL_INTERVAL_MS)
+                pollSync()
+            }
+        }
+
+        // Slow polling for lamp states (respects Hue rate limits)
+        slowPollJob?.cancel()
+        slowPollJob = viewModelScope.launch {
+            while (isActive) {
+                delay(SLOW_POLL_INTERVAL_MS)
+                pollLamps()
+            }
+        }
+    }
+
+    private suspend fun pollSync() {
+        val syncResult = apiClient.getSync()
+        syncResult.fold(
+            onSuccess = { response ->
+                _uiState.value = _uiState.value.copy(
+                    userState = response.userState,
+                    automationMode = response.automationMode,
+                    automationColor = response.automationColor,
+                    overriddenLampIds = response.overriddenLamps,
+                    pendingLampIds = response.pendingLampIds.toSet(),
+                    syncVersion = response.version
+                )
+            },
+            onFailure = { /* Silently ignore sync failures to avoid spamming errors */ }
+        )
+    }
+
+    private suspend fun pollLamps() {
+        val lampsResult = apiClient.getLamps()
+        lampsResult.fold(
+            onSuccess = { response ->
+                _uiState.value = _uiState.value.copy(lamps = response.lamps)
+            },
+            onFailure = { /* Silently ignore lamp poll failures */ }
+        )
     }
 
     fun refresh() {
@@ -52,16 +115,29 @@ class LampsViewModel(
                 }
             )
 
-            // Fetch automation status
+            // Fetch sync state
+            val syncResult = apiClient.getSync()
+            syncResult.fold(
+                onSuccess = { response ->
+                    _uiState.value = _uiState.value.copy(
+                        userState = response.userState,
+                        automationMode = response.automationMode,
+                        automationColor = response.automationColor,
+                        overriddenLampIds = response.overriddenLamps,
+                        pendingLampIds = response.pendingLampIds.toSet(),
+                        syncVersion = response.version,
+                        pseudoSunset = "21:05" // TODO: get from settings
+                    )
+                },
+                onFailure = { /* ignore */ }
+            )
+
+            // Also fetch automation status for pseudoSunset
             val automationResult = apiClient.getAutomationStatus()
             automationResult.fold(
                 onSuccess = { response ->
                     _uiState.value = _uiState.value.copy(
-                        userState = response.userState,
-                        overriddenLampIds = response.overriddenLamps,
-                        pseudoSunset = response.pseudoSunset,
-                        automationMode = response.automationMode,
-                        automationColor = response.automationColor
+                        pseudoSunset = response.pseudoSunset
                     )
                 },
                 onFailure = { /* ignore */ }
@@ -69,23 +145,27 @@ class LampsViewModel(
 
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
-                loadingLampIds = emptySet() // Clear all loading states after refresh
+                loadingLampIds = emptySet()
             )
         }
     }
 
     fun toggleLamp(lamp: Lamp) {
         viewModelScope.launch {
-            // Mark lamp as loading
+            // Mark lamp as loading locally and notify server
             _uiState.value = _uiState.value.copy(
                 loadingLampIds = _uiState.value.loadingLampIds + lamp.id
             )
+            apiClient.addPendingOperations(listOf(lamp.id))
 
             val update = LampUpdateRequest(on = !lamp.on)
             val result = apiClient.updateLamp(lamp.id, update)
+
+            // Clear pending on server
+            apiClient.clearPendingOperations(listOf(lamp.id))
+
             result.fold(
                 onSuccess = {
-                    // Update local state optimistically
                     val updatedLamps = _uiState.value.lamps.map {
                         if (it.id == lamp.id) it.copy(on = !it.on) else it
                     }
@@ -107,13 +187,16 @@ class LampsViewModel(
 
     fun setBrightness(lamp: Lamp, brightness: Int) {
         viewModelScope.launch {
-            // Mark lamp as loading
             _uiState.value = _uiState.value.copy(
                 loadingLampIds = _uiState.value.loadingLampIds + lamp.id
             )
+            apiClient.addPendingOperations(listOf(lamp.id))
 
             val update = LampUpdateRequest(brightness = brightness)
             val result = apiClient.updateLamp(lamp.id, update)
+
+            apiClient.clearPendingOperations(listOf(lamp.id))
+
             result.fold(
                 onSuccess = {
                     val updatedLamps = _uiState.value.lamps.map {
@@ -137,13 +220,16 @@ class LampsViewModel(
 
     fun setLampColor(lamp: Lamp, hue: Int, saturation: Int) {
         viewModelScope.launch {
-            // Mark lamp as loading
             _uiState.value = _uiState.value.copy(
                 loadingLampIds = _uiState.value.loadingLampIds + lamp.id
             )
+            apiClient.addPendingOperations(listOf(lamp.id))
 
             val update = LampUpdateRequest(hue = hue, saturation = saturation)
             val result = apiClient.updateLamp(lamp.id, update)
+
+            apiClient.clearPendingOperations(listOf(lamp.id))
+
             result.fold(
                 onSuccess = {
                     val updatedLamps = _uiState.value.lamps.map {
@@ -167,16 +253,19 @@ class LampsViewModel(
 
     fun setAllLamps(on: Boolean) {
         viewModelScope.launch {
+            val allLampIds = _uiState.value.lamps.map { it.id }
             _uiState.value = _uiState.value.copy(isGlobalToggling = true)
+            apiClient.addPendingOperations(allLampIds)
 
             val result = apiClient.updateAllLamps(AllLampsUpdateRequest(on = on))
+
+            apiClient.clearPendingOperations(allLampIds)
+
             result.fold(
                 onSuccess = {
                     val updatedLamps = _uiState.value.lamps.map { it.copy(on = on) }
-                    // Update overriddenLampIds for all lamps since this is a manual action
-                    val allLampIds = updatedLamps.map { it.id }
                     val newOverriddenIds = (_uiState.value.overriddenLampIds + allLampIds).distinct()
-                    
+
                     _uiState.value = _uiState.value.copy(
                         lamps = updatedLamps,
                         overriddenLampIds = newOverriddenIds,
@@ -195,11 +284,17 @@ class LampsViewModel(
 
     fun wakeUp() {
         viewModelScope.launch {
+            // Mark all lamps as pending during wake up
+            val allLampIds = _uiState.value.lamps.map { it.id }
+            apiClient.addPendingOperations(allLampIds)
+
             val result = apiClient.wakeUp()
+
+            apiClient.clearPendingOperations(allLampIds)
+
             result.fold(
                 onSuccess = { response ->
                     _uiState.value = _uiState.value.copy(userState = response.state)
-                    refresh() // Refresh to get updated lamp states
                 },
                 onFailure = { e ->
                     _uiState.value = _uiState.value.copy(error = e.message)
@@ -210,11 +305,16 @@ class LampsViewModel(
 
     fun goToSleep() {
         viewModelScope.launch {
+            val allLampIds = _uiState.value.lamps.map { it.id }
+            apiClient.addPendingOperations(allLampIds)
+
             val result = apiClient.sleep()
+
+            apiClient.clearPendingOperations(allLampIds)
+
             result.fold(
                 onSuccess = { response ->
                     _uiState.value = _uiState.value.copy(userState = response.state)
-                    refresh() // Refresh to get updated lamp states
                 },
                 onFailure = { e ->
                     _uiState.value = _uiState.value.copy(error = e.message)
@@ -225,21 +325,21 @@ class LampsViewModel(
 
     fun clearOverride(lampId: String) {
         viewModelScope.launch {
-            // Mark lamp as loading
             _uiState.value = _uiState.value.copy(
                 loadingLampIds = _uiState.value.loadingLampIds + lampId
             )
+            apiClient.addPendingOperations(listOf(lampId))
 
             val result = apiClient.clearLampOverride(lampId)
+
+            apiClient.clearPendingOperations(listOf(lampId))
+
             result.fold(
                 onSuccess = {
-                    // Remove from overridden list but keep loading state
                     _uiState.value = _uiState.value.copy(
-                        overriddenLampIds = _uiState.value.overriddenLampIds - lampId
+                        overriddenLampIds = _uiState.value.overriddenLampIds - lampId,
+                        loadingLampIds = _uiState.value.loadingLampIds - lampId
                     )
-                    // Refresh to get the automation-dictated state
-                    // Loading state will be cleared when refresh completes
-                    refresh()
                 },
                 onFailure = { e ->
                     _uiState.value = _uiState.value.copy(
@@ -253,5 +353,11 @@ class LampsViewModel(
 
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        fastPollJob?.cancel()
+        slowPollJob?.cancel()
     }
 }

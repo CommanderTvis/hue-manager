@@ -108,9 +108,9 @@ Potential things to do, use case.
 
 In my chats with Claude, I want to do basically anything I can do with the app in reasonable boundaries.
 
-Type of MCP has to be HTTP to be connected like {"url":"<domain>/api/mcp"}. So should be served by server/.
+Type of MCP has to be HTTP to be connected like {"url":"<domain>/mcp"}. So should be served by server/.
 
-After MCP is connected, we need to go to a simple auth page with password prompt without which MCP will fail.
+After MCP is connected, we need to go to a OAuth page with password prompt without which MCP will fail.
 
 Potential MCP methods surface:
 - list lamps

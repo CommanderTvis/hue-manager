@@ -38,6 +38,11 @@ data class LampOverride(
     val overrideUntil: Instant
 )
 
+data class PendingOperation(
+    val lampId: String,
+    val startedAt: Instant
+)
+
 class AutomationManager(
     private val config: Config,
     private val hueService: HueService
@@ -49,6 +54,12 @@ class AutomationManager(
     private val lampOverrides = mutableMapOf<String, LampOverride>()
     private val automatedLampIds = mutableSetOf<String>()
     private var pseudoSunset: LocalTime = parsePseudoSunset(config.pseudoSunset)
+
+    // Pending operations for real-time sync across clients
+    private val pendingOperations = mutableMapOf<String, PendingOperation>()
+
+    @Volatile
+    private var syncVersion: Long = 0L
 
     private var heartbeatJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -361,7 +372,53 @@ class AutomationManager(
     fun addLampOverride(lampId: String) {
         val overrideUntil = Clock.System.now() + 1.hours
         lampOverrides[lampId] = LampOverride(lampId, overrideUntil)
+        incrementSyncVersion()
         logger.info("Added override for lamp $lampId until $overrideUntil")
+    }
+
+    // Pending operations for cross-client synchronization
+    fun getSyncVersion(): Long = syncVersion
+
+    fun getPendingLampIds(): List<String> {
+        cleanExpiredPendingOperations()
+        return pendingOperations.keys.toList()
+    }
+
+    fun addPendingOperations(lampIds: List<String>) {
+        val now = Clock.System.now()
+        lampIds.forEach { lampId ->
+            pendingOperations[lampId] = PendingOperation(lampId, now)
+        }
+        incrementSyncVersion()
+        logger.debug("Added pending operations for lamps: $lampIds")
+    }
+
+    fun clearPendingOperations(lampIds: List<String>) {
+        lampIds.forEach { pendingOperations.remove(it) }
+        incrementSyncVersion()
+        logger.debug("Cleared pending operations for lamps: $lampIds")
+    }
+
+    fun clearAllPendingOperations() {
+        pendingOperations.clear()
+        incrementSyncVersion()
+    }
+
+    private fun cleanExpiredPendingOperations() {
+        val now = Clock.System.now()
+        val timeout = 5000L // 5 seconds timeout
+        val expired = pendingOperations.filter {
+            (now - it.value.startedAt).inWholeMilliseconds > timeout
+        }
+        if (expired.isNotEmpty()) {
+            expired.keys.forEach { pendingOperations.remove(it) }
+            incrementSyncVersion()
+            logger.debug("Cleaned ${expired.size} expired pending operations")
+        }
+    }
+
+    private fun incrementSyncVersion() {
+        syncVersion++
     }
 
     suspend fun clearLampOverride(lampId: String) {

@@ -147,3 +147,20 @@ data class GenericResponse(
     val success: Boolean,
     val message: String,
 )
+
+// Real-time sync endpoint
+@Serializable
+data class SyncResponse(
+    val version: Long,
+    val userState: UserState,
+    val automationMode: String,
+    val automationColor: AutomationColorInfo,
+    val overriddenLamps: List<String>,
+    val pendingLampIds: List<String>,
+    val entertainmentActive: Boolean,
+)
+
+@Serializable
+data class PendingOperationRequest(
+    val lampIds: List<String>,
+)

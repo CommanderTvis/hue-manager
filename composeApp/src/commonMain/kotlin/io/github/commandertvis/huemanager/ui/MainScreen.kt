@@ -162,32 +162,21 @@ fun MainScreen(
 
                     // All lamps controls
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = "All Lamps",
-                                style = MaterialTheme.typography.titleMedium
-                            )
+                        Text(
+                            text = "All Lamps",
+                            style = MaterialTheme.typography.titleMedium
+                        )
 
-                            Switch(
-                                checked = uiState.lamps.any { it.on },
-                                onCheckedChange = { lampsViewModel.setAllLamps(it) },
-                                enabled = !uiState.isLoading && !uiState.isGlobalToggling
-                            )
-                        }
-
-                        OutlinedButton(
-                            onClick = { lampsViewModel.refresh() },
-                            enabled = !uiState.isLoading
-                        ) {
-                            Text("Refresh")
-                        }
+                        // Disable switch when any lamp has pending operation
+                        val anyPending = uiState.pendingLampIds.isNotEmpty()
+                        Switch(
+                            checked = uiState.lamps.any { it.on },
+                            onCheckedChange = { lampsViewModel.setAllLamps(it) },
+                            enabled = !uiState.isLoading && !uiState.isGlobalToggling && !anyPending
+                        )
                     }
                 }
             }
@@ -218,10 +207,15 @@ fun MainScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(uiState.lamps) { lamp ->
+                        // Lamp is loading if: local operation, global toggle, or pending from another client
+                        val isLampLoading = lamp.id in uiState.loadingLampIds ||
+                                uiState.isGlobalToggling ||
+                                lamp.id in uiState.pendingLampIds
+
                         LampCard(
                             lamp = lamp,
                             isOverridden = lamp.id in uiState.overriddenLampIds,
-                            isLoading = lamp.id in uiState.loadingLampIds || uiState.isGlobalToggling,
+                            isLoading = isLampLoading,
                             onToggle = { lampsViewModel.toggleLamp(lamp) },
                             onBrightnessChange = { brightness ->
                                 lampsViewModel.setBrightness(lamp, brightness)
@@ -253,7 +247,7 @@ fun MainScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = "Claude Desktop connects via HTTP OAuth. Add this URL as a connector and complete the OAuth prompt:",
+                        text = "MCP clients connect via HTTP OAuth. Add this URL as a connector and complete the OAuth prompt:",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Surface(

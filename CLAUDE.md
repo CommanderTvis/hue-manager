@@ -69,10 +69,7 @@ The server acts as a persistent process that:
 
 ```bash
 # Authentication
-# On first startup, PASSWORD is automatically hashed and stored in PASSWORD_HASH,
-# then PASSWORD is cleared for security. Subsequent auth uses PASSWORD_HASH.
 PASSWORD=<auth password>
-PASSWORD_HASH=<SHA-256 hash, auto-populated>
 
 # Location for sunrise/sunset calculation
 REGION=<latitude,longitude>
@@ -126,6 +123,11 @@ KEYSTORE_PASSWORD=<for HTTPS>
 
 **Note:** Settings API is fully implemented. Settings UI screen is not yet implemented - settings must be edited via API or in `.env` file.
 
+### Real-time Sync
+- `GET /api/sync` - Lightweight sync state (no Hue API calls) - returns automation state, pending operations, overrides
+- `POST /api/sync/pending` - Mark lamps as pending (before starting operation)
+- `DELETE /api/sync/pending` - Clear pending lamps (after operation completes)
+
 ### MCP (Model Context Protocol)
 - `GET /mcp/authorize` - MCP OAuth-style authorization page
 - `POST /mcp/authorize` - MCP OAuth password submit
@@ -137,10 +139,10 @@ KEYSTORE_PASSWORD=<for HTTPS>
 
 ## MCP (Model Context Protocol)
 
-The server exposes an MCP endpoint for integration with Claude Desktop via HTTP OAuth.
+The server exposes an MCP endpoint for integration with MCP clients via HTTP OAuth.
 
-**Connection:** Add `https://<domain>/mcp` as a Claude Desktop connector URL.
-**Important:** The MCP base path is `/mcp` (not `/api/mcp`). Using `/api/mcp` will fail authentication and/or return 500s.
+**Connection:** Add `https://<domain>/mcp` as a connector URL in your MCP client (Claude Desktop, Claude Code, etc.).
+**Important:** The MCP base path is `/mcp` (not `/api/mcp`). Using `/api/mcp` will result in errors.
 
 **Authentication:** OAuth 2.1 over HTTP (Authorization Code + PKCE). Use `/mcp/authorize` as the authorization URL.
 
@@ -148,7 +150,7 @@ The server exposes an MCP endpoint for integration with Claude Desktop via HTTP 
 - Uses official MCP Kotlin SDK (`io.modelcontextprotocol:kotlin-sdk:0.8.3`)
 - SSE transport is wired manually via `SseServerTransport` for correct endpoint advertisement
 - SSE connection: `GET /mcp` (establishes connection, receives server messages)
-- Client messages: `POST /mcp?sessionId=<id>` (sends client requests)
+- Client messages: `POST /mcp` (sends client requests with `sessionId` parameter)
 - Server file: `server/.../mcp/McpHandler.kt`
 
 **Available Resources:**
@@ -161,14 +163,14 @@ The server exposes an MCP endpoint for integration with Claude Desktop via HTTP 
 |------|-------------|
 | `get_lamp_state` | Get detailed state of a specific lamp including automation/override/Hue Sync status |
 | `set_lamp_state` | Control a lamp (on/off, brightness, hue, saturation, color temperature). Creates 1-hour override. |
-| `set_all_lamps` | Control all lamps at once (on/off, brightness, hue, saturation, color temperature). Creates overrides for all lamps. |
+| `set_all_lamps` | Control all lamps at once (on/off, brightness, hue, saturation, color temperature). Creates 1-hour overrides for all lamps. |
 | `clear_lamp_override` | Clear manual override for a lamp, returning it to automation control |
 | `get_automation_status` | Get current automation mode, user state, target color, and overridden lamps |
 | `wake_up` | Trigger "I woke up!" action - starts daylight automation sequence |
 | `go_to_sleep` | Trigger "I'm asleep!" action - turns off all automated lamps |
 
 **UI Integration:**
-- Main screen includes "MCP" button that opens a dialog with the Claude Desktop connector URL
+- Main screen includes "MCP" button that opens a dialog with the connector URL
 - One-click copy button copies the URL to the clipboard
 - Platform-specific clipboard implementation (JVM, WasmJS, Android)
 
@@ -197,13 +199,13 @@ The automation simulates natural daylight based on actual sunrise/sunset times c
 
 **Daily Flow Example (Berlin, January):**
 ```
-06:00 - User presses "I woke up!", sun not risen yet → AUTO_COMPENSATION (100% brightness)
+06:00 - User presses "I woke up!", sun not risen yet → AUTO_COMPENSATION (100% brightness white)
 08:15 - Sunrise → brightness starts decreasing smoothly
 12:30 - Solar noon → brightness at minimum (0%, lamps off)
 12:30 - After noon → brightness starts increasing smoothly  
-16:30 - Sunset → AUTO_COMPENSATION (100% brightness)
-21:05 - Pseudo-sunset → EVENING (bright orange 100%)
-00:05 - Pseudo-sunset+3h → NIGHT (dim orange 1%)
+16:30 - Sunset → AUTO_COMPENSATION (100% brightness white)
+21:05 - Pseudo-sunset → EVENING (bright orange #FF5500, 100%)
+00:05 - Pseudo-sunset+3h → NIGHT (dim orange #FF5500, 1%)
 sleep_action: Turn off all automated lamps
 ```
 
@@ -285,7 +287,7 @@ hue-manager/
 - `server/.../hue/HueService.kt` - Service layer managing Hue connection via Remote API
 - `server/.../hue/RateLimiter.kt` - Token bucket and minimum delay rate limiters
 - `server/.../automation/AutomationManager.kt` - User state, lamp overrides, heartbeat, automation mode calculation
-- `server/.../automation/SunCalculator.kt` - NOAA-based sunrise/sunset/solar noon calculation
+- `server/.../automation/SunCalculator.kt` - NOAA Solar Calculator algorithm for sunrise/sunset/solar noon calculation
 - `server/.../mcp/McpHandler.kt` - MCP server configuration and tool implementations
 
 ## Key Shared Files
@@ -348,13 +350,40 @@ hue-manager/
 - Health checks for both services
 - Named volumes for Caddy data persistence
 
+## Real-time State Synchronization
+
+The app implements Google Docs-style real-time synchronization across multiple clients:
+
+**Dual Polling Strategy:**
+- **Fast poll (500ms):** Queries `/api/sync` for automation state and pending operations (lightweight, no Hue API calls)
+- **Slow poll (10s):** Queries `/api/lamps` to get actual lamp states from Hue bridge (respects rate limits)
+
+**Pending Operations:**
+- When any client starts a lamp operation, server marks those lamps as "pending"
+- All connected clients see pending lamps and gray out their controls
+- When operation completes, server removes pending state
+- Pending states auto-expire after 5 seconds as a safety net
+
+**UI Behavior:**
+- Lamp cards gray out (50% opacity) when pending - whether from local operation or another client
+- Controls are disabled for pending lamps
+- No manual "Refresh" button needed - state updates automatically
+- Changes propagate to all clients within 500ms
+
+**Implementation:**
+- Server: `AutomationManager` tracks `pendingOperations` map with timestamps
+- Server: `/api/sync` returns `pendingLampIds` list along with automation state
+- Client: `LampsViewModel` runs two coroutine jobs for fast/slow polling
+- Client: UI combines `loadingLampIds` (local) and `pendingLampIds` (server) for loading state
+
 ## UI Features
 
 **Main Screen:**
 - Lists all lamps with current state
 - Automation state display ("Auto-compensating", "Evening light") with target color indicator
 - Per-lamp controls: on/off toggle, brightness slider, RGB color picker with hex input
-- Per-lamp loading state (controls gray out during API calls)
+- Per-lamp loading state (controls gray out during API calls or pending from other clients)
+- Real-time sync - no manual refresh needed
 - "Clear override" button for manual overrides or out-of-sync lamps
 - "I woke up!" / "I'm asleep!" buttons
 - "MCP" button for Claude integration setup
@@ -372,8 +401,22 @@ hue-manager/
 ## Recent Changes
 
 **January 2026:**
-- Rolled MCP transport back to SSE (`SseServerTransport`) for Claude Desktop OAuth flow
+- Implemented real-time state synchronization across clients (Google Docs-style)
+- Added `/api/sync` endpoint for lightweight polling (no Hue API calls)
+- Added pending operations tracking for cross-client coordination
+- Dual polling strategy: 500ms for sync state, 10s for lamp states
+- Removed manual "Refresh" button from UI
+- Reverted MCP to SSE transport (`SseServerTransport`) and simplified Claude Desktop setup
 - Bumped MCP Kotlin SDK from 0.8.1 to 0.8.3
+- Added SunCalculator for dynamic sunrise/sunset calculations based on REGION config
+- Replaced deprecated `kotlinx.datetime.Instant/Clock` with `kotlin.time` equivalents
+- Enhanced MCP OAuth handling with explicit user confirmation for stored credentials
+- Temporarily switched MCP from SSE to Streamable HTTP transport for Claude Code compatibility, then reverted back to SSE
+- Added color support (hue, saturation, color_temperature) to `set_all_lamps` MCP tool
+- Fixed MCP OAuth authorize page: replaced SPA with HTML form
+- Fixed route order: MCP routes now registered before SPA catch-all
+- Excluded `/mcp`, `/api`, `/.well-known` from SPA routing
+- Improved WASM app to detect `/mcp/authorize` path for OAuth UI
 - Simplified automation mode handling and fixed evening transition brightness
 - Removed unused `initialServerUrl` parameter from App function
 - Updated README with MCP resources and tool descriptions

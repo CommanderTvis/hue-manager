@@ -212,8 +212,8 @@ Authenticated endpoints (non-MCP) require `Authorization: Bearer <password>`. MC
 
 ## MCP Integration
 
-Claude Desktop connects via HTTP OAuth (Authorization Code + PKCE). Add the connector URL
-`https://yourdomain.com/mcp` and follow the OAuth prompt in your browser.
+MCP clients connect via HTTP OAuth (Authorization Code + PKCE). Add the connector URL
+`https://yourdomain.com/mcp` in your client and follow the OAuth prompt in your browser.
 
 ### Available MCP Resources
 
