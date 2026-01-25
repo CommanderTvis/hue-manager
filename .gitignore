@@ -26,3 +26,6 @@ kotlin-js-store/
 
 # CI build artifacts
 build-output/
+
+# Deployment scripts
+update.sh
