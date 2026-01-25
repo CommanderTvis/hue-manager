@@ -25,9 +25,7 @@ data class LampsUiState(
     val pseudoSunset: String = "21:05",
     val automationMode: String = "",
     val automationColor: AutomationColorInfo? = null,
-    val loadingLampIds: Set<String> = emptySet(),
     val pendingLampIds: Set<String> = emptySet(),
-    val isGlobalToggling: Boolean = false,
     val syncVersion: Long = 0L
 )
 
@@ -143,25 +141,22 @@ class LampsViewModel(
                 onFailure = { /* ignore */ }
             )
 
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                loadingLampIds = emptySet()
-            )
+            _uiState.value = _uiState.value.copy(isLoading = false)
         }
     }
 
     fun toggleLamp(lamp: Lamp) {
         viewModelScope.launch {
-            // Mark lamp as loading locally and notify server
-            _uiState.value = _uiState.value.copy(
-                loadingLampIds = _uiState.value.loadingLampIds + lamp.id
-            )
+            // Mark pending on server first, then update local state immediately
             apiClient.addPendingOperations(listOf(lamp.id))
+            _uiState.value = _uiState.value.copy(
+                pendingLampIds = _uiState.value.pendingLampIds + lamp.id
+            )
 
             val update = LampUpdateRequest(on = !lamp.on)
             val result = apiClient.updateLamp(lamp.id, update)
 
-            // Clear pending on server
+            // Clear pending on server - local state will sync via poll
             apiClient.clearPendingOperations(listOf(lamp.id))
 
             result.fold(
@@ -172,13 +167,13 @@ class LampsViewModel(
                     _uiState.value = _uiState.value.copy(
                         lamps = updatedLamps,
                         overriddenLampIds = _uiState.value.overriddenLampIds + lamp.id,
-                        loadingLampIds = _uiState.value.loadingLampIds - lamp.id
+                        pendingLampIds = _uiState.value.pendingLampIds - lamp.id
                     )
                 },
                 onFailure = { e ->
                     _uiState.value = _uiState.value.copy(
                         error = e.message,
-                        loadingLampIds = _uiState.value.loadingLampIds - lamp.id
+                        pendingLampIds = _uiState.value.pendingLampIds - lamp.id
                     )
                 }
             )
@@ -187,10 +182,10 @@ class LampsViewModel(
 
     fun setBrightness(lamp: Lamp, brightness: Int) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                loadingLampIds = _uiState.value.loadingLampIds + lamp.id
-            )
             apiClient.addPendingOperations(listOf(lamp.id))
+            _uiState.value = _uiState.value.copy(
+                pendingLampIds = _uiState.value.pendingLampIds + lamp.id
+            )
 
             val update = LampUpdateRequest(brightness = brightness)
             val result = apiClient.updateLamp(lamp.id, update)
@@ -205,13 +200,13 @@ class LampsViewModel(
                     _uiState.value = _uiState.value.copy(
                         lamps = updatedLamps,
                         overriddenLampIds = _uiState.value.overriddenLampIds + lamp.id,
-                        loadingLampIds = _uiState.value.loadingLampIds - lamp.id
+                        pendingLampIds = _uiState.value.pendingLampIds - lamp.id
                     )
                 },
                 onFailure = { e ->
                     _uiState.value = _uiState.value.copy(
                         error = e.message,
-                        loadingLampIds = _uiState.value.loadingLampIds - lamp.id
+                        pendingLampIds = _uiState.value.pendingLampIds - lamp.id
                     )
                 }
             )
@@ -220,10 +215,10 @@ class LampsViewModel(
 
     fun setLampColor(lamp: Lamp, hue: Int, saturation: Int) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                loadingLampIds = _uiState.value.loadingLampIds + lamp.id
-            )
             apiClient.addPendingOperations(listOf(lamp.id))
+            _uiState.value = _uiState.value.copy(
+                pendingLampIds = _uiState.value.pendingLampIds + lamp.id
+            )
 
             val update = LampUpdateRequest(hue = hue, saturation = saturation)
             val result = apiClient.updateLamp(lamp.id, update)
@@ -238,13 +233,13 @@ class LampsViewModel(
                     _uiState.value = _uiState.value.copy(
                         lamps = updatedLamps,
                         overriddenLampIds = _uiState.value.overriddenLampIds + lamp.id,
-                        loadingLampIds = _uiState.value.loadingLampIds - lamp.id
+                        pendingLampIds = _uiState.value.pendingLampIds - lamp.id
                     )
                 },
                 onFailure = { e ->
                     _uiState.value = _uiState.value.copy(
                         error = e.message,
-                        loadingLampIds = _uiState.value.loadingLampIds - lamp.id
+                        pendingLampIds = _uiState.value.pendingLampIds - lamp.id
                     )
                 }
             )
@@ -254,8 +249,10 @@ class LampsViewModel(
     fun setAllLamps(on: Boolean) {
         viewModelScope.launch {
             val allLampIds = _uiState.value.lamps.map { it.id }
-            _uiState.value = _uiState.value.copy(isGlobalToggling = true)
             apiClient.addPendingOperations(allLampIds)
+            _uiState.value = _uiState.value.copy(
+                pendingLampIds = _uiState.value.pendingLampIds + allLampIds
+            )
 
             val result = apiClient.updateAllLamps(AllLampsUpdateRequest(on = on))
 
@@ -269,13 +266,13 @@ class LampsViewModel(
                     _uiState.value = _uiState.value.copy(
                         lamps = updatedLamps,
                         overriddenLampIds = newOverriddenIds,
-                        isGlobalToggling = false
+                        pendingLampIds = _uiState.value.pendingLampIds - allLampIds.toSet()
                     )
                 },
                 onFailure = { e ->
                     _uiState.value = _uiState.value.copy(
                         error = e.message,
-                        isGlobalToggling = false
+                        pendingLampIds = _uiState.value.pendingLampIds - allLampIds.toSet()
                     )
                 }
             )
@@ -284,9 +281,11 @@ class LampsViewModel(
 
     fun wakeUp() {
         viewModelScope.launch {
-            // Mark all lamps as pending during wake up
             val allLampIds = _uiState.value.lamps.map { it.id }
             apiClient.addPendingOperations(allLampIds)
+            _uiState.value = _uiState.value.copy(
+                pendingLampIds = _uiState.value.pendingLampIds + allLampIds
+            )
 
             val result = apiClient.wakeUp()
 
@@ -294,10 +293,16 @@ class LampsViewModel(
 
             result.fold(
                 onSuccess = { response ->
-                    _uiState.value = _uiState.value.copy(userState = response.state)
+                    _uiState.value = _uiState.value.copy(
+                        userState = response.state,
+                        pendingLampIds = _uiState.value.pendingLampIds - allLampIds.toSet()
+                    )
                 },
                 onFailure = { e ->
-                    _uiState.value = _uiState.value.copy(error = e.message)
+                    _uiState.value = _uiState.value.copy(
+                        error = e.message,
+                        pendingLampIds = _uiState.value.pendingLampIds - allLampIds.toSet()
+                    )
                 }
             )
         }
@@ -307,6 +312,9 @@ class LampsViewModel(
         viewModelScope.launch {
             val allLampIds = _uiState.value.lamps.map { it.id }
             apiClient.addPendingOperations(allLampIds)
+            _uiState.value = _uiState.value.copy(
+                pendingLampIds = _uiState.value.pendingLampIds + allLampIds
+            )
 
             val result = apiClient.sleep()
 
@@ -314,10 +322,16 @@ class LampsViewModel(
 
             result.fold(
                 onSuccess = { response ->
-                    _uiState.value = _uiState.value.copy(userState = response.state)
+                    _uiState.value = _uiState.value.copy(
+                        userState = response.state,
+                        pendingLampIds = _uiState.value.pendingLampIds - allLampIds.toSet()
+                    )
                 },
                 onFailure = { e ->
-                    _uiState.value = _uiState.value.copy(error = e.message)
+                    _uiState.value = _uiState.value.copy(
+                        error = e.message,
+                        pendingLampIds = _uiState.value.pendingLampIds - allLampIds.toSet()
+                    )
                 }
             )
         }
@@ -325,10 +339,10 @@ class LampsViewModel(
 
     fun clearOverride(lampId: String) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                loadingLampIds = _uiState.value.loadingLampIds + lampId
-            )
             apiClient.addPendingOperations(listOf(lampId))
+            _uiState.value = _uiState.value.copy(
+                pendingLampIds = _uiState.value.pendingLampIds + lampId
+            )
 
             val result = apiClient.clearLampOverride(lampId)
 
@@ -338,13 +352,13 @@ class LampsViewModel(
                 onSuccess = {
                     _uiState.value = _uiState.value.copy(
                         overriddenLampIds = _uiState.value.overriddenLampIds - lampId,
-                        loadingLampIds = _uiState.value.loadingLampIds - lampId
+                        pendingLampIds = _uiState.value.pendingLampIds - lampId
                     )
                 },
                 onFailure = { e ->
                     _uiState.value = _uiState.value.copy(
                         error = e.message,
-                        loadingLampIds = _uiState.value.loadingLampIds - lampId
+                        pendingLampIds = _uiState.value.pendingLampIds - lampId
                     )
                 }
             )

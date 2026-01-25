@@ -175,7 +175,7 @@ fun MainScreen(
                         Switch(
                             checked = uiState.lamps.any { it.on },
                             onCheckedChange = { lampsViewModel.setAllLamps(it) },
-                            enabled = !uiState.isLoading && !uiState.isGlobalToggling && !anyPending
+                            enabled = !uiState.isLoading && !anyPending
                         )
                     }
                 }
@@ -207,15 +207,13 @@ fun MainScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(uiState.lamps) { lamp ->
-                        // Lamp is loading if: local operation, global toggle, or pending from another client
-                        val isLampLoading = lamp.id in uiState.loadingLampIds ||
-                                uiState.isGlobalToggling ||
-                                lamp.id in uiState.pendingLampIds
+                        // Lamp is pending if it's in the pending set (from this or another client)
+                        val isLampPending = lamp.id in uiState.pendingLampIds
 
                         LampCard(
                             lamp = lamp,
                             isOverridden = lamp.id in uiState.overriddenLampIds,
-                            isLoading = isLampLoading,
+                            isLoading = isLampPending,
                             onToggle = { lampsViewModel.toggleLamp(lamp) },
                             onBrightnessChange = { brightness ->
                                 lampsViewModel.setBrightness(lamp, brightness)
