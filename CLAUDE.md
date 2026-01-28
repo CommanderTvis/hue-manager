@@ -145,6 +145,7 @@ The server exposes an MCP endpoint for integration with MCP clients via HTTP OAu
 **Important:** The MCP base path is `/mcp` (not `/api/mcp`). Using `/api/mcp` will result in errors.
 
 **Authentication:** OAuth 2.1 over HTTP (Authorization Code + PKCE). Use `/mcp/authorize` as the authorization URL.
+- If user is already logged into the main SPA (Bearer token present), the OAuth page shows confirmation-only without requiring password re-entry.
 
 **Implementation:**
 - Uses official MCP Kotlin SDK (`io.modelcontextprotocol:kotlin-sdk:0.8.3`)
@@ -385,7 +386,7 @@ The app implements Google Docs-style real-time synchronization across multiple c
 - Per-lamp loading state (controls gray out during API calls or pending from other clients)
 - Real-time sync - no manual refresh needed
 - "Clear override" button for manual overrides or out-of-sync lamps
-- "I woke up!" / "I'm asleep!" buttons
+- "Lamps on" / "Lamps off" button to toggle automation state (wakeup/sleep)
 - "MCP" button for Claude integration setup
 
 **Color Picker:**
@@ -401,6 +402,8 @@ The app implements Google Docs-style real-time synchronization across multiple c
 ## Recent Changes
 
 **January 2026:**
+- Renamed "I woke up!"/"I'm asleep!" buttons to "Lamps on"/"Lamps off" in MainScreen
+- Added MCP OAuth skip-password feature: if user is already authorized via SPA Bearer token, MCP OAuth page shows confirmation-only (no password required)
 - Implemented real-time state synchronization across clients (Google Docs-style)
 - Added `/api/sync` endpoint for lightweight polling (no Hue API calls)
 - Added pending operations tracking for cross-client coordination

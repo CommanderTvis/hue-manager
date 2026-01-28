@@ -81,7 +81,7 @@ fun MainScreen(
                     ) {
                         Column {
                             Text(
-                                text = if (uiState.userState == UserState.AWAKE) "You're awake" else "You're asleep",
+                                text = if (uiState.userState == UserState.AWAKE) "Lamps on" else "Lamps off",
                                 style = MaterialTheme.typography.titleMedium
                             )
 
@@ -153,7 +153,7 @@ fun MainScreen(
                             }
                         ) {
                             Text(
-                                if (uiState.userState == UserState.AWAKE) "I'm asleep!" else "I woke up!"
+                                if (uiState.userState == UserState.AWAKE) "Lamps off" else "Lamps on"
                             )
                         }
                     }

@@ -128,6 +128,11 @@ fun Route.mcpRoutes(
         }
         val request = validation.request!!
 
+        // Check if user is already authenticated via Bearer token (SPA session)
+        val existingToken = call.extractBearerToken()
+        val isAlreadyAuthorized = existingToken != null &&
+                ConfigLoader.verifyPassword(existingToken, config.passwordHash)
+
         // Serve the WASM SPA (it detects /mcp/authorize path and shows OAuth UI)
         val webDir = Path("web")
         val indexFile = webDir.resolve("index.html")
@@ -145,7 +150,8 @@ fun Route.mcpRoutes(
                     codeChallengeMethod = request.codeChallengeMethod,
                     scope = request.scope,
                     resource = request.resource,
-                    errorMessage = null
+                    errorMessage = null,
+                    isAlreadyAuthorized = isAlreadyAuthorized
                 ),
                 ContentType.Text.Html
             )
@@ -160,8 +166,19 @@ fun Route.mcpRoutes(
             return@post
         }
         val request = validation.request!!
+
+        // Check if user is already authenticated via Bearer token (SPA session)
+        val existingToken = call.extractBearerToken()
+        val isAlreadyAuthorized = existingToken != null &&
+                ConfigLoader.verifyPassword(existingToken, config.passwordHash)
+
+        // If already authorized, just confirm (no password needed)
+        // Otherwise, validate the password from the form
         val password = params["password"]
-        if (password == null || !ConfigLoader.verifyPassword(password, config.passwordHash)) {
+        val isAuthorized = isAlreadyAuthorized ||
+                (password != null && ConfigLoader.verifyPassword(password, config.passwordHash))
+
+        if (!isAuthorized) {
             call.respondText(
                 renderMcpOauthPage(
                     redirectUri = request.redirectUri,
@@ -172,7 +189,8 @@ fun Route.mcpRoutes(
                     codeChallengeMethod = request.codeChallengeMethod,
                     scope = request.scope,
                     resource = request.resource,
-                    errorMessage = "Invalid password"
+                    errorMessage = "Invalid password",
+                    isAlreadyAuthorized = false
                 ),
                 ContentType.Text.Html,
                 status = HttpStatusCode.Unauthorized
@@ -741,7 +759,8 @@ private fun renderMcpOauthPage(
     codeChallengeMethod: String?,
     scope: String?,
     resource: String?,
-    errorMessage: String?
+    errorMessage: String?,
+    isAlreadyAuthorized: Boolean = false
 ): String {
     val errorBlock = if (errorMessage != null) {
         """<div class="error">${errorMessage.escapeHtml()}</div>"""
@@ -749,6 +768,19 @@ private fun renderMcpOauthPage(
 
     fun hiddenInput(name: String, value: String?) =
         if (!value.isNullOrBlank()) """<input type="hidden" name="$name" value="${value.escapeHtml()}">""" else ""
+
+    val passwordField = if (isAlreadyAuthorized) {
+        // No password required - user is already logged in via SPA
+        ""
+    } else {
+        """<input type="password" name="password" placeholder="Password" autocomplete="current-password" required>"""
+    }
+
+    val description = if (isAlreadyAuthorized) {
+        "You are already logged in. Click Authorize to grant access to this MCP client."
+    } else {
+        "Enter your Hue Manager password to authorize this MCP client."
+    }
 
     return """
         <!DOCTYPE html>
@@ -770,9 +802,9 @@ private fun renderMcpOauthPage(
         <body>
             <div class="container">
                 <h1>Authorize MCP Access</h1>
-                <p>Enter your Hue Manager password to authorize this MCP client.</p>
+                <p>$description</p>
                 <form method="post" action="$MCP_ENDPOINT/authorize">
-                    <input type="password" name="password" placeholder="Password" autocomplete="current-password" required>
+                    $passwordField
                     ${hiddenInput("redirect_uri", redirectUri)}
                     ${hiddenInput("response_type", responseType)}
                     ${hiddenInput("state", state)}

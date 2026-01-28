@@ -16,7 +16,7 @@ Another huge problem is that there's effectively no way to control my lamps when
 
 This will be a project with a Ktor-based backend and Compose Multiplatform UI (web + desktop + android).
 
-shared is for data model
+shared/ is for data model
 
 server/ will be a constantly running process to be hosted on my VDS that will actively manage the state of lamps using Philips Cloud Hue API.
 
@@ -40,7 +40,7 @@ The prompt has to store URL somewhere locally. Password has to be stored, too.
 
 ## Auth screen
 
-Should prompt only for password. The password is stored in the .env file.
+Should prompt only for password. The password is stored in the .env file. The password has to be hashed on the first run of server and only the hash is stored in the .env.
 
 ## Bridge Authorization (OAuth2)
 
@@ -66,9 +66,7 @@ Manual changes should be respected only for 1 hour unless a special control is p
 
 The controls of lamps for which something changes should gray out to avoid the messy experience when you change something, then not sure whether app is lagging or why lamp hasn't changed, etc. For example, I change color, the controls gray out until we are sure the change was written.
 
-And a toggle on/off control for all lamps at once, no matter automation e.g. "I left home" switching to "I am back." This control should also cause automation to be paused and to grey out individual lamp controls.
-
-There should be "I woke up!" button that turns into "I'm asleep!"
+There should be "Lamps on" button that turns into "Lamps off"
 
 ## Automation pipeline
 
@@ -104,25 +102,23 @@ Also, I want to keep using the official Hue Sync application. When entertainment
 
 # HTTP MCP server
 
-Potential things to do, use case.
-
-In my chats with Claude, I want to do basically anything I can do with the app in reasonable boundaries.
+In my chats with Claude, I want to do basically anything I can do with the app.
 
 Type of MCP has to be HTTP to be connected like {"url":"<domain>/mcp"}. So should be served by server/.
 
-After MCP is connected, we need to go to a OAuth page with password prompt without which MCP will fail.
+After MCP is connected, we need to go to a OAuth page with password prompt without which MCP will fail. If the main SPA is already authorized, then just "Authorize" confirmation should be requested by OAuth without password entry.
 
-Potential MCP methods surface:
+MCP methods should surface:
 - list lamps
 - see lamp state (in automation? in Hue Sync? in manual override?)
 - write lamp state (as manual override)
-- write state to all lamps
+- write state to all lamps at once
 
 Copyable MCP JSON with already proper URL patched in should be to the user provided by a clickable link on the main screen.
 
 # DevOps and security
 
-The server has to be fully buildable + deployable with Dockerfile. Meaning that I can just do `git clone ... && cd hue-manager` and `docker compose up -d --build` right in the root directory to run the server.
+The server has to be fully buildable + deployable with Dockerfile. Meaning that I can just do `git clone ... && cd hue-manager` and `docker compose up -d` to run the server.
 
 Configure GitHub Actions to build snapshots from master. Images have to be tagged by commit hash, we don't need versions currently. The visibilty of pushed containers has to be private. Also, make sure the workflow caches the Docker layers properly.
 
