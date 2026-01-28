@@ -158,26 +158,6 @@ fun MainScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // All lamps controls
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "All Lamps",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-
-                        // Disable switch when any lamp has pending operation
-                        val anyPending = uiState.pendingLampIds.isNotEmpty()
-                        Switch(
-                            checked = uiState.lamps.any { it.on },
-                            onCheckedChange = { lampsViewModel.setAllLamps(it) },
-                            enabled = !uiState.isLoading && !anyPending
-                        )
-                    }
                 }
             }
 
