@@ -31,6 +31,9 @@ class HueRemoteClient private constructor(
 ) : AutoCloseable by client {
     private val logger = LoggerFactory.getLogger(HueRemoteClient::class.java)
 
+    /** Json instance for parsing token responses - ignores unknown keys like 'scope' */
+    private val tokenJson = Json { ignoreUnknownKeys = true }
+
     private val lightRateLimiter = RateLimiter(maxTokens = 10)
     private val groupRateLimiter = RateLimiter(maxTokens = 1)
 
@@ -123,7 +126,7 @@ class HueRemoteClient private constructor(
             logger.debug("Token exchange response body: {}", responseBody.take(200))
 
             if (response.status.isSuccess()) {
-                val tokenResponse: TokenResponse = Json.decodeFromString(responseBody)
+                val tokenResponse: TokenResponse = tokenJson.decodeFromString(responseBody)
                 accessToken = tokenResponse.accessToken
                 refreshToken = tokenResponse.refreshToken
 
