@@ -14,15 +14,22 @@ class HueService(config: Config) : AutoCloseable {
 
     val needsLinking: Boolean
         get() = remoteClient?.isConfigured != true
-    
+
+    /**
+     * Returns true if the OAuth2 session is outdated and user needs to re-authorize.
+     * This happens when the refresh token is expired or revoked.
+     */
+    val needsReauthorization: Boolean
+        get() = remoteClient?.needsReauthorization == true
+
     fun getAuthorizationUrl(redirectUri: String, state: String): String? =
         remoteClient?.getAuthorizationUrl(redirectUri, state)
-    
+
     suspend fun handleOAuthCallback(code: String, redirectUri: String): Boolean {
         val tokens = remoteClient?.exchangeCodeForTokens(code, redirectUri)
         return tokens != null
     }
-    
+
     suspend fun linkRemoteBridge(): LinkResult {
         return remoteClient?.linkBridge() ?: LinkResult.Error("Remote client not configured")
     }
@@ -33,7 +40,7 @@ class HueService(config: Config) : AutoCloseable {
             logger.info("Remote API client configured, ready to use")
             return true
         }
-        
+
         logger.info("Remote API not configured, OAuth2 authorization required")
         return false
     }
@@ -58,7 +65,8 @@ class HueService(config: Config) : AutoCloseable {
 
     suspend fun getGroups(): Map<String, HueGroup> = remoteClient?.getGroups() ?: emptyMap()
 
-    suspend fun getEntertainmentGroups(): Map<String, HueGroup> = getGroups().filter { it.value.type == "Entertainment" }
+    suspend fun getEntertainmentGroups(): Map<String, HueGroup> =
+        getGroups().filter { it.value.type == "Entertainment" }
 
     override fun close() {
         remoteClient?.close()

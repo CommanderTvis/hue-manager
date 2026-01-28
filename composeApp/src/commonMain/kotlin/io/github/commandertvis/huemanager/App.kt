@@ -73,12 +73,11 @@ fun App(
                         if (authUiState.isLoggedIn) {
                             scope.launch {
                                 apiClient.getStatus().onSuccess { status ->
-                                    bridgeStatus = if (status.needsLinking) {
-                                        BridgeStatus.NeedsAuthorization
-                                    } else if (status.connected) {
-                                        BridgeStatus.Connected
-                                    } else {
-                                        BridgeStatus.NeedsAuthorization
+                                    bridgeStatus = when {
+                                        status.needsLinking -> BridgeStatus.NeedsAuthorization
+                                        status.needsReauthorization -> BridgeStatus.NeedsReauthorization
+                                        status.connected -> BridgeStatus.Connected
+                                        else -> BridgeStatus.NeedsAuthorization
                                     }
                                 }
                             }
@@ -94,65 +93,35 @@ fun App(
                             )
                         }
 
-                        bridgeStatus == BridgeStatus.NeedsAuthorization && platform.isWeb -> {
-                            // Web app: show "Please authorize" screen
+                        bridgeStatus == BridgeStatus.NeedsAuthorization || bridgeStatus == BridgeStatus.NeedsReauthorization -> {
+                            // Show "Please authorize" screen for both initial auth and re-auth
+                            val isReauthorization = bridgeStatus == BridgeStatus.NeedsReauthorization
                             PleaseAuthorizeScreen(
+                                isReauthorization = isReauthorization,
                                 onRetry = {
                                     scope.launch {
                                         apiClient.getStatus().onSuccess { status ->
-                                            bridgeStatus = if (status.connected && !status.needsLinking) {
-                                                BridgeStatus.Connected
-                                            } else {
-                                                BridgeStatus.NeedsAuthorization
+                                            bridgeStatus = when {
+                                                status.needsLinking -> BridgeStatus.NeedsAuthorization
+                                                status.needsReauthorization -> BridgeStatus.NeedsReauthorization
+                                                status.connected -> BridgeStatus.Connected
+                                                else -> BridgeStatus.NeedsAuthorization
                                             }
                                         }
                                     }
                                 },
                                 onStartAuthorizing = {
                                     scope.launch {
-                                        println("[DEBUG_LOG] Start Authorizing clicked (Web)")
+                                        println("[DEBUG_LOG] Start Authorizing clicked")
                                         apiClient.getAuthorizationUrl().onSuccess { url ->
-                                            println("[DEBUG_LOG] Received URL (Web): $url")
+                                            println("[DEBUG_LOG] Received URL: $url")
                                             if (url.isNotEmpty()) {
                                                 platform.openUrl(url)
                                             } else {
-                                                println("[DEBUG_LOG] Received empty URL (Web)")
+                                                println("[DEBUG_LOG] Received empty URL")
                                             }
                                         }.onFailure { e ->
-                                            println("[DEBUG_LOG] Failed to get URL (Web): ${e.message}")
-                                            e.printStackTrace()
-                                        }
-                                    }
-                                }
-                            )
-                        }
-
-                        bridgeStatus == BridgeStatus.NeedsAuthorization && !platform.isWeb -> {
-                            // Desktop/mobile: OAuth is done via browser, show same screen as web
-                            PleaseAuthorizeScreen(
-                                onRetry = {
-                                    scope.launch {
-                                        apiClient.getStatus().onSuccess { status ->
-                                            bridgeStatus = if (status.connected && !status.needsLinking) {
-                                                BridgeStatus.Connected
-                                            } else {
-                                                BridgeStatus.NeedsAuthorization
-                                            }
-                                        }
-                                    }
-                                },
-                                onStartAuthorizing = {
-                                    scope.launch {
-                                        println("[DEBUG_LOG] Start Authorizing clicked (Desktop/Mobile)")
-                                        apiClient.getAuthorizationUrl().onSuccess { url ->
-                                            println("[DEBUG_LOG] Received URL (Desktop/Mobile): $url")
-                                            if (url.isNotEmpty()) {
-                                                platform.openUrl(url)
-                                            } else {
-                                                println("[DEBUG_LOG] Received empty URL (Desktop/Mobile)")
-                                            }
-                                        }.onFailure { e ->
-                                            println("[DEBUG_LOG] Failed to get URL (Desktop/Mobile): ${e.message}")
+                                            println("[DEBUG_LOG] Failed to get URL: ${e.message}")
                                             e.printStackTrace()
                                         }
                                     }
@@ -202,5 +171,6 @@ fun App(
 
 enum class BridgeStatus {
     NeedsAuthorization,
+    NeedsReauthorization,
     Connected
 }

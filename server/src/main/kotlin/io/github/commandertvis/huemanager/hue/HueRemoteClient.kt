@@ -34,6 +34,14 @@ class HueRemoteClient private constructor(
     private val lightRateLimiter = RateLimiter(maxTokens = 10)
     private val groupRateLimiter = RateLimiter(maxTokens = 1)
 
+    /**
+     * Flag indicating that the OAuth2 session is outdated and re-authorization is needed.
+     * Set to true when token refresh fails (e.g., refresh token expired or revoked).
+     */
+    @Volatile
+    var needsReauthorization: Boolean = false
+        private set
+
     val isConfigured: Boolean
         get() = accessToken != null && username != null
 
@@ -141,9 +149,14 @@ class HueRemoteClient private constructor(
 
     /**
      * Refresh the access token using the refresh token.
+     * Sets [needsReauthorization] to true if refresh fails.
      */
     suspend fun refreshAccessToken(): Boolean {
-        val refresh = refreshToken ?: return false
+        val refresh = refreshToken ?: run {
+            logger.warn("No refresh token available, re-authorization required")
+            needsReauthorization = true
+            return false
+        }
 
         return try {
             val response: HttpResponse = client.post("https://api.meethue.com/v2/oauth2/token") {
@@ -167,16 +180,28 @@ class HueRemoteClient private constructor(
                     tokenResponse.refreshToken ?: refresh
                 )
 
+                // Clear re-authorization flag on successful refresh
+                needsReauthorization = false
                 logger.info("Successfully refreshed access token")
                 true
             } else {
                 logger.error("Failed to refresh token: ${response.status}")
+                // Mark as needing re-authorization when refresh fails
+                needsReauthorization = true
                 false
             }
         } catch (e: Exception) {
             logger.error("Error refreshing token: ${e.message}", e)
+            needsReauthorization = true
             false
         }
+    }
+
+    /**
+     * Clear the re-authorization flag (called after successful OAuth flow).
+     */
+    fun clearReauthorizationFlag() {
+        needsReauthorization = false
     }
 
     /**

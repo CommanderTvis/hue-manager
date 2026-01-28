@@ -229,11 +229,12 @@ fun Route.apiRoutes(
                 connected = hueService.isConnected,
                 bridgeIp = null, // Remote API doesn't expose bridge IP
                 needsLinking = hueService.needsLinking,
+                needsReauthorization = hueService.needsReauthorization,
                 automationState = userState,
                 entertainmentActive = automationManager.isEntertainmentActive()
             ).also {
                 // For debugging OAuth URL issues
-                logger.debug("StatusResponse: connected=${it.connected}, needsLinking=${it.needsLinking}")
+                logger.debug("StatusResponse: connected=${it.connected}, needsLinking=${it.needsLinking}, needsReauthorization=${it.needsReauthorization}")
             }
         )
     }

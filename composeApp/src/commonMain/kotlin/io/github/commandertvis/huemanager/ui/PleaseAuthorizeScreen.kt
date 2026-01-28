@@ -11,8 +11,21 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun PleaseAuthorizeScreen(
     onRetry: () -> Unit,
-    onStartAuthorizing: () -> Unit = {}
+    onStartAuthorizing: () -> Unit = {},
+    isReauthorization: Boolean = false
 ) {
+    val title = if (isReauthorization) {
+        "Session Expired"
+    } else {
+        "Philips Hue Not Authorized"
+    }
+
+    val description = if (isReauthorization) {
+        "Your Philips Hue session has expired. Please re-authorize to continue."
+    } else {
+        "The server is not authorized to your Philips Hue account yet."
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -21,7 +34,7 @@ fun PleaseAuthorizeScreen(
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "Philips Hue Not Authorized",
+            text = title,
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.padding(bottom = 24.dp)
         )
@@ -36,7 +49,7 @@ fun PleaseAuthorizeScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "The server is not authorized to your Philips Hue account yet.",
+                    text = description,
                     style = MaterialTheme.typography.bodyLarge,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(bottom = 16.dp)

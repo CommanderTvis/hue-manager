@@ -9,6 +9,7 @@ data class StatusResponse(
     val connected: Boolean,
     val bridgeIp: String?,
     val needsLinking: Boolean,
+    val needsReauthorization: Boolean = false,
     val automationState: UserState?,
     val entertainmentActive: Boolean,
 )

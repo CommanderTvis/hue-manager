@@ -402,8 +402,9 @@ The app implements Google Docs-style real-time synchronization across multiple c
 ## Recent Changes
 
 **January 2026:**
+- Added robust OAuth re-authorization: when Hue token refresh fails, `needsReauthorization` flag is set and UI prompts user to re-authorize
+- Removed redundant "All Lamps" switch from MainScreen (functionality covered by "Lamps on/off" button)
 - Renamed "I woke up!"/"I'm asleep!" buttons to "Lamps on"/"Lamps off" in MainScreen
-- Added MCP OAuth skip-password feature: if user is already authorized via SPA Bearer token, MCP OAuth page shows confirmation-only (no password required)
 - Implemented real-time state synchronization across clients (Google Docs-style)
 - Added `/api/sync` endpoint for lightweight polling (no Hue API calls)
 - Added pending operations tracking for cross-client coordination
