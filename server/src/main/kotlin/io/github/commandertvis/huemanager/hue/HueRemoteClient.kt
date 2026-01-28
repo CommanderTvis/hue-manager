@@ -136,6 +136,9 @@ class HueRemoteClient private constructor(
                     tokenResponse.refreshToken ?: ""
                 )
 
+                // Clear re-authorization flag on successful token exchange
+                needsReauthorization = false
+
                 logger.info("Successfully obtained OAuth2 tokens")
                 logger.info("Access token expires in: ${tokenResponse.expiresIn} seconds")
                 tokenResponse
