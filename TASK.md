@@ -22,7 +22,7 @@ server/ will be a constantly running process to be hosted on my VDS that will ac
 
 server/ also has to serve the web version of UI.
 
-composeApp is UI.
+composeApp is UI. androidApp is Android subproject for UI
 
 # UI design
 
@@ -104,9 +104,9 @@ Also, I want to keep using the official Hue Sync application. When entertainment
 
 In my chats with Claude, I want to do basically anything I can do with the app.
 
-Type of MCP has to be HTTP to be connected like {"url":"<domain>/mcp"}. So should be served by server/.
+Type of MCP has to be HTTP to be connected like `{"url":"<domain>/mcp"}`. So should be served by server/.
 
-After MCP is connected, we need to go to a OAuth page with password prompt without which MCP will fail. If the main SPA is already authorized, then just "Authorize" confirmation should be requested by OAuth without password entry.
+After MCP is connected, we need to go to a OAuth page with password prompt without which MCP will fail. If the main SPA is already authorized, then just "Authorize" confirmation should be requested by the OAuth server for MCP without password entry.
 
 MCP methods should surface:
 - list lamps
@@ -114,7 +114,7 @@ MCP methods should surface:
 - write lamp state (as manual override)
 - write state to all lamps at once
 
-Copyable MCP JSON with already proper URL patched in should be to the user provided by a clickable link on the main screen.
+Copyable MCP URL should be provided to the user by a clickable link on popup available through "MCP" link on the main screen.
 
 # DevOps and security
 

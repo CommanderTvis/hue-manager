@@ -13,6 +13,7 @@ import kotlinx.datetime.toLocalDateTime
 import org.slf4j.LoggerFactory
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 enum class UserState {
     AWAKE, ASLEEP
@@ -54,11 +55,36 @@ data class LampReachabilityState(
     val lastChecked: Instant
 )
 
+/**
+ * Tracks lamp power state to detect recently turned-on lamps.
+ */
+data class LampPowerState(
+    val lampId: String,
+    val isOn: Boolean,
+    val lastOnAt: Instant?
+)
+
+private const val MAX_BRIGHTNESS = 254
+private const val MIN_BRIGHTNESS = 1
+private const val COOL_WHITE_CT = 153
+private const val ORANGE_HUE = 5000
+private const val FULL_SATURATION = 254
+private const val BRIGHTNESS_TOLERANCE = 25
+private const val HUE_TOLERANCE = 3000
+private const val SATURATION_TOLERANCE = 25
+private const val COLOR_TEMPERATURE_TOLERANCE = 30
+private const val DEFAULT_SUNRISE_MINUTES = 6 * 60
+private const val PSEUDO_SUNSET_WINDOW_HOURS = 3
+
 class AutomationManager(
     private val config: Config,
     private val hueService: HueService
 ) : AutoCloseable {
     private val logger = LoggerFactory.getLogger(AutomationManager::class.java)
+    private val overrideDuration = 1.hours
+    private val recentOnGracePeriod = 5.seconds
+    private val pendingOperationTimeout = 5.seconds
+    private val timeZone = TimeZone.of(config.timezone)
 
     private var userState: UserState = UserState.ASLEEP
     private var wakeUpTime: Instant? = null
@@ -71,6 +97,7 @@ class AutomationManager(
 
     // Track lamp reachability to detect when lamps come back online
     private val lampReachability = mutableMapOf<String, LampReachabilityState>()
+    private val lampPowerStates = mutableMapOf<String, LampPowerState>()
 
     @Volatile
     private var syncVersion: Long = 0L
@@ -92,39 +119,45 @@ class AutomationManager(
     fun getAutomatedLampIds(): Set<String> = automatedLampIds.toSet()
 
     private suspend fun getOutOfSyncLamps(): Set<String> {
-        if (userState != UserState.AWAKE) {
-            // When user is asleep, check if any automated lamps are on
-            val outOfSync = mutableSetOf<String>()
-            for (lampId in automatedLampIds) {
-                if (lampOverrides.containsKey(lampId)) continue // Already tracked as manual override
-
-                val light = hueService.getLight(lampId) ?: continue
-                // Only consider reachable lamps as out-of-sync
-                if (light.state.reachable != true) continue
-                if (light.state.on) {
-                    outOfSync.add(lampId)
-                }
-            }
-            return outOfSync
+        val now = Clock.System.now()
+        val targetState = if (userState == UserState.AWAKE) {
+            val localTime = now.toLocalDateTime(timeZone).time
+            val sunTimes = SunCalculator.calculateSunTimes(now, config.region, timeZone)
+            calculateDesiredState(localTime, sunTimes)
+        } else {
+            null
         }
 
-        // When user is awake, compare actual state with automation target
-        val timeZone = TimeZone.of(config.timezone)
-        val localNow = Clock.System.now().toLocalDateTime(timeZone)
-        val targetState = calculateDesiredState(localNow.time)
-        val entertainmentLamps = getActiveEntertainmentLamps()
         val outOfSync = mutableSetOf<String>()
+        var entertainmentLamps: Set<String>? = null
+
+        suspend fun isInEntertainment(lampId: String): Boolean {
+            if (entertainmentLamps == null) {
+                entertainmentLamps = getActiveEntertainmentLamps()
+            }
+            return lampId in entertainmentLamps!!
+        }
 
         for (lampId in automatedLampIds) {
             if (lampOverrides.containsKey(lampId)) continue // Already tracked as manual override
-            if (entertainmentLamps.contains(lampId)) continue // Skip entertainment lamps
 
             val light = hueService.getLight(lampId) ?: continue
-            // Only consider reachable lamps as out-of-sync
-            // Unreachable lamps will be handled when they become reachable again
-            if (light.state.reachable != true) continue
-            if (!isLampInSync(light.state, targetState)) {
-                outOfSync.add(lampId)
+            val isReachable = light.state.reachable == true
+            if (!isReachable) continue
+
+            updateLampPowerState(lampId, light.state.on, now)
+            // Ignore transient mismatches right after a lamp turns on (unless Hue Sync is active).
+            if (isRecentlyTurnedOn(lampId, now) && !isInEntertainment(lampId)) continue
+
+            if (userState != UserState.AWAKE) {
+                if (light.state.on) {
+                    outOfSync.add(lampId)
+                }
+            } else {
+                val desiredState = targetState ?: continue
+                if (!isLampInSync(light.state, desiredState)) {
+                    outOfSync.add(lampId)
+                }
             }
         }
 
@@ -149,9 +182,8 @@ class AutomationManager(
         if (actualState.on) {
             // Check brightness (allow 10% tolerance)
             if (targetState.bri != null) {
-                val actualBri = actualState.bri ?: 254
-                val tolerance = 25 // ~10% of 254
-                if (kotlin.math.abs(actualBri - targetState.bri) > tolerance) {
+                val actualBri = actualState.bri ?: MAX_BRIGHTNESS
+                if (kotlin.math.abs(actualBri - targetState.bri) > BRIGHTNESS_TOLERANCE) {
                     return false
                 }
             }
@@ -161,20 +193,16 @@ class AutomationManager(
                 // Target is using hue/sat mode
                 val actualHue = actualState.hue ?: 0
                 val actualSat = actualState.sat ?: 0
-                val hueTolerance = 3000 // ~5% of 65535
-                val satTolerance = 25 // ~10% of 254
 
-                if (kotlin.math.abs(actualHue - targetState.hue) > hueTolerance ||
-                    kotlin.math.abs(actualSat - targetState.sat) > satTolerance
+                if (kotlin.math.abs(actualHue - targetState.hue) > HUE_TOLERANCE ||
+                    kotlin.math.abs(actualSat - targetState.sat) > SATURATION_TOLERANCE
                 ) {
                     return false
                 }
             } else if (targetState.ct != null) {
                 // Target is using color temperature mode
-                val actualCt = actualState.ct ?: 153
-                val ctTolerance = 30 // Allow some variation
-
-                if (kotlin.math.abs(actualCt - targetState.ct) > ctTolerance) {
+                val actualCt = actualState.ct ?: COOL_WHITE_CT
+                if (kotlin.math.abs(actualCt - targetState.ct) > COLOR_TEMPERATURE_TOLERANCE) {
                     return false
                 }
             }
@@ -184,105 +212,85 @@ class AutomationManager(
     }
 
     fun getCurrentAutomationMode(): AutomationMode {
+        val now = Clock.System.now()
+        val localTime = now.toLocalDateTime(timeZone).time
+        val sunTimes = SunCalculator.calculateSunTimes(now, config.region, timeZone)
+        return calculateAutomationMode(localTime, sunTimes)
+    }
+
+    private fun calculateAutomationMode(
+        currentTime: LocalTime,
+        sunTimes: SunCalculator.SunTimes?
+    ): AutomationMode {
         if (userState != UserState.AWAKE) {
             return AutomationMode.USER_ASLEEP
         }
 
-        val timeZone = TimeZone.of(config.timezone)
-        val now = Clock.System.now()
-        val localNow = now.toLocalDateTime(timeZone)
-        val currentTime = localNow.time
-
-        // Calculate sun times for today
-        val sunTimes = SunCalculator.calculateSunTimes(now, config.region, timeZone)
-
-        // Calculate pseudo-sunset window (3 hours after pseudo-sunset)
+        val currentMinutes = minutesSinceMidnight(currentTime)
+        val pseudoSunsetMinutes = minutesSinceMidnight(pseudoSunset)
         val pseudoSunsetEnd = LocalTime(
-            (pseudoSunset.hour + 3) % 24,
+            (pseudoSunset.hour + PSEUDO_SUNSET_WINDOW_HOURS) % 24,
             pseudoSunset.minute
         )
+        val pseudoSunsetEndMinutes = minutesSinceMidnight(pseudoSunsetEnd)
+        val sunriseMinutes = sunTimes?.sunrise?.let { minutesSinceMidnight(it) } ?: DEFAULT_SUNRISE_MINUTES
 
-        // Check evening/night modes first (these take priority over daylight modes)
-        val currentMinutes = currentTime.hour * 60 + currentTime.minute
-        val pseudoSunsetMinutes = pseudoSunset.hour * 60 + pseudoSunset.minute
-        val pseudoSunsetEndMinutes = pseudoSunsetEnd.hour * 60 + pseudoSunsetEnd.minute
-
-        // Handle midnight rollover for pseudo-sunset window
-        val crossesMidnight = pseudoSunsetEndMinutes < pseudoSunsetMinutes
-
-        val isInEvening = if (crossesMidnight) {
-            // Evening spans midnight: e.g., 21:05 to 00:05
-            currentMinutes >= pseudoSunsetMinutes || currentMinutes < pseudoSunsetEndMinutes
-        } else {
-            currentMinutes in pseudoSunsetMinutes until pseudoSunsetEndMinutes
-        }
-
-        if (isInEvening) {
+        val isEvening = isWithinRange(currentMinutes, pseudoSunsetMinutes, pseudoSunsetEndMinutes)
+        if (isEvening) {
             return AutomationMode.EVENING
         }
 
-        // Night mode: after pseudo-sunset+3h until sunrise
-        if (crossesMidnight) {
-            // Pseudo-sunset+3h crosses midnight (e.g., 00:05)
-            // Night is from 00:05 until sunrise
-            if (currentMinutes in pseudoSunsetEndMinutes until pseudoSunsetMinutes) {
-                val sunriseMinutes = sunTimes?.sunrise?.let { it.hour * 60 + it.minute } ?: 360
-                if (currentMinutes < sunriseMinutes) {
-                    return AutomationMode.NIGHT
-                }
-            }
+        val crossesMidnight = pseudoSunsetEndMinutes < pseudoSunsetMinutes
+        val isNight = if (crossesMidnight) {
+            currentMinutes in pseudoSunsetEndMinutes until sunriseMinutes
         } else {
-            // Pseudo-sunset+3h doesn't cross midnight
-            // Night is from pseudo-sunset+3h until midnight, then midnight until sunrise
-            if (currentMinutes >= pseudoSunsetEndMinutes) {
-                return AutomationMode.NIGHT
-            }
-            if (currentMinutes < pseudoSunsetMinutes) {
-                val sunriseMinutes = sunTimes?.sunrise?.let { it.hour * 60 + it.minute } ?: 360
-                if (currentMinutes < sunriseMinutes) {
-                    return AutomationMode.NIGHT
-                }
-            }
+            currentMinutes >= pseudoSunsetEndMinutes || currentMinutes < sunriseMinutes
         }
 
-        // Everything else is AUTO_COMPENSATION (with smooth brightness based on sun position)
+        if (isNight) {
+            return AutomationMode.NIGHT
+        }
+
         return AutomationMode.AUTO_COMPENSATION
     }
 
     fun getAutomationColor(): LampColorInfo {
-        val mode = getCurrentAutomationMode()
+        val now = Clock.System.now()
+        val localTime = now.toLocalDateTime(timeZone).time
+        val sunTimes = SunCalculator.calculateSunTimes(now, config.region, timeZone)
+        val mode = calculateAutomationMode(localTime, sunTimes)
 
         return when (mode) {
             AutomationMode.AUTO_COMPENSATION -> {
                 // Calculate smooth brightness based on sun position
-                val brightness = calculateAutoCompensationBrightness()
-                val description = if (brightness >= 254) "Bright white"
-                else if (brightness >= 100) "Dimmed white (${brightness * 100 / 254}%)"
-                else if (brightness > 0) "Low white (${brightness * 100 / 254}%)"
+                val brightness = calculateAutoCompensationBrightness(localTime, sunTimes)
+                val description = if (brightness >= MAX_BRIGHTNESS) "Bright white"
+                else if (brightness >= 100) "Dimmed white (${brightness * 100 / MAX_BRIGHTNESS}%)"
+                else if (brightness > 0) "Low white (${brightness * 100 / MAX_BRIGHTNESS}%)"
                 else "Off (bright daylight)"
 
                 LampColorInfo(
                     hue = null,
                     saturation = null,
-                    colorTemperature = if (brightness > 0) 153 else null, // Cool white (6500K)
+                    colorTemperature = if (brightness > 0) COOL_WHITE_CT else null, // Cool white (6500K)
                     brightness = brightness,
                     description = description
                 )
             }
 
             AutomationMode.EVENING -> LampColorInfo(
-                hue = 5000, // Orange
-                saturation = 254,
+                hue = ORANGE_HUE,
+                saturation = FULL_SATURATION,
                 colorTemperature = null,
-                brightness = 254,
+                brightness = MAX_BRIGHTNESS,
                 description = "Bright orange"
             )
 
             AutomationMode.NIGHT -> LampColorInfo(
-                hue = 5000, // Orange
-                saturation = 254,
+                hue = ORANGE_HUE,
+                saturation = FULL_SATURATION,
                 colorTemperature = null,
-                brightness = 1,
+                brightness = MIN_BRIGHTNESS,
                 description = "Dim orange"
             )
 
@@ -303,28 +311,23 @@ class AutomationManager(
      * - Solar noon to sunset: brightness increases smoothly (0% -> 100%)
      * - After sunset: 100% brightness
      */
-    private fun calculateAutoCompensationBrightness(): Int {
-        val timeZone = TimeZone.of(config.timezone)
-        val now = Clock.System.now()
-        val localNow = now.toLocalDateTime(timeZone)
-        val currentTime = localNow.time
-        val currentMinutes = currentTime.hour * 60 + currentTime.minute
-
-        val sunTimes = SunCalculator.calculateSunTimes(now, config.region, timeZone)
-            ?: return 254 // No sun times (polar region) - full brightness
-
-        val sunriseMinutes = sunTimes.sunrise.hour * 60 + sunTimes.sunrise.minute
-        val sunsetMinutes = sunTimes.sunset.hour * 60 + sunTimes.sunset.minute
-        val solarNoonMinutes = sunTimes.solarNoon.hour * 60 + sunTimes.solarNoon.minute
+    private fun calculateAutoCompensationBrightness(
+        currentTime: LocalTime,
+        sunTimes: SunCalculator.SunTimes?
+    ): Int {
+        val resolvedSunTimes = sunTimes ?: return MAX_BRIGHTNESS
+        val currentMinutes = minutesSinceMidnight(currentTime)
+        val sunriseMinutes = minutesSinceMidnight(resolvedSunTimes.sunrise)
+        val sunsetMinutes = minutesSinceMidnight(resolvedSunTimes.sunset)
 
         // Before sunrise or after sunset: full brightness
         if (currentMinutes < sunriseMinutes || currentMinutes > sunsetMinutes) {
-            return 254
+            return MAX_BRIGHTNESS
         }
 
         // Calculate sun position as a fraction (0 = sunrise, 0.5 = noon, 1 = sunset)
         val daylightDuration = sunsetMinutes - sunriseMinutes
-        if (daylightDuration <= 0) return 254
+        if (daylightDuration <= 0) return MAX_BRIGHTNESS
 
         val minutesSinceSunrise = currentMinutes - sunriseMinutes
         val sunPosition = minutesSinceSunrise.toDouble() / daylightDuration
@@ -332,20 +335,17 @@ class AutomationManager(
         // Convert sun position to brightness (inverted parabola)
         // At sunrise (0) and sunset (1): brightness = 100%
         // At solar noon (0.5): brightness = 0%
-        // Using: brightness = 1 - 4 * (position - 0.5)^2 inverted = 4 * (position - 0.5)^2
         val sunIntensity = 1.0 - 4.0 * (sunPosition - 0.5) * (sunPosition - 0.5)
 
         // Invert: when sun is brightest, lamp should be dimmest
         val lampBrightness = 1.0 - sunIntensity
 
         // Scale to 0-254 range
-        return (lampBrightness * 254).toInt().coerceIn(0, 254)
+        return (lampBrightness * MAX_BRIGHTNESS).toInt().coerceIn(0, MAX_BRIGHTNESS)
     }
 
-    fun isEntertainmentActive(): Boolean {
-        return runBlocking {
-            getActiveEntertainmentLamps().isNotEmpty()
-        }
+    suspend fun isEntertainmentActive(): Boolean {
+        return getActiveEntertainmentLamps().isNotEmpty()
     }
 
     private suspend fun getActiveEntertainmentLamps(): Set<String> {
@@ -389,7 +389,7 @@ class AutomationManager(
     }
 
     fun addLampOverride(lampId: String) {
-        val overrideUntil = Clock.System.now() + 1.hours
+        val overrideUntil = Clock.System.now() + overrideDuration
         lampOverrides[lampId] = LampOverride(lampId, overrideUntil)
         incrementSyncVersion()
         logger.info("Added override for lamp $lampId until $overrideUntil")
@@ -425,9 +425,8 @@ class AutomationManager(
 
     private fun cleanExpiredPendingOperations() {
         val now = Clock.System.now()
-        val timeout = 5000L // 5 seconds timeout
         val expired = pendingOperations.filter {
-            (now - it.value.startedAt).inWholeMilliseconds > timeout
+            (now - it.value.startedAt) > pendingOperationTimeout
         }
         if (expired.isNotEmpty()) {
             expired.keys.forEach { pendingOperations.remove(it) }
@@ -450,9 +449,10 @@ class AutomationManager(
             if (!entertainmentLamps.contains(lampId)) {
                 if (userState == UserState.AWAKE) {
                     // User is awake: apply calculated automation state
-                    val timeZone = TimeZone.of(config.timezone)
-                    val localNow = Clock.System.now().toLocalDateTime(timeZone)
-                    val desiredState = calculateDesiredState(localNow.time)
+                    val now = Clock.System.now()
+                    val localTime = now.toLocalDateTime(timeZone).time
+                    val sunTimes = SunCalculator.calculateSunTimes(now, config.region, timeZone)
+                    val desiredState = calculateDesiredState(localTime, sunTimes)
                     hueService.setLightState(lampId, desiredState)
                     logger.info("Applied automation state to lamp $lampId after clearing override")
                 } else {
@@ -467,6 +467,8 @@ class AutomationManager(
     fun setAutomatedLamps(lampIds: Set<String>) {
         automatedLampIds.clear()
         automatedLampIds.addAll(lampIds)
+        lampReachability.keys.retainAll(automatedLampIds)
+        lampPowerStates.keys.retainAll(automatedLampIds)
         logger.info("Set automated lamps: $automatedLampIds")
     }
 
@@ -513,11 +515,9 @@ class AutomationManager(
         if (userState != UserState.AWAKE) return
 
         val now = Clock.System.now()
-        val timeZone = TimeZone.of(config.timezone)
-        val localNow = now.toLocalDateTime(timeZone)
-        val currentTime = localNow.time
-
-        val desiredState = calculateDesiredState(currentTime)
+        val localTime = now.toLocalDateTime(timeZone).time
+        val sunTimes = SunCalculator.calculateSunTimes(now, config.region, timeZone)
+        val desiredState = calculateDesiredState(localTime, sunTimes)
         val entertainmentLamps = getActiveEntertainmentLamps()
 
         for (lampId in automatedLampIds) {
@@ -527,15 +527,15 @@ class AutomationManager(
 
             // Check current lamp state for reachability tracking
             val light = hueService.getLight(lampId)
-            val isReachable = light?.state?.reachable ?: false
-            val previousState = lampReachability[lampId]
-            val wasUnreachable = previousState?.wasReachable == false
+            val isReachable = light?.state?.reachable == true
+            val becameReachable = updateLampReachability(lampId, isReachable, now)
 
-            // Update reachability tracking
-            lampReachability[lampId] = LampReachabilityState(lampId, isReachable, now)
+            if (light != null && isReachable) {
+                updateLampPowerState(lampId, light.state.on, now)
+            }
 
             // If lamp just became reachable, apply automation immediately (ignore overrides)
-            if (isReachable && wasUnreachable) {
+            if (isReachable && becameReachable) {
                 logger.info("Lamp $lampId became reachable, applying automation immediately")
                 // Remove any existing override since lamp was unreachable
                 lampOverrides.remove(lampId)
@@ -555,15 +555,16 @@ class AutomationManager(
         }
     }
 
-    private fun calculateDesiredState(currentTime: LocalTime): HueLightStateUpdate {
-        val mode = getCurrentAutomationMode()
-
-        return when (mode) {
+    private fun calculateDesiredState(
+        currentTime: LocalTime,
+        sunTimes: SunCalculator.SunTimes?
+    ): HueLightStateUpdate {
+        return when (calculateAutomationMode(currentTime, sunTimes)) {
             AutomationMode.AUTO_COMPENSATION -> {
                 // Smooth brightness based on sun position
-                val brightness = calculateAutoCompensationBrightness()
+                val brightness = calculateAutoCompensationBrightness(currentTime, sunTimes)
                 if (brightness > 0) {
-                    HueLightStateUpdate(on = true, bri = brightness, ct = 153)
+                    HueLightStateUpdate(on = true, bri = brightness, ct = COOL_WHITE_CT)
                 } else {
                     HueLightStateUpdate(on = false)
                 }
@@ -571,18 +572,64 @@ class AutomationManager(
 
             AutomationMode.EVENING -> {
                 // Bright orange (pseudo-sunset to pseudo-sunset+3h)
-                HueLightStateUpdate(on = true, bri = 254, hue = 5000, sat = 254)
+                HueLightStateUpdate(
+                    on = true,
+                    bri = MAX_BRIGHTNESS,
+                    hue = ORANGE_HUE,
+                    sat = FULL_SATURATION
+                )
             }
 
             AutomationMode.NIGHT -> {
                 // Dim orange (after pseudo-sunset+3h)
-                HueLightStateUpdate(on = true, bri = 1, hue = 5000, sat = 254)
+                HueLightStateUpdate(
+                    on = true,
+                    bri = MIN_BRIGHTNESS,
+                    hue = ORANGE_HUE,
+                    sat = FULL_SATURATION
+                )
             }
 
             AutomationMode.USER_ASLEEP -> {
                 // Off when user is asleep
                 HueLightStateUpdate(on = false)
             }
+        }
+    }
+
+    private fun updateLampReachability(lampId: String, isReachable: Boolean, now: Instant): Boolean {
+        val previous = lampReachability[lampId]
+        val becameReachable = previous?.wasReachable == false && isReachable
+        lampReachability[lampId] = LampReachabilityState(lampId, isReachable, now)
+        return becameReachable
+    }
+
+    private fun updateLampPowerState(lampId: String, isOn: Boolean, now: Instant) {
+        val previous = lampPowerStates[lampId]
+        val lastOnAt = when {
+            !isOn -> null
+            previous == null -> now // Treat first observation as recent to avoid false overrides
+            !previous.isOn && isOn -> now
+            else -> previous.lastOnAt
+        }
+        lampPowerStates[lampId] = LampPowerState(lampId, isOn, lastOnAt)
+    }
+
+    private fun isRecentlyTurnedOn(lampId: String, now: Instant): Boolean {
+        val state = lampPowerStates[lampId] ?: return false
+        val lastOnAt = state.lastOnAt ?: return false
+        return state.isOn && (now - lastOnAt) <= recentOnGracePeriod
+    }
+
+    private fun minutesSinceMidnight(time: LocalTime): Int {
+        return time.hour * 60 + time.minute
+    }
+
+    private fun isWithinRange(current: Int, start: Int, end: Int): Boolean {
+        return if (end < start) {
+            current >= start || current < end
+        } else {
+            current in start until end
         }
     }
 
