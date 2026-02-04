@@ -242,6 +242,10 @@ fun Route.apiRoutes(
     // Lamps
     get("/api/lamps") {
         val lights = hueService.getLights()
+
+        // Discover new lamps added to the bridge since server started
+        automationManager.discoverNewLamps(lights.keys)
+
         val entertainmentGroups = hueService.getEntertainmentGroups()
         val entertainmentLamps = mutableSetOf<String>()
 

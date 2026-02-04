@@ -488,12 +488,32 @@ class AutomationManager(
             while (isActive) {
                 delay(10.minutes)
                 cleanExpiredOverrides()
+                discoverNewLamps()
                 if (userState == UserState.AWAKE) {
                     applyAutomatedState()
                 }
             }
         }
         logger.info("Started heartbeat")
+    }
+
+    /**
+     * Discover new lamps that were added to the Hue bridge while the server was running.
+     * New lamps are automatically added to automation.
+     *
+     * @param knownLampIds optional set of lamp IDs already fetched (to avoid extra API call)
+     * @return set of newly discovered lamp IDs
+     */
+    suspend fun discoverNewLamps(knownLampIds: Set<String>? = null): Set<String> {
+        val currentLamps = knownLampIds ?: hueService.getLights().keys
+        val newLamps = currentLamps - automatedLampIds
+
+        if (newLamps.isNotEmpty()) {
+            automatedLampIds.addAll(newLamps)
+            logger.info("Discovered ${newLamps.size} new lamp(s): $newLamps")
+        }
+
+        return newLamps
     }
 
     private fun stopHeartbeat() {
