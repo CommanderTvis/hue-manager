@@ -5,7 +5,7 @@ A Philips Hue lamp management system with intelligent daylight automation, built
 ## Features
 
 - Daylight simulation - automatically adjusts lamp brightness and color temperature throughout the day based on sunrise/sunset times
-- Wake/sleep modes - one-tap "I woke up!" and "I'm asleep!" actions
+- Wake/sleep modes - one-tap "Lamps on/off" toggle for automation control
 - Multi-platform clients - Desktop (JVM), Web (JS/WasmJS), and Android apps
 - Entertainment area detection - automatically pauses automation when Hue Sync is active
 - Manual override - temporarily disable automation when you manually adjust a lamp
@@ -190,8 +190,8 @@ Caddy will automatically provision Let's Encrypt SSL certificates for your domai
 | PUT    | `/api/lamps/{id}`                          | Yes   | Update lamp state                           |
 | PUT    | `/api/lamps/all`                           | Yes   | Update all lamps                            |
 | POST   | `/api/auth`                                | No    | Verify password                             |
-| POST   | `/api/wakeup`                              | Yes   | Trigger "I woke up!"                        |
-| POST   | `/api/sleep`                               | Yes   | Trigger "I'm asleep!"                       |
+| POST   | `/api/wakeup`                              | Yes   | Wake action ("Lamps on")                    |
+| POST   | `/api/sleep`                               | Yes   | Sleep action ("Lamps off")                  |
 | GET    | `/api/automation`                          | No    | Automation status                           |
 | GET    | `/api/settings`                            | No    | Get automation settings                     |
 | PUT    | `/api/settings`                            | Yes   | Update automation settings                  |
@@ -227,11 +227,11 @@ MCP clients connect via HTTP OAuth (Authorization Code + PKCE). Add the connecto
 |------------------------|----------------------------------------------------------------|
 | `get_lamp_state`       | Get detailed state of a specific lamp including automation/override/Hue Sync status |
 | `set_lamp_state`       | Control a lamp (on/off, brightness, hue, saturation, color temperature). Creates 1-hour override |
-| `set_all_lamps`        | Control all lamps at once (on/off, brightness). Creates overrides for all lamps |
+| `set_all_lamps`        | Control all lamps at once (on/off, brightness, hue, saturation, color temperature). Creates 1-hour overrides for all lamps |
 | `clear_lamp_override`  | Clear manual override for a lamp, returning it to automation control |
 | `get_automation_status`| Get current automation mode, user state, target color, and overridden lamps |
-| `wake_up`              | Trigger "I woke up!" action - starts daylight automation sequence |
-| `go_to_sleep`          | Trigger "I'm asleep!" action - turns off all automated lamps   |
+| `wake_up`              | Trigger wake action ("Lamps on") - starts daylight automation sequence |
+| `go_to_sleep`          | Trigger sleep action ("Lamps off") - turns off all automated lamps   |
 
 ## Daylight Automation
 

@@ -114,8 +114,8 @@ KEYSTORE_PASSWORD=<for HTTPS>
 
 ### Automation
 - `GET /api/automation` - Get automation status
-- `POST /api/wakeup` - "I woke up!" action
-- `POST /api/sleep` - "I'm asleep!" action
+- `POST /api/wakeup` - Wake action ("Lamps on")
+- `POST /api/sleep` - Sleep action ("Lamps off")
 
 ### Settings
 - `GET /api/settings` - Get current settings (pseudo-sunset time, location, automated lamp IDs)
@@ -145,7 +145,7 @@ The server exposes an MCP endpoint for integration with MCP clients via HTTP OAu
 **Important:** The MCP base path is `/mcp` (not `/api/mcp`). Using `/api/mcp` will result in errors.
 
 **Authentication:** OAuth 2.1 over HTTP (Authorization Code + PKCE). Use `/mcp/authorize` as the authorization URL.
-- If user is already logged into the main SPA (Bearer token present), the OAuth page shows confirmation-only without requiring password re-entry.
+- Requires password entry for authorization (OAuth page shows password form).
 
 **Implementation:**
 - Uses official MCP Kotlin SDK (`io.modelcontextprotocol:kotlin-sdk:0.8.3`)
@@ -167,8 +167,8 @@ The server exposes an MCP endpoint for integration with MCP clients via HTTP OAu
 | `set_all_lamps` | Control all lamps at once (on/off, brightness, hue, saturation, color temperature). Creates 1-hour overrides for all lamps. |
 | `clear_lamp_override` | Clear manual override for a lamp, returning it to automation control |
 | `get_automation_status` | Get current automation mode, user state, target color, and overridden lamps |
-| `wake_up` | Trigger "I woke up!" action - starts daylight automation sequence |
-| `go_to_sleep` | Trigger "I'm asleep!" action - turns off all automated lamps |
+| `wake_up` | Trigger wake action ("Lamps on") - starts daylight automation sequence |
+| `go_to_sleep` | Trigger sleep action ("Lamps off") - turns off all automated lamps |
 
 **UI Integration:**
 - Main screen includes "MCP" button that opens a dialog with the connector URL
@@ -200,10 +200,10 @@ The automation simulates natural daylight based on actual sunrise/sunset times c
 
 **Daily Flow Example (Berlin, January):**
 ```
-06:00 - User presses "I woke up!", sun not risen yet → AUTO_COMPENSATION (100% brightness white)
+06:00 - User presses "Lamps on", sun not risen yet → AUTO_COMPENSATION (100% brightness white)
 08:15 - Sunrise → brightness starts decreasing smoothly
 12:30 - Solar noon → brightness at minimum (0%, lamps off)
-12:30 - After noon → brightness starts increasing smoothly  
+12:30 - After noon → brightness starts increasing smoothly
 16:30 - Sunset → AUTO_COMPENSATION (100% brightness white)
 21:05 - Pseudo-sunset → EVENING (bright orange #FF5500, 100%)
 00:05 - Pseudo-sunset+3h → NIGHT (dim orange #FF5500, 1%)
@@ -216,7 +216,7 @@ sleep_action: Turn off all automated lamps
   - During daylight: parabolic curve from 100% at sunrise → 0% at solar noon → 100% at sunset
 - `EVENING` - From pseudo-sunset to +3h: bright orange light (#FF5500, 100%)
 - `NIGHT` - After pseudo-sunset+3h until sunrise: dim orange light (#FF5500, 1%)
-- `USER_ASLEEP` - User pressed "I'm asleep!", lamps off
+- `USER_ASLEEP` - User pressed "Lamps off", lamps off
 
 **Sun Calculation:**
 - Uses NOAA Solar Calculator algorithm
@@ -375,7 +375,7 @@ The app implements Google Docs-style real-time synchronization across multiple c
 - Server: `AutomationManager` tracks `pendingOperations` map with timestamps
 - Server: `/api/sync` returns `pendingLampIds` list along with automation state
 - Client: `LampsViewModel` runs two coroutine jobs for fast/slow polling
-- Client: UI combines `loadingLampIds` (local) and `pendingLampIds` (server) for loading state
+- Client: UI uses unified `pendingLampIds` from server for all loading states (no separate local tracking)
 
 ## UI Features
 
@@ -386,7 +386,7 @@ The app implements Google Docs-style real-time synchronization across multiple c
 - Per-lamp loading state (controls gray out during API calls or pending from other clients)
 - Real-time sync - no manual refresh needed
 - "Clear override" button for manual overrides or out-of-sync lamps
-- "Lamps on" / "Lamps off" button to toggle automation state (wakeup/sleep)
+- "Lamps on/off" toggle button to control automation state (replaces "I woke up!"/"I'm asleep!" buttons)
 - "MCP" button for Claude integration setup
 
 **Color Picker:**
@@ -401,10 +401,28 @@ The app implements Google Docs-style real-time synchronization across multiple c
 
 ## Recent Changes
 
-**January 2026:**
+**February 2026:**
+- Added lamp power state tracking (`LampPowerState`) to detect recently turned-on lamps
+- Implemented 5-second grace period to avoid false override detection after lamp power-on
+- Major refactoring of `AutomationManager`: extracted helper methods, grouped constants, improved code organization
+- Fixed Philips Hue OAuth token exchange failing due to unknown 'scope' field (added `ignoreUnknownKeys=true` to JSON config)
+- Fixed `needsReauthorization` flag not being cleared after successful token exchange
+- Reverted MCP OAuth skip-password feature (now requires password entry for all authorizations)
+
+**Late January 2026:**
 - Added robust OAuth re-authorization: when Hue token refresh fails, `needsReauthorization` flag is set and UI prompts user to re-authorize
-- Removed redundant "All Lamps" switch from MainScreen (functionality covered by "Lamps on/off" button)
-- Renamed "I woke up!"/"I'm asleep!" buttons to "Lamps on"/"Lamps off" in MainScreen
+- Removed redundant "All Lamps" switch from MainScreen (functionality covered by toggle button)
+- Renamed "I woke up!"/"I'm asleep!" buttons to "Lamps on/off" toggle button in MainScreen
+- Implemented unreachable lamp handling with `LampReachabilityState` tracking
+- Lamps transitioning from unreachable → reachable get automation applied immediately (no 1-hour grace period)
+- Skip unreachable lamps in out-of-sync detection
+- Hide override indicator for unreachable lamps
+- Instant state refresh after wakeUp/goToSleep actions (`pollSync()` and `pollLamps()` called immediately)
+- Unified pending state tracking: removed separate `loadingLampIds` and `isGlobalToggling`, use only `pendingLampIds`
+- Hide "Change server" link in WASM app loading state
+- Changed default docker-compose.yml to use published GHCR image
+
+**January 2026:**
 - Implemented real-time state synchronization across clients (Google Docs-style)
 - Added `/api/sync` endpoint for lightweight polling (no Hue API calls)
 - Added pending operations tracking for cross-client coordination
@@ -414,7 +432,7 @@ The app implements Google Docs-style real-time synchronization across multiple c
 - Bumped MCP Kotlin SDK from 0.8.1 to 0.8.3
 - Added SunCalculator for dynamic sunrise/sunset calculations based on REGION config
 - Replaced deprecated `kotlinx.datetime.Instant/Clock` with `kotlin.time` equivalents
-- Enhanced MCP OAuth handling with explicit user confirmation for stored credentials
+- Enhanced MCP OAuth handling
 - Temporarily switched MCP from SSE to Streamable HTTP transport for Claude Code compatibility, then reverted back to SSE
 - Added color support (hue, saturation, color_temperature) to `set_all_lamps` MCP tool
 - Fixed MCP OAuth authorize page: replaced SPA with HTML form
@@ -426,5 +444,4 @@ The app implements Google Docs-style real-time synchronization across multiple c
 - Updated README with MCP resources and tool descriptions
 - Removed separate colorpicker module, integrated components into composeApp
 - Streamlined resource cleanup and enhanced code readability
-- Fixed override indicator hidden when lamp is in entertainment mode
 - Enhanced URL handling and validation in ServerUrlStorage and ApiClient
