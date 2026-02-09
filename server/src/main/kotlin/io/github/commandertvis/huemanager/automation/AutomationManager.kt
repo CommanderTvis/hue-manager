@@ -466,7 +466,7 @@ class AutomationManager(
                 }
             }
         }
-    } k
+    }
 
     fun setAutomatedLamps(lampIds: Set<String>) {
         automatedLampIds.clear()
