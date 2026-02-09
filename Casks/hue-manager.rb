@@ -1,6 +1,6 @@
 cask "hue-manager" do
-  version "0.0.0-PLACEHOLDER"
-  sha256 "PLACEHOLDER"
+  version "0.0.0-69ecd69"
+  sha256 "4191e2fd4c542cd7e791269e5524b2da796ec190d648abf14dab22dc64caf4b7"
 
   url "https://github.com/CommanderTvis/hue-manager/releases/download/nightly/hue-manager.dmg",
       header: "Authorization: token #{ENV.fetch("HOMEBREW_GITHUB_API_TOKEN", "")}"
