@@ -75,7 +75,7 @@ compose.desktop.application {
     nativeDistributions {
         targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
         packageName = "Hue Manager"
-        packageVersion = project.version.toString()
+        packageVersion = "1.0.0"
 
         macOS {
             bundleID = "io.github.commandertvis.huemanager"

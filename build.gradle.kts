@@ -18,7 +18,7 @@ plugins {
 
 allprojects {
     group = "io.github.commandertvis.huemanager"
-    version = findProperty("appVersion")?.toString() ?: "1.0.0"
+    version = "1.0.0"
 }
 
 subprojects {
