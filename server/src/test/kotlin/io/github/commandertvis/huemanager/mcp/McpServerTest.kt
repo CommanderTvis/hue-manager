@@ -5,6 +5,7 @@ import io.github.commandertvis.huemanager.config.Config
 import io.github.commandertvis.huemanager.config.ConfigLoader
 import io.github.commandertvis.huemanager.config.GeoLocation
 import io.github.commandertvis.huemanager.hue.HueService
+import io.github.commandertvis.huemanager.hue.LampStateCache
 import io.modelcontextprotocol.kotlin.sdk.client.Client
 import io.modelcontextprotocol.kotlin.sdk.types.*
 import kotlinx.coroutines.launch
@@ -16,6 +17,7 @@ import kotlin.test.*
 
 class McpServerTest {
     private lateinit var hueService: HueService
+    private lateinit var lampStateCache: LampStateCache
     private lateinit var automationManager: AutomationManager
     private lateinit var mcpHandler: McpHandler
     private lateinit var client: Client
@@ -24,8 +26,10 @@ class McpServerTest {
     fun setUp() {
         val config = testConfig()
         hueService = HueService(config)
-        automationManager = AutomationManager(config, hueService)
-        mcpHandler = McpHandler(hueService, automationManager)
+        lampStateCache = LampStateCache(hueService)
+        hueService.setCache(lampStateCache)
+        automationManager = AutomationManager(config, hueService, lampStateCache)
+        mcpHandler = McpHandler(hueService, automationManager, lampStateCache)
 
         val (clientTransport, serverTransport) = InMemoryTransport.createLinkedPair()
         client = Client(
@@ -43,6 +47,7 @@ class McpServerTest {
     @AfterEach
     fun tearDown() {
         automationManager.close()
+        lampStateCache.close()
         hueService.close()
     }
 

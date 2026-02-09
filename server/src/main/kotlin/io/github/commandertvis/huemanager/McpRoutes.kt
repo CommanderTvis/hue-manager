@@ -4,6 +4,7 @@ import io.github.commandertvis.huemanager.automation.AutomationManager
 import io.github.commandertvis.huemanager.config.Config
 import io.github.commandertvis.huemanager.config.ConfigLoader
 import io.github.commandertvis.huemanager.hue.HueService
+import io.github.commandertvis.huemanager.hue.LampStateCache
 import io.github.commandertvis.huemanager.mcp.McpHandler
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -46,9 +47,10 @@ private const val MCP_ENDPOINT = "/mcp"
 fun Route.mcpRoutes(
     config: Config,
     hueService: HueService,
-    automationManager: AutomationManager
+    automationManager: AutomationManager,
+    lampStateCache: LampStateCache
 ) {
-    val mcpHandler = McpHandler(hueService, automationManager)
+    val mcpHandler = McpHandler(hueService, automationManager, lampStateCache)
 
     // OAuth state storage
     val mcpOauthClients = ConcurrentHashMap<String, McpOauthClient>()

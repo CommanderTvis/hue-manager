@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import com.github.skydoves.colorpicker.compose.AlphaTile
 import com.github.skydoves.colorpicker.compose.HsvColorPicker
 import com.github.skydoves.colorpicker.compose.rememberColorPickerController
+import io.github.commandertvis.huemanager.models.ColorMode
 import io.github.commandertvis.huemanager.models.Lamp
 
 @Composable
@@ -268,25 +269,50 @@ private fun getLampColor(lamp: Lamp): Color {
     val satValue = lamp.saturation
     val ctValue = lamp.colorTemperature
 
-    // Simple color approximation based on lamp state
-    return when {
-        hueValue != null && satValue != null -> {
-            // Convert Hue API hue (0-65535) to HSL hue (0-360)
-            val hue = hueValue * 360f / 65535f
-            Color.hsv(hue, satValue / 254f, 1f)
+    // Check colorMode first to avoid using stale hue/sat values when lamp is in CT mode.
+    // The Hue API always returns hue/sat fields even when the lamp is in CT or XY mode,
+    // but those values are stale from the last time HS mode was active.
+    return when (lamp.colorMode) {
+        ColorMode.CT -> {
+            if (ctValue != null) {
+                val warmth = (ctValue - 153f) / (500f - 153f)
+                Color(
+                    red = 1f,
+                    green = 0.8f + (1f - warmth) * 0.2f,
+                    blue = 0.6f + (1f - warmth) * 0.4f
+                )
+            } else {
+                Color.White
+            }
         }
 
-        ctValue != null -> {
-            // Color temperature - warmer = more orange, cooler = more blue
-            val warmth = (ctValue - 153f) / (500f - 153f)
-            Color(
-                red = 1f,
-                green = 0.8f + (1f - warmth) * 0.2f,
-                blue = 0.6f + (1f - warmth) * 0.4f
-            )
+        ColorMode.HS, ColorMode.XY -> {
+            if (hueValue != null && satValue != null) {
+                val hue = hueValue * 360f / 65535f
+                Color.hsv(hue, satValue / 254f, 1f)
+            } else {
+                Color.Yellow
+            }
         }
 
-        else -> Color.Yellow
+        null -> {
+            // Unknown color mode - fallback to original logic
+            when {
+                hueValue != null && satValue != null -> {
+                    val hue = hueValue * 360f / 65535f
+                    Color.hsv(hue, satValue / 254f, 1f)
+                }
+                ctValue != null -> {
+                    val warmth = (ctValue - 153f) / (500f - 153f)
+                    Color(
+                        red = 1f,
+                        green = 0.8f + (1f - warmth) * 0.2f,
+                        blue = 0.6f + (1f - warmth) * 0.4f
+                    )
+                }
+                else -> Color.Yellow
+            }
+        }
     }
 }
 

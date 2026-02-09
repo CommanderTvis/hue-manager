@@ -4,6 +4,7 @@ import io.github.commandertvis.huemanager.config.Config
 import io.github.commandertvis.huemanager.config.GeoLocation
 import io.github.commandertvis.huemanager.hue.HueLightStateUpdate
 import io.github.commandertvis.huemanager.hue.HueService
+import io.github.commandertvis.huemanager.hue.LampStateCache
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.coroutines.*
@@ -78,7 +79,8 @@ private const val PSEUDO_SUNSET_WINDOW_HOURS = 3
 
 class AutomationManager(
     private val config: Config,
-    private val hueService: HueService
+    private val hueService: HueService,
+    private val lampStateCache: LampStateCache
 ) : AutoCloseable {
     private val logger = LoggerFactory.getLogger(AutomationManager::class.java)
     private val overrideDuration = 1.hours
@@ -110,7 +112,7 @@ class AutomationManager(
     fun getPseudoSunset(): LocalTime = pseudoSunset
     fun getLocation(): GeoLocation = config.region
 
-    suspend fun getOverriddenLampIds(): List<String> {
+    fun getOverriddenLampIds(): List<String> {
         val manualOverrides = lampOverrides.keys.toSet()
         val outOfSyncLamps = getOutOfSyncLamps()
         return (manualOverrides + outOfSyncLamps).toList()
@@ -118,7 +120,7 @@ class AutomationManager(
 
     fun getAutomatedLampIds(): Set<String> = automatedLampIds.toSet()
 
-    private suspend fun getOutOfSyncLamps(): Set<String> {
+    private fun getOutOfSyncLamps(): Set<String> {
         val now = Clock.System.now()
         val targetState = if (userState == UserState.AWAKE) {
             val localTime = now.toLocalDateTime(timeZone).time
@@ -129,25 +131,18 @@ class AutomationManager(
         }
 
         val outOfSync = mutableSetOf<String>()
-        var entertainmentLamps: Set<String>? = null
-
-        suspend fun isInEntertainment(lampId: String): Boolean {
-            if (entertainmentLamps == null) {
-                entertainmentLamps = getActiveEntertainmentLamps()
-            }
-            return lampId in entertainmentLamps!!
-        }
+        val entertainmentLamps = getActiveEntertainmentLamps()
 
         for (lampId in automatedLampIds) {
             if (lampOverrides.containsKey(lampId)) continue // Already tracked as manual override
 
-            val light = hueService.getLight(lampId) ?: continue
+            val light = lampStateCache.getLight(lampId) ?: continue
             val isReachable = light.state.reachable == true
             if (!isReachable) continue
 
             updateLampPowerState(lampId, light.state.on, now)
             // Ignore transient mismatches right after a lamp turns on (unless Hue Sync is active).
-            if (isRecentlyTurnedOn(lampId, now) && !isInEntertainment(lampId)) continue
+            if (isRecentlyTurnedOn(lampId, now) && lampId !in entertainmentLamps) continue
 
             if (userState != UserState.AWAKE) {
                 if (light.state.on) {
@@ -344,12 +339,12 @@ class AutomationManager(
         return (lampBrightness * MAX_BRIGHTNESS).toInt().coerceIn(0, MAX_BRIGHTNESS)
     }
 
-    suspend fun isEntertainmentActive(): Boolean {
+    fun isEntertainmentActive(): Boolean {
         return getActiveEntertainmentLamps().isNotEmpty()
     }
 
-    private suspend fun getActiveEntertainmentLamps(): Set<String> {
-        val entertainmentGroups = hueService.getEntertainmentGroups()
+    private fun getActiveEntertainmentLamps(): Set<String> {
+        val entertainmentGroups = lampStateCache.getEntertainmentGroups()
         val activeLamps = mutableSetOf<String>()
 
         for ((_, group) in entertainmentGroups) {
@@ -368,6 +363,7 @@ class AutomationManager(
         logger.info("User woke up at $wakeUpTime")
 
         applyAutomatedState()
+        lampStateCache.forceRefresh()
         startHeartbeat()
 
         return userState
@@ -380,11 +376,19 @@ class AutomationManager(
 
         stopHeartbeat()
 
+        // Clear all manual overrides - user explicitly wants lamps off
+        if (lampOverrides.isNotEmpty()) {
+            logger.info("Clearing ${lampOverrides.size} manual override(s)")
+            lampOverrides.clear()
+            incrementSyncVersion()
+        }
+
         // Turn off all automated lamps
         for (lampId in automatedLampIds) {
             hueService.setLightState(lampId, HueLightStateUpdate(on = false))
         }
 
+        lampStateCache.forceRefresh()
         return userState
     }
 
@@ -462,7 +466,7 @@ class AutomationManager(
                 }
             }
         }
-    }
+    } k
 
     fun setAutomatedLamps(lampIds: Set<String>) {
         automatedLampIds.clear()
@@ -504,8 +508,8 @@ class AutomationManager(
      * @param knownLampIds optional set of lamp IDs already fetched (to avoid extra API call)
      * @return set of newly discovered lamp IDs
      */
-    suspend fun discoverNewLamps(knownLampIds: Set<String>? = null): Set<String> {
-        val currentLamps = knownLampIds ?: hueService.getLights().keys
+    fun discoverNewLamps(knownLampIds: Set<String>? = null): Set<String> {
+        val currentLamps = knownLampIds ?: lampStateCache.getLights().keys
         val newLamps = currentLamps - automatedLampIds
 
         if (newLamps.isNotEmpty()) {
@@ -545,8 +549,8 @@ class AutomationManager(
                 continue // Skip lamps in active entertainment areas
             }
 
-            // Check current lamp state for reachability tracking
-            val light = hueService.getLight(lampId)
+            // Check current lamp state for reachability tracking (from cache)
+            val light = lampStateCache.getLight(lampId)
             val isReachable = light?.state?.reachable == true
             val becameReachable = updateLampReachability(lampId, isReachable, now)
 

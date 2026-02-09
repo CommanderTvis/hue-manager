@@ -6,6 +6,7 @@ import io.github.commandertvis.huemanager.automation.UserState
 import io.github.commandertvis.huemanager.config.Config
 import io.github.commandertvis.huemanager.hue.HueLightStateUpdate
 import io.github.commandertvis.huemanager.hue.HueService
+import io.github.commandertvis.huemanager.hue.LampStateCache
 import io.github.commandertvis.huemanager.hue.LinkResult
 import io.github.commandertvis.huemanager.models.*
 import io.ktor.http.*
@@ -18,7 +19,8 @@ import java.util.UUID
 fun Route.apiRoutes(
     config: Config,
     hueService: HueService,
-    automationManager: AutomationManager
+    automationManager: AutomationManager,
+    lampStateCache: LampStateCache
 ) {
     // OAuth2 for Philips Hue Remote API
     get("/api/hue/authorize") {
@@ -154,8 +156,10 @@ fun Route.apiRoutes(
     post("/api/hue/link") {
         when (val result = hueService.linkRemoteBridge()) {
             is LinkResult.Success -> {
-                val lamps = hueService.getLights()
+                lampStateCache.forceRefresh()
+                val lamps = lampStateCache.getLights()
                 automationManager.setAutomatedLamps(lamps.keys)
+                lampStateCache.startRefreshing()
                 call.respond(GenericResponse(success = true, message = "Linked! Found ${lamps.size} lamps"))
             }
 
@@ -241,12 +245,12 @@ fun Route.apiRoutes(
 
     // Lamps
     get("/api/lamps") {
-        val lights = hueService.getLights()
+        val lights = lampStateCache.getLights()
 
         // Discover new lamps added to the bridge since server started
         automationManager.discoverNewLamps(lights.keys)
 
-        val entertainmentGroups = hueService.getEntertainmentGroups()
+        val entertainmentGroups = lampStateCache.getEntertainmentGroups()
         val entertainmentLamps = mutableSetOf<String>()
 
         for ((_, group) in entertainmentGroups) {
@@ -275,11 +279,11 @@ fun Route.apiRoutes(
 
     get("/api/lamps/{id}") {
         val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
-        val light = hueService.getLight(id)
+        val light = lampStateCache.getLight(id)
         if (light == null) {
             call.respond(HttpStatusCode.NotFound, ApiError("Lamp not found", 404))
         } else {
-            val entertainmentGroups = hueService.getEntertainmentGroups()
+            val entertainmentGroups = lampStateCache.getEntertainmentGroups()
             val entertainmentLamps = mutableSetOf<String>()
 
             for ((_, group) in entertainmentGroups) {
@@ -352,7 +356,7 @@ fun Route.apiRoutes(
 
     // Groups
     get("/api/groups") {
-        val groups = hueService.getGroups()
+        val groups = lampStateCache.getGroups()
         val response = GroupsResponse(
             groups = groups.map { (id, group) ->
                 Group(

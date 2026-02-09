@@ -34,6 +34,10 @@ A Philips Hue lamp management system with:
 
 ```
 Client (composeApp) <--HTTP--> Server (Ktor on VDS) <--OAuth2/REST--> Philips Cloud (api.meethue.com) <--> Hue Bridge
+                                     |
+                              LampStateCache (in-memory)
+                              Refreshed every 5s from Philips Cloud
+                              All reads served from cache (instant)
 ```
 
 **Bridge Connection via OAuth2:**
@@ -168,12 +172,32 @@ The server exposes an MCP endpoint for integration with MCP clients via HTTP OAu
 | `clear_lamp_override` | Clear manual override for a lamp, returning it to automation control |
 | `get_automation_status` | Get current automation mode, user state, target color, and overridden lamps |
 | `wake_up` | Trigger wake action ("Lamps on") - starts daylight automation sequence |
-| `go_to_sleep` | Trigger sleep action ("Lamps off") - turns off all automated lamps |
+| `go_to_sleep` | Trigger "Lamps off" action - clears all manual overrides and turns off all lamps. Use when going to sleep or leaving home. |
 
 **UI Integration:**
 - Main screen includes "MCP" button that opens a dialog with the connector URL
 - One-click copy button copies the URL to the clipboard
 - Platform-specific clipboard implementation (JVM, WasmJS, Android)
+
+## In-Memory Lamp State Cache
+
+The server maintains an in-memory cache of all lamp and group state from the Philips Hue Cloud API. All read operations (API endpoints, MCP tools, automation sync checks) return instantly from cached data with zero API calls.
+
+**Implementation:** `LampStateCache` class in `server/.../hue/LampStateCache.kt`
+
+**How it works:**
+- **Startup:** Cache is populated once via bulk `getLights()` + `getGroups()` calls
+- **Background refresh:** Every 5 seconds, the cache is refreshed from Philips Cloud (2 API calls total: 1 `getLights` + 1 `getGroups`)
+- **Optimistic updates:** After successful write operations (`setLightState`), the cached state is immediately patched so subsequent reads reflect the change without waiting for the next refresh
+- **Force refresh:** After `wakeUp()`, `goToSleep()`, or bridge linking, the cache is immediately refreshed
+
+**Thread safety:** `@Volatile` references to immutable `Map` snapshots. Reads are lock-free. Writes create new map copies.
+
+**Impact:**
+- `/api/sync` is truly instant (was: N+1 API calls per poll, where N = number of lamps)
+- `/api/lamps` is instant (was: 2 API calls)
+- MCP tools read from cache (was: multiple API calls per tool)
+- Background refresh: 2 API calls every 5s, regardless of number of clients (was: ~22 calls/sec with 10 lamps)
 
 ## Rate Limiting
 
@@ -192,6 +216,7 @@ Philips Hue Remote API has rate limits:
 **Applied to:**
 - All `/lights` API calls (getLights, getLight, setLightState)
 - All `/groups` API calls (getGroups)
+- Background cache refresh (getLights + getGroups every 5s)
 - OAuth2 and bridge linking calls are not rate-limited (one-time setup operations)
 
 ## Daylight Simulation Logic
@@ -286,6 +311,7 @@ hue-manager/
 - `server/.../hue/HueClient.kt` - HTTP client for local Hue REST API (legacy, kept for reference)
 - `server/.../hue/HueRemoteClient.kt` - HTTP client for Philips Hue Remote API (OAuth2)
 - `server/.../hue/HueService.kt` - Service layer managing Hue connection via Remote API
+- `server/.../hue/LampStateCache.kt` - In-memory cache of lamp/group state with background refresh
 - `server/.../hue/RateLimiter.kt` - Token bucket and minimum delay rate limiters
 - `server/.../automation/AutomationManager.kt` - User state, lamp overrides, heartbeat, automation mode calculation
 - `server/.../automation/SunCalculator.kt` - NOAA Solar Calculator algorithm for sunrise/sunset/solar noon calculation
@@ -402,6 +428,8 @@ The app implements Google Docs-style real-time synchronization across multiple c
 ## Recent Changes
 
 **February 2026:**
+- Added `LampStateCache` for in-memory lamp/group state with background refresh every 5s -- all read endpoints now return instantly from cache (55x reduction in Philips Cloud API calls)
+- Fixed lamp color display bug: `getLampColor()` now checks `colorMode` first instead of always using stale hue/saturation values when lamp is in CT mode
 - Added lamp power state tracking (`LampPowerState`) to detect recently turned-on lamps
 - Implemented 5-second grace period to avoid false override detection after lamp power-on
 - Major refactoring of `AutomationManager`: extracted helper methods, grouped constants, improved code organization

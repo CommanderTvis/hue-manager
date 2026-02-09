@@ -4,6 +4,7 @@ import io.github.commandertvis.huemanager.automation.AutomationManager
 import io.github.commandertvis.huemanager.config.Config
 import io.github.commandertvis.huemanager.config.ConfigLoader
 import io.github.commandertvis.huemanager.hue.HueService
+import io.github.commandertvis.huemanager.hue.LampStateCache
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
@@ -26,22 +27,25 @@ fun main() {
     }
 
     HueService(config).use { hueService ->
-        AutomationManager(config, hueService).use { automationManager ->
-            runBlocking {
-                val initialized = hueService.initialize()
-                if (initialized) {
-                    // Set all discovered lamps as automated by default
-                    val lamps = hueService.getLights()
-                    automationManager.setAutomatedLamps(lamps.keys)
-                    logger.info("Connected to Philips Hue with ${lamps.size} lamps")
-                } else {
-                    logger.info("Philips Hue not configured. Use the web UI or API to configure connection.")
+        LampStateCache(hueService).use { lampStateCache ->
+            hueService.setCache(lampStateCache)
+            AutomationManager(config, hueService, lampStateCache).use { automationManager ->
+                runBlocking {
+                    val initialized = hueService.initialize()
+                    if (initialized) {
+                        lampStateCache.initialize()
+                        automationManager.setAutomatedLamps(lampStateCache.getLights().keys)
+                        lampStateCache.startRefreshing()
+                        logger.info("Connected to Philips Hue with ${lampStateCache.getLights().size} lamps")
+                    } else {
+                        logger.info("Philips Hue not configured. Use the web UI or API to configure connection.")
+                    }
                 }
-            }
 
-            embeddedServer(Netty, port = SERVER_PORT, host = "0.0.0.0") {
-                module(config, hueService, automationManager)
-            }.start(wait = true)
+                embeddedServer(Netty, port = SERVER_PORT, host = "0.0.0.0") {
+                    module(config, hueService, automationManager, lampStateCache)
+                }.start(wait = true)
+            }
         }
     }
 }
@@ -49,7 +53,8 @@ fun main() {
 fun Application.module(
     config: Config,
     hueService: HueService,
-    automationManager: AutomationManager
+    automationManager: AutomationManager,
+    lampStateCache: LampStateCache
 ) {
     install(ContentNegotiation) {
         json(Json {
@@ -74,9 +79,9 @@ fun Application.module(
 
     routing {
         // MCP routes must be before webRoutes (SPA) to avoid being caught by SPA
-        mcpRoutes(config, hueService, automationManager)
+        mcpRoutes(config, hueService, automationManager, lampStateCache)
         authRoutes(config)
-        apiRoutes(config, hueService, automationManager)
+        apiRoutes(config, hueService, automationManager, lampStateCache)
         // SPA catch-all must be last
         webRoutes()
     }

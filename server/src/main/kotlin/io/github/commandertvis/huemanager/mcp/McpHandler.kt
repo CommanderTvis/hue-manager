@@ -4,6 +4,7 @@ import io.github.commandertvis.huemanager.automation.AutomationManager
 import io.github.commandertvis.huemanager.automation.UserState
 import io.github.commandertvis.huemanager.hue.HueLightStateUpdate
 import io.github.commandertvis.huemanager.hue.HueService
+import io.github.commandertvis.huemanager.hue.LampStateCache
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
 import io.modelcontextprotocol.kotlin.sdk.types.*
@@ -15,7 +16,8 @@ import org.slf4j.LoggerFactory
  */
 class McpHandler(
     private val hueService: HueService,
-    private val automationManager: AutomationManager
+    private val automationManager: AutomationManager,
+    private val lampStateCache: LampStateCache
 ) {
     private companion object {
         private val logger = LoggerFactory.getLogger(McpHandler::class.java)
@@ -181,17 +183,17 @@ class McpHandler(
         // go_to_sleep
         server.addTool(
             name = "go_to_sleep",
-            description = "Trigger the 'I'm asleep!' action. This turns off all automated lamps.",
+            description = "Trigger the 'Lamps off' action. This clears all manual overrides and turns off all lamps. Use when going to sleep or leaving home.",
             inputSchema = ToolSchema()
         ) { _ ->
             executeGoToSleep()
         }
     }
 
-    private suspend fun readLampsResource(): ReadResourceResult {
+    private fun readLampsResource(): ReadResourceResult {
         return try {
-            val lights = hueService.getLights()
-            val entertainmentGroups = hueService.getEntertainmentGroups()
+            val lights = lampStateCache.getLights()
+            val entertainmentGroups = lampStateCache.getEntertainmentGroups()
             val entertainmentLamps = mutableSetOf<String>()
 
             for ((_, group) in entertainmentGroups) {
@@ -243,7 +245,7 @@ class McpHandler(
         }
     }
 
-    private suspend fun executeGetLampState(arguments: JsonObject?): CallToolResult {
+    private fun executeGetLampState(arguments: JsonObject?): CallToolResult {
         val lampId = arguments?.get("lamp_id")?.jsonPrimitive?.contentOrNull
             ?: return CallToolResult(
                 content = listOf(TextContent("Missing required parameter: lamp_id")),
@@ -251,13 +253,13 @@ class McpHandler(
             )
 
         return try {
-            val light = hueService.getLight(lampId)
+            val light = lampStateCache.getLight(lampId)
                 ?: return CallToolResult(
                     content = listOf(TextContent("Lamp not found: $lampId")),
                     isError = true
                 )
 
-            val entertainmentGroups = hueService.getEntertainmentGroups()
+            val entertainmentGroups = lampStateCache.getEntertainmentGroups()
             val isInEntertainment = entertainmentGroups.any { (_, group) ->
                 group.stream?.active == true && lampId in group.lights
             }
@@ -311,7 +313,7 @@ class McpHandler(
 
         return try {
             // Check if lamp is in entertainment mode
-            val entertainmentGroups = hueService.getEntertainmentGroups()
+            val entertainmentGroups = lampStateCache.getEntertainmentGroups()
             val isInEntertainment = entertainmentGroups.any { (_, group) ->
                 group.stream?.active == true && lampId in group.lights
             }
@@ -382,7 +384,7 @@ class McpHandler(
             val colorTemperature = arguments["color_temperature"]?.jsonPrimitive?.intOrNull
 
             // Add overrides for all lamps
-            val allLampIds = hueService.getLights().keys
+            val allLampIds = lampStateCache.getLights().keys
             allLampIds.forEach { automationManager.addLampOverride(it) }
 
             val state = HueLightStateUpdate(
@@ -442,7 +444,7 @@ class McpHandler(
         }
     }
 
-    private suspend fun executeGetAutomationStatus(): CallToolResult = try {
+    private fun executeGetAutomationStatus(): CallToolResult = try {
         val userState = automationManager.getUserState()
         val mode = automationManager.getCurrentAutomationMode()
         val color = automationManager.getAutomationColor()
@@ -506,7 +508,7 @@ class McpHandler(
             val state = automationManager.goToSleep()
             val stateStr = if (state == UserState.AWAKE) "AWAKE" else "ASLEEP"
             CallToolResult(
-                content = listOf(TextContent("Sleep triggered! User state is now: $stateStr. All automated lamps are turning off."))
+                content = listOf(TextContent("Lamps off triggered! User state is now: $stateStr. All manual overrides cleared and all lamps are turning off."))
             )
         } catch (e: Exception) {
             logger.error("Failed to trigger sleep", e)

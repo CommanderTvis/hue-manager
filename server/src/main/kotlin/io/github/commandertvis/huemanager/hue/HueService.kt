@@ -9,6 +9,13 @@ class HueService(config: Config) : AutoCloseable {
     // Remote API client (cloud connection via OAuth2)
     private var remoteClient: HueRemoteClient? = HueRemoteClient.fromConfig(config)
 
+    // Back-reference to cache for optimistic updates after writes
+    private var cache: LampStateCache? = null
+
+    fun setCache(cache: LampStateCache) {
+        this.cache = cache
+    }
+
     val isConnected: Boolean
         get() = remoteClient?.isConfigured == true
 
@@ -49,8 +56,11 @@ class HueService(config: Config) : AutoCloseable {
 
     suspend fun getLight(id: String): HueLight? = remoteClient?.getLight(id)
 
-    suspend fun setLightState(id: String, state: HueLightStateUpdate): Boolean =
-        remoteClient?.setLightState(id, state) ?: false
+    suspend fun setLightState(id: String, state: HueLightStateUpdate): Boolean {
+        val success = remoteClient?.setLightState(id, state) ?: false
+        if (success) cache?.updateLightState(id, state)
+        return success
+    }
 
     suspend fun setAllLightsState(state: HueLightStateUpdate): Boolean {
         val lights = getLights()
