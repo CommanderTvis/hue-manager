@@ -273,11 +273,15 @@ When Hue Sync entertainment areas are active:
 ```
 hue-manager/
 ├── server/src/main/kotlin/io/github/commandertvis/huemanager/
-│   ├── Application.kt       # Entry point + routes
-│   ├── auth/                # Session management
+│   ├── Application.kt       # Entry point, plugin setup
+│   ├── ApiRoutes.kt         # REST API route definitions
+│   ├── AuthRoutes.kt        # Authentication routes
+│   ├── McpRoutes.kt         # MCP SSE/OAuth route definitions
+│   ├── WebRoutes.kt         # SPA serving routes
+│   ├── Logging.kt           # Logging configuration
 │   ├── automation/          # Daylight automation
 │   ├── config/              # Environment configuration
-│   ├── hue/                 # Hue API clients (Remote + Local)
+│   ├── hue/                 # Hue API clients, cache, rate limiting
 │   └── mcp/                 # MCP server (McpHandler.kt)
 ├── shared/src/commonMain/kotlin/io/github/commandertvis/huemanager/
 │   ├── models/              # Data models
@@ -290,23 +294,29 @@ hue-manager/
 │   ├── ui/                  # UI screens
 │   ├── viewmodel/           # ViewModels
 │   ├── network/             # Server API client + rate limiting
-│   ├── auth/                # Session storage
-│   ├── storage/             # Server URL storage
-│   └── colorpicker/         # In-house HSV color picker (from colorpicker-compose)
-├── composeApp/src/{jvmMain,wasmJsMain}/  # Platform-specific implementations
+│   ├── auth/                # Session storage (AuthStorage)
+│   └── storage/             # Platform-specific persistent storage
+├── composeApp/src/{jvmMain,wasmJsMain,androidMain}/  # Platform-specific implementations
 ├── androidApp/              # Android entry point
 ├── gradle/libs.versions.toml  # Gradle version catalog
 ├── .env.example             # Environment configuration template
 ├── Dockerfile               # Multi-stage build for local docker compose
 ├── Dockerfile.runtime       # Runtime-only image for CI/CD (uses pre-built artifacts)
 ├── docker-compose.yml       # Docker deployment config (template)
+├── .github/workflows/docker-publish.yml  # CI/CD pipeline
 ├── Caddyfile.example        # Caddy reverse proxy config (HTTPS)
 ├── TASK.md                  # Human-written design document
+├── AGENTS.md                # Simplified context for AI sub-agents
 └── CLAUDE.md                # This file - AI memory/context
 ```
 
 ## Key Server Files
 
+- `server/.../Application.kt` - Entry point, Ktor plugin setup, service wiring
+- `server/.../ApiRoutes.kt` - REST API route definitions (lamps, groups, automation, settings, sync)
+- `server/.../AuthRoutes.kt` - Authentication routes (password verification, sessions)
+- `server/.../McpRoutes.kt` - MCP SSE transport, OAuth endpoints, `.well-known` metadata
+- `server/.../WebRoutes.kt` - SPA serving and static file routes
 - `server/.../config/Config.kt` - Configuration loading from .env
 - `server/.../hue/HueClient.kt` - HTTP client for local Hue REST API (legacy, kept for reference)
 - `server/.../hue/HueRemoteClient.kt` - HTTP client for Philips Hue Remote API (OAuth2)
@@ -332,8 +342,8 @@ hue-manager/
 
 - `composeApp/.../network/ApiClient.kt` - Multiplatform Ktor client with all API methods
 - `composeApp/.../network/RateLimiter.kt` - Client-side rate limiting
-- `composeApp/.../auth/AuthStorage.kt` - Persistent password storage with StateFlow
-- `composeApp/.../storage/ServerUrlStorage.kt` - Platform-specific server URL storage
+- `composeApp/.../auth/AuthStorage.kt` - Persistent password storage with StateFlow (delegates to PlatformStorage)
+- `composeApp/.../storage/PlatformStorage.kt` - Platform-specific persistent storage interface (server URL + password)
 - `composeApp/.../viewmodel/AuthViewModel.kt` - Login state management
 - `composeApp/.../viewmodel/LampsViewModel.kt` - Lamp state and control management
 - `composeApp/.../viewmodel/ServerConnectViewModel.kt` - Server URL validation
@@ -342,7 +352,7 @@ hue-manager/
 - `composeApp/.../ui/LampCard.kt` - Individual lamp card with toggle, brightness slider, RGB color picker with hex input
 - `composeApp/.../ui/ServerConnectScreen.kt` - Server URL input and validation
 - `composeApp/.../ui/PleaseAuthorizeScreen.kt` - OAuth2 authorization instructions
-- `composeApp/.../colorpicker/*.kt` - In-house HSV color picker implementation
+- `composeApp/.../ui/McpOAuthScreen.kt` - MCP OAuth password form (WASM-rendered)
 
 ## Production Deployment
 
@@ -430,6 +440,8 @@ The app implements Google Docs-style real-time synchronization across multiple c
 **February 2026:**
 - Added `LampStateCache` for in-memory lamp/group state with background refresh every 5s -- all read endpoints now return instantly from cache (55x reduction in Philips Cloud API calls)
 - Fixed lamp color display bug: `getLampColor()` now checks `colorMode` first instead of always using stale hue/saturation values when lamp is in CT mode
+- Added automatic discovery of new Hue lamps (cache detects new lamps on refresh)
+- Enabled Gradle parallel builds for faster compilation
 - Added lamp power state tracking (`LampPowerState`) to detect recently turned-on lamps
 - Implemented 5-second grace period to avoid false override detection after lamp power-on
 - Major refactoring of `AutomationManager`: extracted helper methods, grouped constants, improved code organization
