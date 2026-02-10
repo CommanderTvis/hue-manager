@@ -76,6 +76,7 @@ compose.desktop.application {
         targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
         packageName = "Hue Manager"
         packageVersion = "1.0.0"
+        modules("java.naming")
 
         macOS {
             bundleID = "io.github.commandertvis.huemanager"

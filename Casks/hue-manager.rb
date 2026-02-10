@@ -2,8 +2,11 @@ cask "hue-manager" do
   version "0.0.0-PLACEHOLDER"
   sha256 "PLACEHOLDER"
 
-  url "https://github.com/CommanderTvis/hue-manager/releases/download/nightly/hue-manager.dmg",
-      header: "Authorization: token #{ENV.fetch("HOMEBREW_GITHUB_API_TOKEN", "")}"
+  url "https://api.github.com/repos/CommanderTvis/hue-manager/releases/assets/ASSET_PLACEHOLDER",
+      header: [
+        "Authorization: token #{ENV.fetch("HOMEBREW_GITHUB_API_TOKEN", "")}",
+        "Accept: application/octet-stream",
+      ]
   name "Hue Manager"
   desc "Philips Hue lamp management desktop application"
   homepage "https://github.com/CommanderTvis/hue-manager"
