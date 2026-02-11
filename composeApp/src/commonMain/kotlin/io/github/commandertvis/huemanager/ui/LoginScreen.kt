@@ -1,5 +1,6 @@
 package io.github.commandertvis.huemanager.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -12,6 +13,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import io.github.commandertvis.huemanager.viewmodel.AuthUiState
 
@@ -20,6 +22,7 @@ fun LoginScreen(
     uiState: AuthUiState,
     onLogin: (String) -> Unit,
     onErrorDismiss: () -> Unit,
+    onChangeServer: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var password by remember { mutableStateOf("") }
@@ -103,6 +106,19 @@ fun LoginScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                     }
                     Text(if (uiState.isLoading) "Logging in..." else "Login")
+                }
+
+                if (onChangeServer != null) {
+                    Text(
+                        text = "Change server",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            textDecoration = TextDecoration.Underline
+                        ),
+                        modifier = Modifier
+                            .clickable(onClick = onChangeServer)
+                            .padding(4.dp)
+                    )
                 }
             }
         }
