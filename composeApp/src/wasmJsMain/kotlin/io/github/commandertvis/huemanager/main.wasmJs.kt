@@ -24,7 +24,7 @@ fun main() {
         if (oauthParams != null) {
             McpOAuthApp(oauthParams)
         } else {
-            App()
+            App(initialServerUrl = window.location.origin)
         }
     }
 }

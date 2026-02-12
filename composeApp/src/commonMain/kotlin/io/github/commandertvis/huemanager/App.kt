@@ -89,7 +89,8 @@ fun App(
                             LoginScreen(
                                 uiState = authUiState,
                                 onLogin = { password -> authViewModel.login(password) },
-                                onErrorDismiss = { authViewModel.clearError() }
+                                onErrorDismiss = { authViewModel.clearError() },
+                                onChangeServer = if (!platform.isWeb) {{ serverUrl = null }} else null
                             )
                         }
 
