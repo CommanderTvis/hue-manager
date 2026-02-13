@@ -82,9 +82,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Checkout repository
+      - name: Checkout master
         uses: actions/checkout@v4
         with:
+          ref: master
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update Cask formula
@@ -96,16 +97,11 @@ jobs:
           sed -i "s/sha256 \".*\"/sha256 \"$SHA256\"/" Casks/hue-manager.rb
           sed -i "s|releases/assets/[0-9A-Z_]*|releases/assets/$ASSET_ID|" Casks/hue-manager.rb
 
-      - name: Force-push Cask and workflows to master
+      - name: Commit and push updated Cask
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          cp -r Casks /tmp/Casks
-          cp -r .github /tmp/.github
-          git checkout --orphan new-master
-          git rm -rf .
-          cp -r /tmp/Casks .
-          cp -r /tmp/.github .
-          git add Casks/ .github/
+          git add Casks/hue-manager.rb
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
           git commit -m "Update Cask to ${{ needs.build-dmg.outputs.version }}"
-          git push --force origin new-master:master
+          git push origin master
