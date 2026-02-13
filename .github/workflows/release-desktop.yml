@@ -1,0 +1,107 @@
+name: Release Desktop App
+
+on:
+  push:
+    branches: [ "master" ]
+
+permissions:
+  contents: write
+
+jobs:
+  build-dmg:
+    runs-on: macos-latest
+    outputs:
+      dmg-sha256: ${{ steps.sha.outputs.sha256 }}
+      version: ${{ steps.version.outputs.version }}
+      asset-id: ${{ steps.asset.outputs.id }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compute version from commit
+        id: version
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "version=0.0.0-$SHORT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: Build DMG
+        run: ./gradlew :composeApp:packageDmg
+
+      - name: Find and rename DMG
+        id: dmg
+        run: |
+          DMG_PATH=$(find composeApp/build/compose/binaries/main/dmg -name "*.dmg" -type f | head -1)
+          cp "$DMG_PATH" hue-manager.dmg
+          echo "path=hue-manager.dmg" >> "$GITHUB_OUTPUT"
+
+      - name: Compute SHA256
+        id: sha
+        run: |
+          SHA=$(shasum -a 256 hue-manager.dmg | awk '{print $1}')
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Delete existing nightly release
+        run: gh release delete nightly --cleanup-tag --yes || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create nightly release
+        run: |
+          gh release create nightly hue-manager.dmg \
+            --title "Nightly" \
+            --notes "Built from $(git rev-parse --short HEAD) on $(date -u +%Y-%m-%d)" \
+            --prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get asset ID
+        id: asset
+        run: |
+          ASSET_ID=$(gh api repos/CommanderTvis/hue-manager/releases/tags/nightly --jq '.assets[0].id')
+          echo "id=$ASSET_ID" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-cask:
+    needs: build-dmg
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Cask formula
+        run: |
+          VERSION="${{ needs.build-dmg.outputs.version }}"
+          SHA256="${{ needs.build-dmg.outputs.dmg-sha256 }}"
+          ASSET_ID="${{ needs.build-dmg.outputs.asset-id }}"
+          sed -i "s/version \".*\"/version \"$VERSION\"/" Casks/hue-manager.rb
+          sed -i "s/sha256 \".*\"/sha256 \"$SHA256\"/" Casks/hue-manager.rb
+          sed -i "s|releases/assets/[0-9A-Z_]*|releases/assets/$ASSET_ID|" Casks/hue-manager.rb
+
+      - name: Commit and push updated Cask
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/hue-manager.rb
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "Update Cask to ${{ needs.build-dmg.outputs.version }}"
+          git push origin master
