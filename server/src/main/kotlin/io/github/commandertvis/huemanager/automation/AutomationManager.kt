@@ -113,6 +113,7 @@ class AutomationManager(
     fun getLocation(): GeoLocation = config.region
 
     fun getOverriddenLampIds(): List<String> {
+        cleanExpiredOverrides()
         val manualOverrides = lampOverrides.keys.toSet()
         val outOfSyncLamps = getOutOfSyncLamps()
         return (manualOverrides + outOfSyncLamps).toList()
@@ -134,7 +135,8 @@ class AutomationManager(
         val entertainmentLamps = getActiveEntertainmentLamps()
 
         for (lampId in automatedLampIds) {
-            if (lampOverrides.containsKey(lampId)) continue // Already tracked as manual override
+            val override = lampOverrides[lampId]
+            if (override != null && override.overrideUntil >= now) continue // Active manual override
 
             val light = lampStateCache.getLight(lampId) ?: continue
             val isReachable = light.state.reachable == true
@@ -445,6 +447,7 @@ class AutomationManager(
 
     suspend fun clearLampOverride(lampId: String) {
         lampOverrides.remove(lampId)
+        incrementSyncVersion()
         logger.info("Cleared override for lamp $lampId")
 
         // Immediately apply automation state to this lamp
@@ -531,6 +534,7 @@ class AutomationManager(
         val expired = lampOverrides.filter { it.value.overrideUntil < now }
         expired.keys.forEach { lampOverrides.remove(it) }
         if (expired.isNotEmpty()) {
+            incrementSyncVersion()
             logger.info("Cleaned ${expired.size} expired overrides")
         }
     }
