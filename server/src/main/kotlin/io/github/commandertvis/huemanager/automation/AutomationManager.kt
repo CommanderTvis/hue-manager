@@ -67,7 +67,7 @@ data class LampPowerState(
 
 private const val MAX_BRIGHTNESS = 254
 private const val MIN_BRIGHTNESS = 1
-private const val COOL_WHITE_CT = 153
+private const val WARM_WHITE_CT = 350
 private const val ORANGE_HUE = 5000
 private const val FULL_SATURATION = 254
 private const val BRIGHTNESS_TOLERANCE = 25
@@ -198,7 +198,7 @@ class AutomationManager(
                 }
             } else if (targetState.ct != null) {
                 // Target is using color temperature mode
-                val actualCt = actualState.ct ?: COOL_WHITE_CT
+                val actualCt = actualState.ct ?: WARM_WHITE_CT
                 if (kotlin.math.abs(actualCt - targetState.ct) > COLOR_TEMPERATURE_TOLERANCE) {
                     return false
                 }
@@ -259,20 +259,24 @@ class AutomationManager(
 
         return when (mode) {
             AutomationMode.AUTO_COMPENSATION -> {
-                // Calculate smooth brightness based on sun position
-                val brightness = calculateAutoCompensationBrightness(localTime, sunTimes)
-                val description = if (brightness >= MAX_BRIGHTNESS) "Bright white"
-                else if (brightness >= 100) "Dimmed white (${brightness * 100 / MAX_BRIGHTNESS}%)"
-                else if (brightness > 0) "Low white (${brightness * 100 / MAX_BRIGHTNESS}%)"
-                else "Off (bright daylight)"
-
-                LampColorInfo(
-                    hue = null,
-                    saturation = null,
-                    colorTemperature = if (brightness > 0) COOL_WHITE_CT else null, // Cool white (6500K)
-                    brightness = brightness,
-                    description = description
-                )
+                val sunIsUp = isSunUp(localTime, sunTimes)
+                if (sunIsUp) {
+                    LampColorInfo(
+                        hue = null,
+                        saturation = null,
+                        colorTemperature = null,
+                        brightness = 0,
+                        description = "Off (sun is up)"
+                    )
+                } else {
+                    LampColorInfo(
+                        hue = null,
+                        saturation = null,
+                        colorTemperature = WARM_WHITE_CT,
+                        brightness = MAX_BRIGHTNESS,
+                        description = "Warm white"
+                    )
+                }
             }
 
             AutomationMode.EVENING -> LampColorInfo(
@@ -302,43 +306,18 @@ class AutomationManager(
     }
 
     /**
-     * Calculate brightness for AUTO_COMPENSATION mode based on sun position.
-     * - Before sunrise: 100% brightness
-     * - Sunrise to solar noon: brightness decreases smoothly (100% -> 0%)
-     * - Solar noon to sunset: brightness increases smoothly (0% -> 100%)
-     * - After sunset: 100% brightness
+     * Check if the sun is currently up (between sunrise and sunset).
      */
-    private fun calculateAutoCompensationBrightness(
+    private fun isSunUp(
         currentTime: LocalTime,
         sunTimes: SunCalculator.SunTimes?
-    ): Int {
-        val resolvedSunTimes = sunTimes ?: return MAX_BRIGHTNESS
+    ): Boolean {
+        val resolvedSunTimes = sunTimes ?: return false
         val currentMinutes = minutesSinceMidnight(currentTime)
         val sunriseMinutes = minutesSinceMidnight(resolvedSunTimes.sunrise)
         val sunsetMinutes = minutesSinceMidnight(resolvedSunTimes.sunset)
 
-        // Before sunrise or after sunset: full brightness
-        if (currentMinutes < sunriseMinutes || currentMinutes > sunsetMinutes) {
-            return MAX_BRIGHTNESS
-        }
-
-        // Calculate sun position as a fraction (0 = sunrise, 0.5 = noon, 1 = sunset)
-        val daylightDuration = sunsetMinutes - sunriseMinutes
-        if (daylightDuration <= 0) return MAX_BRIGHTNESS
-
-        val minutesSinceSunrise = currentMinutes - sunriseMinutes
-        val sunPosition = minutesSinceSunrise.toDouble() / daylightDuration
-
-        // Convert sun position to brightness (inverted parabola)
-        // At sunrise (0) and sunset (1): brightness = 100%
-        // At solar noon (0.5): brightness = 0%
-        val sunIntensity = 1.0 - 4.0 * (sunPosition - 0.5) * (sunPosition - 0.5)
-
-        // Invert: when sun is brightest, lamp should be dimmest
-        val lampBrightness = 1.0 - sunIntensity
-
-        // Scale to 0-254 range
-        return (lampBrightness * MAX_BRIGHTNESS).toInt().coerceIn(0, MAX_BRIGHTNESS)
+        return currentMinutes in sunriseMinutes..sunsetMinutes
     }
 
     fun isEntertainmentActive(): Boolean {
@@ -589,12 +568,10 @@ class AutomationManager(
     ): HueLightStateUpdate {
         return when (calculateAutomationMode(currentTime, sunTimes)) {
             AutomationMode.AUTO_COMPENSATION -> {
-                // Smooth brightness based on sun position
-                val brightness = calculateAutoCompensationBrightness(currentTime, sunTimes)
-                if (brightness > 0) {
-                    HueLightStateUpdate(on = true, bri = brightness, ct = COOL_WHITE_CT)
-                } else {
+                if (isSunUp(currentTime, sunTimes)) {
                     HueLightStateUpdate(on = false)
+                } else {
+                    HueLightStateUpdate(on = true, bri = MAX_BRIGHTNESS, ct = WARM_WHITE_CT)
                 }
             }
 

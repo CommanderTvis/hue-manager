@@ -221,24 +221,22 @@ Philips Hue Remote API has rate limits:
 
 ## Daylight Simulation Logic
 
-The automation simulates natural daylight based on actual sunrise/sunset times calculated from the configured location (REGION in .env). Lamp brightness is inversely proportional to sunlight intensity - brighter outside means dimmer lamps.
+The automation uses sunrise/sunset times calculated from the configured location (REGION in .env). Simple on/off logic: lamps on when it's dark, off when the sun is up.
 
 **Daily Flow Example (Berlin, January):**
 ```
-06:00 - User presses "Lamps on", sun not risen yet → AUTO_COMPENSATION (100% brightness white)
-08:15 - Sunrise → brightness starts decreasing smoothly
-12:30 - Solar noon → brightness at minimum (0%, lamps off)
-12:30 - After noon → brightness starts increasing smoothly
-16:30 - Sunset → AUTO_COMPENSATION (100% brightness white)
+06:00 - User presses "Lamps on", sun not risen yet → AUTO_COMPENSATION (100% warm white)
+08:15 - Sunrise → lamps turn off
+16:30 - Sunset → lamps turn on (100% warm white)
 21:05 - Pseudo-sunset → EVENING (bright orange #FF5500, 100%)
 00:05 - Pseudo-sunset+3h → NIGHT (dim orange #FF5500, 1%)
 sleep_action: Turn off all automated lamps
 ```
 
 **Automation Modes:**
-- `AUTO_COMPENSATION` - Smooth brightness inversely proportional to sun position:
-  - Before sunrise / after sunset: 100% brightness (white)
-  - During daylight: parabolic curve from 100% at sunrise → 0% at solar noon → 100% at sunset
+- `AUTO_COMPENSATION` - Simple sun-based on/off:
+  - Sun is down (before sunrise / after sunset): 100% warm white (CT 350 / ~2850K)
+  - Sun is up (between sunrise and sunset): lamps off
 - `EVENING` - From pseudo-sunset to +3h: bright orange light (#FF5500, 100%)
 - `NIGHT` - After pseudo-sunset+3h until sunrise: dim orange light (#FF5500, 1%)
 - `USER_ASLEEP` - User pressed "Lamps off", lamps off
