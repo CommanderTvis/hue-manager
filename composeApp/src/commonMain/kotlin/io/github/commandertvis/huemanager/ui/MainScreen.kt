@@ -88,7 +88,7 @@ fun MainScreen(
                             // Automation mode display
                             if (uiState.automationMode.isNotEmpty()) {
                                 val modeDisplay = when (uiState.automationMode) {
-                                    "AUTO_COMPENSATION" -> "Auto-compensating"
+                                    "AUTO_COMPENSATION" -> "Daylight mode"
                                     "EVENING" -> "Evening light"
                                     "NIGHT" -> "Night mode"
                                     "USER_ASLEEP" -> "Lamps off"

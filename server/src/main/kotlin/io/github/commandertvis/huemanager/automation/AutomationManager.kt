@@ -21,7 +21,7 @@ enum class UserState {
 }
 
 enum class AutomationMode {
-    AUTO_COMPENSATION,  // Compensating for lack of daylight - brightness inversely proportional to sunlight
+    AUTO_COMPENSATION,  // Sun down = warm white on, sun up = off
     EVENING,            // Warm orange light (pseudo-sunset to pseudo-sunset+3h)
     NIGHT,              // Dim warm light (pseudo-sunset+3h until sleep)
     USER_ASLEEP         // User is asleep, lamps off
