@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeContentPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import io.github.commandertvis.huemanager.ui.HueManagerTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import io.github.commandertvis.huemanager.storage.platformStorage
@@ -29,7 +30,7 @@ fun McpOAuthApp(params: OAuthParams) {
         checkedStorage = true
     }
 
-    MaterialTheme {
+    HueManagerTheme {
         Surface(
             modifier = Modifier
                 .fillMaxSize()

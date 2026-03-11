@@ -12,6 +12,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import io.github.commandertvis.huemanager.ui.HueManagerTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -33,7 +34,7 @@ fun App(
     val storedUrl = remember { platformStorage.getServerUrl() }
     var serverUrl by remember { mutableStateOf(initialServerUrl ?: storedUrl) }
 
-    MaterialTheme {
+    HueManagerTheme {
         Surface(
             modifier = Modifier
                 .fillMaxSize()
