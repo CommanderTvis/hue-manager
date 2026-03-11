@@ -2,7 +2,7 @@ name: Release Desktop App
 
 on:
   push:
-    branches: [ "dev" ]
+    branches: [ "master" ]
 
 permissions:
   contents: write
@@ -82,10 +82,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Checkout master
+      - name: Checkout brew branch
         uses: actions/checkout@v4
         with:
-          ref: master
+          ref: brew
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update Cask formula
@@ -104,4 +104,4 @@ jobs:
           git add Casks/hue-manager.rb
           git diff --cached --quiet && echo "No changes to commit" && exit 0
           git commit -m "Update Cask to ${{ needs.build-dmg.outputs.version }}"
-          git push origin master
+          git push origin brew

@@ -111,7 +111,7 @@ docker compose up -d
 
 ### 5. Install the Desktop App (macOS)
 
-This repository is a private Homebrew tap. Nightly builds are published automatically on every push to master.
+This repository is a private Homebrew tap. Nightly builds are published automatically on every push to master. The cask formula lives on the `brew` branch.
 
 Prerequisites: [GitHub CLI](https://cli.github.com/) authenticated (`gh auth login`) and SSH access to this repository.
 
@@ -119,7 +119,7 @@ Prerequisites: [GitHub CLI](https://cli.github.com/) authenticated (`gh auth log
 # Auth for private repo downloads (add to ~/.zshrc)
 export HOMEBREW_GITHUB_API_TOKEN=$(gh auth token)
 
-brew tap commandertvis/hue-manager git@github.com:CommanderTvis/hue-manager.git
+brew tap commandertvis/hue-manager git@github.com:CommanderTvis/hue-manager.git --branch brew
 brew install --cask hue-manager
 
 # Upgrade to latest nightly
