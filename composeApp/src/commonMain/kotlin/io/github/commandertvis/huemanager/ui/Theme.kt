@@ -10,12 +10,7 @@ private val LightColorScheme = lightColorScheme()
 private val DarkColorScheme = darkColorScheme()
 
 @Composable
-fun HueManagerTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    content: @Composable () -> Unit
-) {
-    MaterialTheme(
-        colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme,
-        content = content
-    )
-}
+fun HueManagerTheme(content: @Composable () -> Unit) = MaterialTheme(
+    colorScheme = if (isSystemInDarkTheme()) DarkColorScheme else LightColorScheme,
+    content = content,
+)
