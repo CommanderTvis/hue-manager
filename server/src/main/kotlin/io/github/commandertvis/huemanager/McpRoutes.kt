@@ -13,9 +13,12 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.sse.*
 import io.modelcontextprotocol.kotlin.sdk.server.SseServerTransport
+import io.ktor.sse.ServerSentEvent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -334,7 +337,19 @@ fun Route.mcpRoutes(
             )
             try {
                 server.createSession(transport)
-                awaitCancellation()
+
+                // Send SSE comment keepalives to prevent proxy idle timeouts
+                val keepaliveJob = launch {
+                    while (true) {
+                        delay(30_000)
+                        send(ServerSentEvent(comments = "keepalive"))
+                    }
+                }
+                try {
+                    awaitCancellation()
+                } finally {
+                    keepaliveJob.cancel()
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

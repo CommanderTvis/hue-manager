@@ -1,6 +1,6 @@
 # Hue Manager - Project Memory
 
-> **Design Document:** See [TASK.md](TASK.md) for the human-written project design, motivation, and requirements specification.
+@TASK.md - project design, motivation, and requirements specification.
 
 ## Project Overview
 
@@ -16,14 +16,14 @@ A Philips Hue lamp management system with:
 
 ## Tech Stack
 
-- Kotlin 2.3.0
-- Ktor 3.3.3 (server + client)
-- Compose Multiplatform 1.10.0
-- kotlinx-serialization 1.9.0
+- Kotlin 2.3.10
+- Ktor 3.4.1 (server + client)
+- Compose Multiplatform 1.10.2
+- kotlinx-serialization 1.10.0
 - kotlinx-datetime 0.7.1-0.6.x-compat
 - kotlinx-coroutines 1.10.2
 - dotenv-kotlin 6.5.1
-- MCP Kotlin SDK 0.8.3
+- MCP Kotlin SDK 0.9.0
 - Gradle with version catalog
 
 **Build Configuration:**
@@ -152,7 +152,7 @@ The server exposes an MCP endpoint for integration with MCP clients via HTTP OAu
 - Requires password entry for authorization (OAuth page shows password form).
 
 **Implementation:**
-- Uses official MCP Kotlin SDK (`io.modelcontextprotocol:kotlin-sdk:0.8.3`)
+- Uses official MCP Kotlin SDK (`io.modelcontextprotocol:kotlin-sdk:0.9.0`)
 - SSE transport is wired manually via `SseServerTransport` for correct endpoint advertisement
 - SSE connection: `GET /mcp` (establishes connection, receives server messages)
 - Client messages: `POST /mcp` (sends client requests with `sessionId` parameter)
@@ -301,7 +301,8 @@ hue-manager/
 ├── Dockerfile               # Multi-stage build for local docker compose
 ├── Dockerfile.runtime       # Runtime-only image for CI/CD (uses pre-built artifacts)
 ├── docker-compose.yml       # Docker deployment config (template)
-├── .github/workflows/docker-publish.yml  # CI/CD pipeline
+├── .github/workflows/docker-publish.yml  # CI/CD pipeline (Docker image)
+├── .github/workflows/release-desktop.yml # CI/CD pipeline (DMG + Homebrew Cask)
 ├── Caddyfile.example        # Caddy reverse proxy config (HTTPS)
 ├── TASK.md                  # Human-written design document
 ├── AGENTS.md                # Simplified context for AI sub-agents
@@ -350,6 +351,7 @@ hue-manager/
 - `composeApp/.../ui/LampCard.kt` - Individual lamp card with toggle, brightness slider, RGB color picker with hex input
 - `composeApp/.../ui/ServerConnectScreen.kt` - Server URL input and validation
 - `composeApp/.../ui/PleaseAuthorizeScreen.kt` - OAuth2 authorization instructions
+- `composeApp/.../ui/Theme.kt` - Light/dark theme based on system preference
 - `composeApp/.../ui/McpOAuthScreen.kt` - MCP OAuth password form (WASM-rendered)
 
 ## Production Deployment
@@ -385,6 +387,18 @@ hue-manager/
 - Health checks for both services
 - Named volumes for Caddy data persistence
 
+## Desktop App Distribution
+
+The desktop (macOS) app is built as a DMG and published via GitHub Actions (`release-desktop.yml`):
+
+- On push to `master`, builds DMG, computes SHA256, uploads as "nightly" GitHub Release
+- Homebrew Cask formula lives on orphan `brew` branch (`Casks/hue-manager.rb`), auto-updated by CI
+- Install: `brew install --cask commandertvis/hue-manager/hue-manager`
+
+**Branch structure:**
+- `master` — main development branch (code + CI)
+- `brew` — orphan branch containing only the Homebrew Cask formula (auto-updated by CI)
+
 ## Real-time State Synchronization
 
 The app implements Google Docs-style real-time synchronization across multiple clients:
@@ -415,7 +429,7 @@ The app implements Google Docs-style real-time synchronization across multiple c
 
 **Main Screen:**
 - Lists all lamps with current state
-- Automation state display ("Auto-compensating", "Evening light") with target color indicator
+- Automation state display ("Daylight mode", "Evening light") with target color indicator
 - Per-lamp controls: on/off toggle, brightness slider, RGB color picker with hex input
 - Per-lamp loading state (controls gray out during API calls or pending from other clients)
 - Real-time sync - no manual refresh needed
@@ -434,6 +448,13 @@ The app implements Google Docs-style real-time synchronization across multiple c
 - Platform-specific URL opening for OAuth flow
 
 ## Recent Changes
+
+**March 2026:**
+- Added auto light/dark theme based on system preference (`HueManagerTheme` using `isSystemInDarkTheme()`)
+- Renamed UI label "Auto-compensating" → "Daylight mode"
+- Simplified auto-compensation logic: sun up = lamps off, sun down = warm white
+- Branch rename: `dev` → `master`, `master` → `brew` (orphan, Cask-only)
+- Updated dependencies: Kotlin 2.3.10, Ktor 3.4.1, Compose Multiplatform 1.10.2, kotlinx-serialization 1.10.0, MCP SDK 0.9.0
 
 **February 2026:**
 - Added `LampStateCache` for in-memory lamp/group state with background refresh every 5s -- all read endpoints now return instantly from cache (55x reduction in Philips Cloud API calls)

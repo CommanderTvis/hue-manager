@@ -13,7 +13,10 @@
 # Replace with your actual domain
 yourdomain.com {
     # Reverse proxy to hue-manager container
-    reverse_proxy hue-manager:8080
+    # flush_interval -1 disables response buffering, required for SSE (MCP)
+    reverse_proxy hue-manager:8080 {
+        flush_interval -1
+    }
 
     # Enable gzip compression
     encode gzip
