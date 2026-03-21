@@ -1,6 +1,5 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
-
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.androidKotlinMultiplatformLibrary)
@@ -67,6 +66,36 @@ kotlin {
             implementation(libs.logback)
         }
     }
+}
+
+val generateBuildInfo by tasks.registering {
+    val outputDir = layout.buildDirectory.dir("generated/buildinfo")
+    val rootDir = rootProject.layout.projectDirectory.asFile
+    outputs.dir(outputDir)
+
+    doLast {
+        val gitCommit = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
+            .directory(rootDir)
+            .redirectErrorStream(true)
+            .start()
+            .inputStream.bufferedReader().readText().trim()
+
+        val file = outputDir.get().file(
+            "io/github/commandertvis/huemanager/BuildInfo.kt"
+        ).asFile
+        file.parentFile.mkdirs()
+        file.writeText(
+            """
+            package io.github.commandertvis.huemanager
+
+            const val BUILD_COMMIT: String = "$gitCommit"
+            """.trimIndent() + "\n"
+        )
+    }
+}
+
+kotlin.sourceSets.commonMain {
+    kotlin.srcDir(generateBuildInfo.map { it.outputs.files.singleFile })
 }
 
 compose.desktop.application {

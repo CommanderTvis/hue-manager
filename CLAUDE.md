@@ -348,7 +348,7 @@ hue-manager/
 - `composeApp/.../viewmodel/ServerConnectViewModel.kt` - Server URL validation
 - `composeApp/.../ui/LoginScreen.kt` - Password input with error handling
 - `composeApp/.../ui/MainScreen.kt` - Full lamp control interface with automation state display
-- `composeApp/.../ui/LampCard.kt` - Individual lamp card with toggle, brightness slider, RGB color picker with hex input
+- `composeApp/.../ui/LampCard.kt` - Compact lamp card with colored left border, inline brightness slider, expandable color picker
 - `composeApp/.../ui/ServerConnectScreen.kt` - Server URL input and validation
 - `composeApp/.../ui/PleaseAuthorizeScreen.kt` - OAuth2 authorization instructions
 - `composeApp/.../ui/Theme.kt` - Light/dark theme based on system preference
@@ -428,14 +428,16 @@ The app implements Google Docs-style real-time synchronization across multiple c
 ## UI Features
 
 **Main Screen:**
-- Lists all lamps with current state
+- Compact lamp cards with colored left border indicating lamp color/state
+- Inline brightness slider in the same row as lamp name (no separate row)
 - Automation state display ("Daylight mode", "Evening light") with target color indicator
-- Per-lamp controls: on/off toggle, brightness slider, RGB color picker with hex input
+- Per-lamp controls: on/off toggle, inline brightness slider, expandable RGB color picker with hex input
 - Per-lamp loading state (controls gray out during API calls or pending from other clients)
 - Real-time sync - no manual refresh needed
 - "Clear override" button for manual overrides or out-of-sync lamps
-- "Lamps on/off" toggle button to control automation state (replaces "I woke up!"/"I'm asleep!" buttons)
+- Prominent "Lamps on/off" button (primary color for on, red for off) in status bar
 - "MCP" button for Claude integration setup
+- Build commit hash displayed in bottom-right corner (generated at build time via Gradle task)
 
 **Color Picker:**
 - In-house HSV implementation (based on colorpicker-compose, customized and trimmed)
@@ -450,6 +452,10 @@ The app implements Google Docs-style real-time synchronization across multiple c
 ## Recent Changes
 
 **March 2026:**
+- Redesigned lamp cards: compact layout with colored left border, inline brightness slider, reduced vertical spacing
+- Made "Lamps on/off" button prominent with color-coded styling (primary/red)
+- Added build commit hash display in bottom-right corner of main screen (generated via Gradle task at build time)
+- Added `BuildInfo.kt` generation in composeApp build (git short hash → `BUILD_COMMIT` constant)
 - Added auto light/dark theme based on system preference (`HueManagerTheme` using `isSystemInDarkTheme()`)
 - Renamed UI label "Auto-compensating" → "Daylight mode"
 - Simplified auto-compensation logic: sun up = lamps off, sun down = warm white

@@ -55,47 +55,46 @@ fun LampCard(
         }
     }
 
+    val borderColor = when {
+        !lamp.reachable -> Color.Gray
+        lamp.inEntertainment -> MaterialTheme.colorScheme.primary
+        lamp.on -> getLampColor(lamp)
+        else -> Color.DarkGray
+    }
+
     Card(
         modifier = modifier.fillMaxWidth()
     ) {
-        Column(
-            modifier = Modifier
-                .padding(16.dp)
-                .alpha(if (isLoading) 0.5f else 1f)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Status indicator (hide when in entertainment mode)
-                    if (!lamp.inEntertainment) {
-                        Box(
-                            modifier = Modifier
-                                .size(12.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    when {
-                                        !lamp.reachable -> Color.Gray
-                                        lamp.on -> getLampColor(lamp)
-                                        else -> Color.DarkGray
-                                    }
-                                )
-                        )
-                    }
+        Row(modifier = Modifier.fillMaxWidth()) {
+            // Colored left border
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .fillMaxHeight()
+                    .background(borderColor)
+            )
 
-                    Column {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .alpha(if (isLoading) 0.5f else 1f)
+            ) {
+                // Main row: name + status + brightness slider + controls
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Name and status
+                    Column(modifier = Modifier.width(100.dp)) {
                         Text(
                             text = lamp.name,
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
                             text = when {
-                                lamp.inEntertainment -> "Controlled by Hue Sync"
+                                lamp.inEntertainment -> "Hue Sync"
                                 !lamp.reachable -> "Unreachable"
                                 lamp.on -> "On (${((lamp.brightness ?: 254) * 100 / 254)}%)"
                                 else -> "Off"
@@ -104,159 +103,141 @@ fun LampCard(
                             color = if (lamp.inEntertainment) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (lamp.on && lamp.reachable && onColorChange != null && !lamp.inEntertainment) {
-                        IconButton(
-                            onClick = { isColorPickerExpanded = !isColorPickerExpanded },
+                    // Inline brightness slider (when lamp is on and not in entertainment)
+                    if (lamp.on && lamp.reachable && lamp.brightness != null && !lamp.inEntertainment) {
+                        Slider(
+                            value = sliderValue,
+                            onValueChange = { sliderValue = it },
+                            onValueChangeFinished = {
+                                onBrightnessChange(sliderValue.toInt())
+                            },
+                            valueRange = 1f..254f,
+                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                             enabled = !isLoading
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Palette,
-                                contentDescription = "Color Picker",
-                                tint = if (isColorPickerExpanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+
+                    // Controls: color picker + toggle
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (lamp.on && lamp.reachable && onColorChange != null && !lamp.inEntertainment) {
+                            IconButton(
+                                onClick = { isColorPickerExpanded = !isColorPickerExpanded },
+                                enabled = !isLoading,
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Palette,
+                                    contentDescription = "Color Picker",
+                                    tint = if (isColorPickerExpanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        // Hide toggle switch when in entertainment mode
+                        if (!lamp.inEntertainment) {
+                            Switch(
+                                checked = lamp.on,
+                                onCheckedChange = { onToggle() },
+                                enabled = lamp.reachable && !isLoading
                             )
                         }
                     }
-
-                    // Hide toggle switch when in entertainment mode
-                    if (!lamp.inEntertainment) {
-                        Switch(
-                            checked = lamp.on,
-                            onCheckedChange = { onToggle() },
-                            enabled = lamp.reachable && !isLoading
-                        )
-                    }
                 }
-            }
 
-            // Brightness slider (only show when lamp is on and reachable and not in entertainment mode)
-            if (lamp.on && lamp.reachable && lamp.brightness != null && !lamp.inEntertainment) {
-                Spacer(modifier = Modifier.height(12.dp))
+                // Color Picker (expandable, hide when in entertainment mode)
+                if (isColorPickerExpanded && onColorChange != null && lamp.on && lamp.reachable && !lamp.inEntertainment) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    HorizontalDivider()
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = "Brightness",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.width(72.dp)
-                    )
-
-                    Slider(
-                        value = sliderValue,
-                        onValueChange = { sliderValue = it },
-                        onValueChangeFinished = {
-                            onBrightnessChange(sliderValue.toInt())
-                        },
-                        valueRange = 1f..254f,
-                        modifier = Modifier.weight(1f),
-                        enabled = !isLoading
-                    )
-
-                    Text(
-                        text = "${(sliderValue * 100 / 254).toInt()}%",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.width(36.dp)
-                    )
-                }
-            }
-
-            // Color Picker (hide when in entertainment mode)
-            if (isColorPickerExpanded && onColorChange != null && lamp.on && lamp.reachable && !lamp.inEntertainment) {
-                Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider()
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text("Color Control", style = MaterialTheme.typography.titleSmall)
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth().height(200.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                        HsvColorPicker(
-                            modifier = Modifier.fillMaxSize(),
-                            controller = controller,
-                            onColorChanged = { envelope ->
-                                hexCode = envelope.hexCode.rgbHex
-
-                                // Apply color immediately when picker is used
-                                val color = envelope.color
-                                val (hue, sat) = rgbToHueApiValues(color.red, color.green, color.blue)
-                                onColorChange(hue, sat)
-                            }
-                        )
-                    }
-
-                    Column(
-                        modifier = Modifier.width(120.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                    Row(
+                        modifier = Modifier.fillMaxWidth().height(200.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        AlphaTile(
-                            modifier = Modifier
-                                .size(60.dp)
-                                .clip(RoundedCornerShape(8.dp)),
-                            controller = controller
-                        )
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                            HsvColorPicker(
+                                modifier = Modifier.fillMaxSize(),
+                                controller = controller,
+                                onColorChanged = { envelope ->
+                                    hexCode = envelope.hexCode.rgbHex
 
-                        OutlinedTextField(
-                            value = hexCode,
-                            onValueChange = { newValue ->
-                                // Only allow hex characters (0-9, a-f, A-F) and max 6 characters
-                                val filtered = newValue.filter { it.isHexChar() }.take(6)
-                                hexCode = filtered
-
-                                // If we have a valid 6-character hex, apply it immediately
-                                if (filtered.length == 6) {
-                                    try {
-                                        val (r, g, b) = hexToRgb(filtered)
-                                        controller.selectByColor(Color(r, g, b), true)
-                                    } catch (_: IllegalArgumentException) {
-                                        // Invalid hex, ignore
-                                    }
+                                    // Apply color immediately when picker is used
+                                    val color = envelope.color
+                                    val (hue, sat) = rgbToHueApiValues(color.red, color.green, color.blue)
+                                    onColorChange(hue, sat)
                                 }
-                            },
-                            label = { Text("Hex") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            textStyle = MaterialTheme.typography.bodySmall,
-                            placeholder = { Text("RRGGBB") },
-                            enabled = !isLoading
-                        )
+                            )
+                        }
+
+                        Column(
+                            modifier = Modifier.width(120.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            AlphaTile(
+                                modifier = Modifier
+                                    .size(60.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                controller = controller
+                            )
+
+                            OutlinedTextField(
+                                value = hexCode,
+                                onValueChange = { newValue ->
+                                    // Only allow hex characters (0-9, a-f, A-F) and max 6 characters
+                                    val filtered = newValue.filter { it.isHexChar() }.take(6)
+                                    hexCode = filtered
+
+                                    // If we have a valid 6-character hex, apply it immediately
+                                    if (filtered.length == 6) {
+                                        try {
+                                            val (r, g, b) = hexToRgb(filtered)
+                                            controller.selectByColor(Color(r, g, b), true)
+                                        } catch (_: IllegalArgumentException) {
+                                            // Invalid hex, ignore
+                                        }
+                                    }
+                                },
+                                label = { Text("Hex") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                textStyle = MaterialTheme.typography.bodySmall,
+                                placeholder = { Text("RRGGBB") },
+                                enabled = !isLoading
+                            )
+                        }
                     }
                 }
-            }
 
-            // Override indicator (hide when in entertainment mode or unreachable)
-            if (isOverridden && !lamp.inEntertainment && lamp.reachable) {
-                Spacer(modifier = Modifier.height(8.dp))
+                // Override indicator (hide when in entertainment mode or unreachable)
+                if (isOverridden && !lamp.inEntertainment && lamp.reachable) {
+                    Spacer(modifier = Modifier.height(4.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Manual override active",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-
-                    TextButton(
-                        onClick = {
-                            onClearOverride()
-                            isColorPickerExpanded = false
-                        },
-                        contentPadding = PaddingValues(horizontal = 8.dp),
-                        enabled = !isLoading && !lamp.inEntertainment
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Clear", style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            text = "Manual override active",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        TextButton(
+                            onClick = {
+                                onClearOverride()
+                                isColorPickerExpanded = false
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp),
+                            enabled = !isLoading && !lamp.inEntertainment
+                        ) {
+                            Text("Clear", style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
             }

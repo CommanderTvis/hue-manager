@@ -64,6 +64,8 @@ Should list all lamps of home and their current state.
 
 Also, we should see the state of the automation scheduler ("Daylight mode", "Evening light") and what color does it dictate to all the lamps (show also as a small colored circle)
 
+**Lamp card layout:** Compact single-row design with colored left border indicating lamp color/state. The brightness slider is inline with the lamp name, making cards shorter. Color picker expands below on demand. The colored left border provides a strong visual signal of each lamp's current color (orange for evening, warm white for daylight, gray for off/unreachable, accent color for Hue Sync).
+
 Provide controls to turn on/off individual lamps to change their brightness and color (there should be a RGB color picker and a hex text field, 6 symbols of length max, without ability to type invalid characters in it. e.g. "f" is fine, "z" is not).The color picker should have a preview square of the selected color which also has to react to changes in hex field, too. Changes to color should be immediate right as user clicks the picker or enter a valid color to text field. There should be no "Set" button or anything like that.
 
 Manual changes should be respected only for 1 hour unless a special control is pressed, then we are going back to automation. There should be a control to clear manual override. After clicking that control, the lamp should return to the state dictated by schedule immediately.
@@ -72,9 +74,11 @@ The controls of lamps for which something changes should gray out to avoid the m
 
 Unreachable lamps show a gray status indicator with controls disabled and brightness/color hidden.
 
-There should be "Lamps on" button that turns into "Lamps off"
+**"Lamps on/off" button:** Prominent, full-color button in the status bar. Uses primary color for "Lamps on" and error/red color for "Lamps off" to clearly indicate the action.
 
 The "Clear override" button should also appear when a lamp is detected as out-of-sync with automation (e.g. changed externally, via the official Hue app).
+
+**Version display:** The client's build commit hash is shown in the bottom-right corner of the main screen (small, low-opacity monospace text).
 
 ## Automation pipeline
 
