@@ -2,9 +2,7 @@ package io.github.commandertvis.huemanager.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import io.github.commandertvis.huemanager.api.AllLampsUpdateRequest
-import io.github.commandertvis.huemanager.api.AutomationColorInfo
-import io.github.commandertvis.huemanager.api.LampUpdateRequest
+import io.github.commandertvis.huemanager.api.*
 import io.github.commandertvis.huemanager.models.Lamp
 import io.github.commandertvis.huemanager.models.UserState
 import io.github.commandertvis.huemanager.network.ApiClient
@@ -23,10 +21,14 @@ data class LampsUiState(
     val error: String? = null,
     val overriddenLampIds: List<String> = emptyList(),
     val pseudoSunset: String = "21:05",
+    val nightTime: String = "00:05",
     val automationMode: String = "",
     val automationColor: AutomationColorInfo? = null,
     val pendingLampIds: Set<String> = emptySet(),
-    val syncVersion: Long = 0L
+    val syncVersion: Long = 0L,
+    val daylightColor: AutomationModeColorConfig = AutomationModeColorConfig(colorTemperature = 350, brightness = 254),
+    val eveningColor: AutomationModeColorConfig = AutomationModeColorConfig(hue = 5000, saturation = 254, brightness = 254),
+    val nightColor: AutomationModeColorConfig = AutomationModeColorConfig(hue = 5000, saturation = 254, brightness = 1),
 )
 
 class LampsViewModel(
@@ -130,12 +132,16 @@ class LampsViewModel(
                 onFailure = { /* ignore */ }
             )
 
-            // Also fetch automation status for pseudoSunset
-            val automationResult = apiClient.getAutomationStatus()
-            automationResult.fold(
+            // Fetch settings (pseudo-sunset + mode colors)
+            val settingsResult = apiClient.getSettings()
+            settingsResult.fold(
                 onSuccess = { response ->
                     _uiState.value = _uiState.value.copy(
-                        pseudoSunset = response.pseudoSunset
+                        pseudoSunset = response.pseudoSunset,
+                        nightTime = response.nightTime,
+                        daylightColor = response.daylightColor,
+                        eveningColor = response.eveningColor,
+                        nightColor = response.nightColor,
                     )
                 },
                 onFailure = { /* ignore */ }
@@ -366,6 +372,40 @@ class LampsViewModel(
                         error = e.message,
                         pendingLampIds = _uiState.value.pendingLampIds - lampId
                     )
+                }
+            )
+        }
+    }
+
+    fun updateSchedulerSettings(
+        pseudoSunset: String,
+        nightTime: String,
+        daylightColor: AutomationModeColorConfig,
+        eveningColor: AutomationModeColorConfig,
+        nightColor: AutomationModeColorConfig,
+    ) {
+        viewModelScope.launch {
+            val result = apiClient.updateSettings(
+                SettingsUpdateRequest(
+                    pseudoSunset = pseudoSunset,
+                    nightTime = nightTime,
+                    daylightColor = daylightColor,
+                    eveningColor = eveningColor,
+                    nightColor = nightColor,
+                )
+            )
+            result.fold(
+                onSuccess = {
+                    _uiState.value = _uiState.value.copy(
+                        pseudoSunset = pseudoSunset,
+                        nightTime = nightTime,
+                        daylightColor = daylightColor,
+                        eveningColor = eveningColor,
+                        nightColor = nightColor,
+                    )
+                },
+                onFailure = { e ->
+                    _uiState.value = _uiState.value.copy(error = e.message)
                 }
             )
         }

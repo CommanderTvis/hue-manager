@@ -475,7 +475,7 @@ class McpHandler(
             automationManager.getWakeUpTime()?.let {
                 append("\nWake-up Time: $it\n")
             }
-            append("Pseudo-sunset: ${automationManager.getPseudoSunset()}\n")
+            append("Evening time: ${automationManager.getPseudoSunset()}\n")
         }
 
         CallToolResult(content = listOf(TextContent(info)))

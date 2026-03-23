@@ -96,7 +96,10 @@ fun LampCard(
                             text = when {
                                 lamp.inEntertainment -> "Hue Sync"
                                 !lamp.reachable -> "Unreachable"
-                                lamp.on -> "On (${((lamp.brightness ?: 254) * 100 / 254)}%)"
+                                lamp.on -> {
+                                    val pct = (lamp.brightness ?: 254) * 100 / 254
+                                    if (pct == 0) "Off" else "On ($pct%)"
+                                }
                                 else -> "Off"
                             },
                             style = MaterialTheme.typography.bodySmall,
@@ -203,6 +206,7 @@ fun LampCard(
                                     }
                                 },
                                 label = { Text("Hex") },
+                                prefix = { Text("#") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
                                 textStyle = MaterialTheme.typography.bodySmall,

@@ -34,6 +34,7 @@ fun MainScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
     var showMcpDialog by remember { mutableStateOf(false) }
+    var showSchedulerDialog by remember { mutableStateOf(false) }
 
     // Show error in snackbar
     LaunchedEffect(uiState.error) {
@@ -48,6 +49,9 @@ fun MainScreen(
             TopAppBar(
                 title = { Text("Hue Manager") },
                 actions = {
+                    TextButton(onClick = { showSchedulerDialog = true }) {
+                        Text("Schedule")
+                    }
                     TextButton(onClick = { showMcpDialog = true }) {
                         Text("MCP")
                     }
@@ -128,7 +132,7 @@ fun MainScreen(
                             }
 
                             Text(
-                                text = "Evening light: ${uiState.pseudoSunset}",
+                                text = "Evening time: ${uiState.pseudoSunset}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -273,6 +277,29 @@ fun MainScreen(
                 }) {
                     Text("Close")
                 }
+            }
+        )
+    }
+
+    if (showSchedulerDialog) {
+        SchedulerEditorDialog(
+            currentSettings = SchedulerSettings(
+                pseudoSunset = uiState.pseudoSunset,
+                nightTime = uiState.nightTime,
+                daylightColor = uiState.daylightColor,
+                eveningColor = uiState.eveningColor,
+                nightColor = uiState.nightColor,
+            ),
+            onDismiss = { showSchedulerDialog = false },
+            onSave = { settings ->
+                lampsViewModel.updateSchedulerSettings(
+                    pseudoSunset = settings.pseudoSunset,
+                    nightTime = settings.nightTime,
+                    daylightColor = settings.daylightColor,
+                    eveningColor = settings.eveningColor,
+                    nightColor = settings.nightColor,
+                )
+                showSchedulerDialog = false
             }
         )
     }

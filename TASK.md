@@ -80,6 +80,16 @@ The "Clear override" button should also appear when a lamp is detected as out-of
 
 **Version display:** The client's build commit hash is shown in the bottom-right corner of the main screen (small, low-opacity monospace text).
 
+**Scheduler editor popup:** Accessible from the main screen (e.g. a "Schedule" or gear button near the automation status). Opens a popup/dialog where the user can configure:
+
+- **Pseudo-sunset time** — when "Evening light" begins (e.g. 21:05). Time picker or text input.
+- **Automation state colors and brightness:**
+  - *Daylight* (sun down, before pseudo-sunset) — color and brightness (default: warm white 100%)
+  - *Evening* (pseudo-sunset to +3h) — color and brightness (default: #FF5500 100%)
+  - *Night* (pseudo-sunset +3h until sunrise) — color and brightness (default: #FF5500 1%)
+
+Changes are saved via `PUT /api/settings` and take effect immediately on the automation. The popup should use the same color picker and hex input as lamp cards.
+
 ## Automation pipeline
 
 Instead of dumb manual scheduling that is offered by Philips Hue, there also should be kind of a perfect daylight emulator.

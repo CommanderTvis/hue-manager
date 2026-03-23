@@ -75,21 +75,38 @@ data class AutomationColorInfo(
     val description: String,
 )
 
+// Automation mode color/brightness configuration
+@Serializable
+data class AutomationModeColorConfig(
+    val hue: Int? = null,
+    val saturation: Int? = null,
+    val colorTemperature: Int? = null,
+    val brightness: Int,
+)
+
 // Settings endpoints
 @Serializable
 data class SettingsResponse(
     val pseudoSunset: String,
+    val nightTime: String,
     val latitude: Double,
     val longitude: Double,
     val automatedLampIds: List<String>,
+    val daylightColor: AutomationModeColorConfig,
+    val eveningColor: AutomationModeColorConfig,
+    val nightColor: AutomationModeColorConfig,
 )
 
 @Serializable
 data class SettingsUpdateRequest(
     val pseudoSunset: String? = null,
+    val nightTime: String? = null,
     val latitude: Double? = null,
     val longitude: Double? = null,
     val automatedLampIds: List<String>? = null,
+    val daylightColor: AutomationModeColorConfig? = null,
+    val eveningColor: AutomationModeColorConfig? = null,
+    val nightColor: AutomationModeColorConfig? = null,
 )
 
 // Bridge linking

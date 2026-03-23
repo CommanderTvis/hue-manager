@@ -100,6 +100,7 @@ kotlin.sourceSets.commonMain {
 
 compose.desktop.application {
     mainClass = "io.github.commandertvis.huemanager.MainKt"
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
 
     nativeDistributions {
         targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)

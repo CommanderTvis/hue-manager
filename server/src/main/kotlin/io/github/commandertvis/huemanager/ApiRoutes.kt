@@ -427,12 +427,28 @@ fun Route.apiRoutes(
     // Settings
     get("/api/settings") {
         val location = automationManager.getLocation()
+        val daylight = automationManager.getDaylightColor()
+        val evening = automationManager.getEveningColor()
+        val night = automationManager.getNightColor()
         call.respond(
             SettingsResponse(
                 pseudoSunset = automationManager.getPseudoSunset().toString(),
+                nightTime = automationManager.getNightTime().toString(),
                 latitude = location.latitude,
                 longitude = location.longitude,
-                automatedLampIds = automationManager.getAutomatedLampIds().toList()
+                automatedLampIds = automationManager.getAutomatedLampIds().toList(),
+                daylightColor = AutomationModeColorConfig(
+                    hue = daylight.hue, saturation = daylight.saturation,
+                    colorTemperature = daylight.colorTemperature, brightness = daylight.brightness
+                ),
+                eveningColor = AutomationModeColorConfig(
+                    hue = evening.hue, saturation = evening.saturation,
+                    colorTemperature = evening.colorTemperature, brightness = evening.brightness
+                ),
+                nightColor = AutomationModeColorConfig(
+                    hue = night.hue, saturation = night.saturation,
+                    colorTemperature = night.colorTemperature, brightness = night.brightness
+                ),
             )
         )
     }
@@ -443,7 +459,32 @@ fun Route.apiRoutes(
         val request = call.receive<SettingsUpdateRequest>()
 
         request.pseudoSunset?.let { automationManager.setPseudoSunset(it) }
+        request.nightTime?.let { automationManager.setNightTime(it) }
         request.automatedLampIds?.let { automationManager.setAutomatedLamps(it.toSet()) }
+        request.daylightColor?.let {
+            automationManager.setDaylightColor(
+                io.github.commandertvis.huemanager.automation.ModeColorConfig(
+                    hue = it.hue, saturation = it.saturation,
+                    colorTemperature = it.colorTemperature, brightness = it.brightness
+                )
+            )
+        }
+        request.eveningColor?.let {
+            automationManager.setEveningColor(
+                io.github.commandertvis.huemanager.automation.ModeColorConfig(
+                    hue = it.hue, saturation = it.saturation,
+                    colorTemperature = it.colorTemperature, brightness = it.brightness
+                )
+            )
+        }
+        request.nightColor?.let {
+            automationManager.setNightColor(
+                io.github.commandertvis.huemanager.automation.ModeColorConfig(
+                    hue = it.hue, saturation = it.saturation,
+                    colorTemperature = it.colorTemperature, brightness = it.brightness
+                )
+            )
+        }
 
         call.respond(ApiSuccess("Settings updated"))
     }

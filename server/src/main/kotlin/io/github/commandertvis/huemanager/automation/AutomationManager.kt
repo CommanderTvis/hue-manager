@@ -65,17 +65,26 @@ data class LampPowerState(
     val lastOnAt: Instant?
 )
 
-private const val MAX_BRIGHTNESS = 254
-private const val MIN_BRIGHTNESS = 1
-private const val WARM_WHITE_CT = 350
-private const val ORANGE_HUE = 5000
-private const val FULL_SATURATION = 254
 private const val BRIGHTNESS_TOLERANCE = 25
 private const val HUE_TOLERANCE = 3000
 private const val SATURATION_TOLERANCE = 25
 private const val COLOR_TEMPERATURE_TOLERANCE = 30
 private const val DEFAULT_SUNRISE_MINUTES = 6 * 60
 private const val PSEUDO_SUNSET_WINDOW_HOURS = 3
+
+// Default automation color configs
+private const val DEFAULT_MAX_BRIGHTNESS = 254
+private const val DEFAULT_MIN_BRIGHTNESS = 1
+private const val DEFAULT_WARM_WHITE_CT = 350
+private const val DEFAULT_ORANGE_HUE = 5000
+private const val DEFAULT_FULL_SATURATION = 254
+
+data class ModeColorConfig(
+    val hue: Int? = null,
+    val saturation: Int? = null,
+    val colorTemperature: Int? = null,
+    val brightness: Int,
+)
 
 class AutomationManager(
     private val config: Config,
@@ -93,6 +102,18 @@ class AutomationManager(
     private val lampOverrides = mutableMapOf<String, LampOverride>()
     private val automatedLampIds = mutableSetOf<String>()
     private var pseudoSunset: LocalTime = parsePseudoSunset(config.pseudoSunset)
+    private var nightTime: LocalTime = defaultNightTime(pseudoSunset)
+
+    // Configurable automation mode colors
+    private var daylightColor = ModeColorConfig(
+        colorTemperature = DEFAULT_WARM_WHITE_CT, brightness = DEFAULT_MAX_BRIGHTNESS
+    )
+    private var eveningColor = ModeColorConfig(
+        hue = DEFAULT_ORANGE_HUE, saturation = DEFAULT_FULL_SATURATION, brightness = DEFAULT_MAX_BRIGHTNESS
+    )
+    private var nightColor = ModeColorConfig(
+        hue = DEFAULT_ORANGE_HUE, saturation = DEFAULT_FULL_SATURATION, brightness = DEFAULT_MIN_BRIGHTNESS
+    )
 
     // Pending operations for real-time sync across clients
     private val pendingOperations = mutableMapOf<String, PendingOperation>()
@@ -110,6 +131,7 @@ class AutomationManager(
     fun getUserState(): UserState = userState
     fun getWakeUpTime(): Instant? = wakeUpTime
     fun getPseudoSunset(): LocalTime = pseudoSunset
+    fun getNightTime(): LocalTime = nightTime
     fun getLocation(): GeoLocation = config.region
 
     fun getOverriddenLampIds(): List<String> {
@@ -120,6 +142,25 @@ class AutomationManager(
     }
 
     fun getAutomatedLampIds(): Set<String> = automatedLampIds.toSet()
+
+    fun getDaylightColor(): ModeColorConfig = daylightColor
+    fun getEveningColor(): ModeColorConfig = eveningColor
+    fun getNightColor(): ModeColorConfig = nightColor
+
+    fun setDaylightColor(config: ModeColorConfig) {
+        daylightColor = config
+        logger.info("Set daylight color to $config")
+    }
+
+    fun setEveningColor(config: ModeColorConfig) {
+        eveningColor = config
+        logger.info("Set evening color to $config")
+    }
+
+    fun setNightColor(config: ModeColorConfig) {
+        nightColor = config
+        logger.info("Set night color to $config")
+    }
 
     private fun getOutOfSyncLamps(): Set<String> {
         val now = Clock.System.now()
@@ -179,7 +220,7 @@ class AutomationManager(
         if (actualState.on) {
             // Check brightness (allow 10% tolerance)
             if (targetState.bri != null) {
-                val actualBri = actualState.bri ?: MAX_BRIGHTNESS
+                val actualBri = actualState.bri ?: DEFAULT_MAX_BRIGHTNESS
                 if (kotlin.math.abs(actualBri - targetState.bri) > BRIGHTNESS_TOLERANCE) {
                     return false
                 }
@@ -198,7 +239,7 @@ class AutomationManager(
                 }
             } else if (targetState.ct != null) {
                 // Target is using color temperature mode
-                val actualCt = actualState.ct ?: WARM_WHITE_CT
+                val actualCt = actualState.ct ?: DEFAULT_WARM_WHITE_CT
                 if (kotlin.math.abs(actualCt - targetState.ct) > COLOR_TEMPERATURE_TOLERANCE) {
                     return false
                 }
@@ -225,23 +266,19 @@ class AutomationManager(
 
         val currentMinutes = minutesSinceMidnight(currentTime)
         val pseudoSunsetMinutes = minutesSinceMidnight(pseudoSunset)
-        val pseudoSunsetEnd = LocalTime(
-            (pseudoSunset.hour + PSEUDO_SUNSET_WINDOW_HOURS) % 24,
-            pseudoSunset.minute
-        )
-        val pseudoSunsetEndMinutes = minutesSinceMidnight(pseudoSunsetEnd)
+        val nightTimeMinutes = minutesSinceMidnight(nightTime)
         val sunriseMinutes = sunTimes?.sunrise?.let { minutesSinceMidnight(it) } ?: DEFAULT_SUNRISE_MINUTES
 
-        val isEvening = isWithinRange(currentMinutes, pseudoSunsetMinutes, pseudoSunsetEndMinutes)
+        val isEvening = isWithinRange(currentMinutes, pseudoSunsetMinutes, nightTimeMinutes)
         if (isEvening) {
             return AutomationMode.EVENING
         }
 
-        val crossesMidnight = pseudoSunsetEndMinutes < pseudoSunsetMinutes
+        val crossesMidnight = nightTimeMinutes < pseudoSunsetMinutes
         val isNight = if (crossesMidnight) {
-            currentMinutes in pseudoSunsetEndMinutes until sunriseMinutes
+            currentMinutes in nightTimeMinutes until sunriseMinutes
         } else {
-            currentMinutes >= pseudoSunsetEndMinutes || currentMinutes < sunriseMinutes
+            currentMinutes >= nightTimeMinutes || currentMinutes < sunriseMinutes
         }
 
         if (isNight) {
@@ -270,28 +307,28 @@ class AutomationManager(
                     )
                 } else {
                     LampColorInfo(
-                        hue = null,
-                        saturation = null,
-                        colorTemperature = WARM_WHITE_CT,
-                        brightness = MAX_BRIGHTNESS,
+                        hue = daylightColor.hue,
+                        saturation = daylightColor.saturation,
+                        colorTemperature = daylightColor.colorTemperature,
+                        brightness = daylightColor.brightness,
                         description = "Warm white"
                     )
                 }
             }
 
             AutomationMode.EVENING -> LampColorInfo(
-                hue = ORANGE_HUE,
-                saturation = FULL_SATURATION,
-                colorTemperature = null,
-                brightness = MAX_BRIGHTNESS,
+                hue = eveningColor.hue,
+                saturation = eveningColor.saturation,
+                colorTemperature = eveningColor.colorTemperature,
+                brightness = eveningColor.brightness,
                 description = "Bright orange"
             )
 
             AutomationMode.NIGHT -> LampColorInfo(
-                hue = ORANGE_HUE,
-                saturation = FULL_SATURATION,
-                colorTemperature = null,
-                brightness = MIN_BRIGHTNESS,
+                hue = nightColor.hue,
+                saturation = nightColor.saturation,
+                colorTemperature = nightColor.colorTemperature,
+                brightness = nightColor.brightness,
                 description = "Dim orange"
             )
 
@@ -468,6 +505,16 @@ class AutomationManager(
         logger.info("Set pseudo sunset to $pseudoSunset")
     }
 
+    fun setNightTime(time: LocalTime) {
+        nightTime = time
+        logger.info("Set night time to $time")
+    }
+
+    fun setNightTime(timeStr: String) {
+        nightTime = parsePseudoSunset(timeStr)
+        logger.info("Set night time to $nightTime")
+    }
+
     private fun startHeartbeat() {
         stopHeartbeat()
         heartbeatJob = scope.launch {
@@ -562,6 +609,16 @@ class AutomationManager(
         }
     }
 
+    private fun modeColorToLightState(config: ModeColorConfig): HueLightStateUpdate {
+        return HueLightStateUpdate(
+            on = true,
+            bri = config.brightness,
+            hue = config.hue,
+            sat = config.saturation,
+            ct = config.colorTemperature
+        )
+    }
+
     private fun calculateDesiredState(
         currentTime: LocalTime,
         sunTimes: SunCalculator.SunTimes?
@@ -571,34 +628,13 @@ class AutomationManager(
                 if (isSunUp(currentTime, sunTimes)) {
                     HueLightStateUpdate(on = false)
                 } else {
-                    HueLightStateUpdate(on = true, bri = MAX_BRIGHTNESS, ct = WARM_WHITE_CT)
+                    modeColorToLightState(daylightColor)
                 }
             }
 
-            AutomationMode.EVENING -> {
-                // Bright orange (pseudo-sunset to pseudo-sunset+3h)
-                HueLightStateUpdate(
-                    on = true,
-                    bri = MAX_BRIGHTNESS,
-                    hue = ORANGE_HUE,
-                    sat = FULL_SATURATION
-                )
-            }
-
-            AutomationMode.NIGHT -> {
-                // Dim orange (after pseudo-sunset+3h)
-                HueLightStateUpdate(
-                    on = true,
-                    bri = MIN_BRIGHTNESS,
-                    hue = ORANGE_HUE,
-                    sat = FULL_SATURATION
-                )
-            }
-
-            AutomationMode.USER_ASLEEP -> {
-                // Off when user is asleep
-                HueLightStateUpdate(on = false)
-            }
+            AutomationMode.EVENING -> modeColorToLightState(eveningColor)
+            AutomationMode.NIGHT -> modeColorToLightState(nightColor)
+            AutomationMode.USER_ASLEEP -> HueLightStateUpdate(on = false)
         }
     }
 
@@ -645,6 +681,10 @@ class AutomationManager(
         } catch (e: Exception) {
             LocalTime(21, 5) // Default: 21:05
         }
+    }
+
+    private fun defaultNightTime(eveningTime: LocalTime): LocalTime {
+        return LocalTime((eveningTime.hour + PSEUDO_SUNSET_WINDOW_HOURS) % 24, eveningTime.minute)
     }
 
     override fun close() = scope.cancel()
