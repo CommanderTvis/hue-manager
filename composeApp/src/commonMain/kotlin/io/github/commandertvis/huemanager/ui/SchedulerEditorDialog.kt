@@ -1,10 +1,9 @@
 package io.github.commandertvis.huemanager.ui
 
-import androidx.compose.foundation.VerticalScrollbar
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -166,8 +165,8 @@ fun SchedulerEditorDialog(
                     onConfigChange = { nightConfig = it }
                 )
             }
-                VerticalScrollbar(
-                    adapter = rememberScrollbarAdapter(scrollState),
+                VerticalScrollbarCompat(
+                    scrollState = scrollState,
                     modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight()
                 )
             }
