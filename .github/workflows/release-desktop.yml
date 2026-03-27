@@ -77,6 +77,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Send APK to Telegram
+        run: |
+          curl -s -F chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -F document=@hue-manager-release.apk \
+            -F caption="Nightly $(git rev-parse --short HEAD) — $(date -u +%Y-%m-%d)" \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument"
+
       - name: Get DMG asset ID
         id: asset
         run: |
