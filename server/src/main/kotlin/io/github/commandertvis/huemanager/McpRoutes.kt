@@ -301,25 +301,27 @@ fun Route.mcpRoutes(
 
     // Main MCP endpoint - handles SSE connections with OAuth tokens
     route(MCP_ENDPOINT) {
-        // Intercept to check OAuth token before SSE handler runs
-        intercept(ApplicationCallPipeline.Plugins) {
-            val path = call.request.path()
-            // Skip auth for OAuth sub-paths
-            if (path.startsWith("$MCP_ENDPOINT/register") ||
-                path.startsWith("$MCP_ENDPOINT/authorize") ||
-                path.startsWith("$MCP_ENDPOINT/token")
-            ) {
-                return@intercept
-            }
+        install(
+            createRouteScopedPlugin("McpOAuthCheck") {
+                onCall { call ->
+                    val path = call.request.path()
+                    // Skip auth for OAuth sub-paths
+                    if (path.startsWith("$MCP_ENDPOINT/register") ||
+                        path.startsWith("$MCP_ENDPOINT/authorize") ||
+                        path.startsWith("$MCP_ENDPOINT/token")
+                    ) {
+                        return@onCall
+                    }
 
-            if (call.request.httpMethod == HttpMethod.Get) {
-                // Check for valid OAuth access token
-                if (!call.checkMcpAccessToken(mcpAccessTokens)) {
-                    call.respondMcpUnauthorized()
-                    finish()
+                    if (call.request.httpMethod == HttpMethod.Get) {
+                        // Check for valid OAuth access token
+                        if (!call.checkMcpAccessToken(mcpAccessTokens)) {
+                            call.respondMcpUnauthorized()
+                        }
+                    }
                 }
             }
-        }
+        )
 
         sse {
             val transport = SseServerTransport(MCP_ENDPOINT, this)
