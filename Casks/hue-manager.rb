@@ -1,8 +1,8 @@
 cask "hue-manager" do
-  version "2026.03.27-6d6e3b2"
-  sha256 "c1c95fbed880dc437f3122348b7f0e273e411bf04c5815d3c6ae97c4739dc43d"
+  version "2026.03.27-c995eb0"
+  sha256 "401f17e33afeac8734f99c81ac0171c606be3247dc07c4de01638c6b65effd46"
 
-  url "https://api.github.com/repos/CommanderTvis/hue-manager/releases/assets/383071616",
+  url "https://api.github.com/repos/CommanderTvis/hue-manager/releases/assets/383162443",
       header: [
         "Authorization: token #{ENV.fetch("HOMEBREW_GITHUB_API_TOKEN", "")}",
         "Accept: application/octet-stream",
