@@ -7,7 +7,7 @@ plugins {
 }
 
 android {
-    namespace = "io.github.commandertvis.huemanager"
+    namespace = "io.github.commandertvis.huemanager.app"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {
