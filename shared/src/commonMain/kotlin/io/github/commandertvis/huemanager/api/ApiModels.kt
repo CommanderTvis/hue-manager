@@ -91,10 +91,11 @@ data class SettingsResponse(
     val nightTime: String,
     val latitude: Double,
     val longitude: Double,
-    val automatedLampIds: List<String>,
+    val excludedLampIds: List<String>,
     val daylightColor: AutomationModeColorConfig,
     val eveningColor: AutomationModeColorConfig,
     val nightColor: AutomationModeColorConfig,
+    val toggleButtonSensorId: String? = null,
 )
 
 @Serializable
@@ -103,10 +104,31 @@ data class SettingsUpdateRequest(
     val nightTime: String? = null,
     val latitude: Double? = null,
     val longitude: Double? = null,
-    val automatedLampIds: List<String>? = null,
+    val excludedLampIds: List<String>? = null,
     val daylightColor: AutomationModeColorConfig? = null,
     val eveningColor: AutomationModeColorConfig? = null,
     val nightColor: AutomationModeColorConfig? = null,
+    // Empty string clears the configured button.
+    val toggleButtonSensorId: String? = null,
+)
+
+// Sensor endpoint
+@Serializable
+data class SensorsResponse(
+    val sensors: List<SensorInfo>,
+)
+
+@Serializable
+data class SensorInfo(
+    val id: String,
+    val name: String,
+    val type: String,
+    val modelId: String?,
+    val productName: String?,
+    val reachable: Boolean,
+    val battery: Int?,
+    val lastButtonEvent: Int?,
+    val lastUpdated: String?,
 )
 
 // Bridge linking

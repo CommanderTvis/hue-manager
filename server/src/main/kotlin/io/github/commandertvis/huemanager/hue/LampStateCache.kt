@@ -28,6 +28,12 @@ class LampStateCache(
     @Volatile
     private var cachedGroups: Map<String, HueGroup> = emptyMap()
 
+    @Volatile
+    private var cachedSensors: Map<String, HueSensor> = emptyMap()
+
+    @Volatile
+    private var refreshListener: (suspend (Map<String, HueSensor>) -> Unit)? = null
+
     private var refreshJob: Job? = null
 
     // --- Read accessors (instant, zero API calls) ---
@@ -40,6 +46,18 @@ class LampStateCache(
 
     fun getEntertainmentGroups(): Map<String, HueGroup> =
         cachedGroups.filter { it.value.type == "Entertainment" }
+
+    fun getSensors(): Map<String, HueSensor> = cachedSensors
+
+    fun getSensor(id: String): HueSensor? = cachedSensors[id]
+
+    /**
+     * Register a callback invoked after every successful refresh, with the freshly fetched sensors.
+     * Used by AutomationManager to react to Smart Button presses.
+     */
+    fun setSensorRefreshListener(listener: suspend (Map<String, HueSensor>) -> Unit) {
+        refreshListener = listener
+    }
 
     // --- Lifecycle ---
 
@@ -107,10 +125,13 @@ class LampStateCache(
         try {
             val lights = hueService.getLights()
             val groups = hueService.getGroups()
+            val sensors = hueService.getSensors()
             if (lights.isNotEmpty() || cachedLights.isNotEmpty()) {
                 cachedLights = lights
             }
             cachedGroups = groups
+            cachedSensors = sensors
+            refreshListener?.invoke(sensors)
         } catch (e: Exception) {
             logger.warn("Cache refresh failed: ${e.message}")
         }

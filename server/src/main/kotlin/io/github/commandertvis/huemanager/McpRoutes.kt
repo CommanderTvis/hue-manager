@@ -13,6 +13,7 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.sse.*
 import io.modelcontextprotocol.kotlin.sdk.server.SseServerTransport
+import io.modelcontextprotocol.kotlin.sdk.server.StreamableHttpServerTransport
 import io.ktor.sse.ServerSentEvent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -61,6 +62,7 @@ fun Route.mcpRoutes(
     val mcpAccessTokens = ConcurrentHashMap<String, McpAccessToken>()
 
     val mcpSessions = ConcurrentHashMap<String, SseServerTransport>()
+    val streamableTransports = ConcurrentHashMap<String, StreamableHttpServerTransport>()
 
     // Protected Resource Metadata (RFC 9728)
     // Client starts here to discover authorization server
@@ -364,28 +366,69 @@ fun Route.mcpRoutes(
         }
     }
 
-    // POST to MCP endpoint for client messages (SSE transport)
+    // POST to MCP endpoint - dispatches between legacy SSE (?sessionId=) and Streamable HTTP (Mcp-Session-Id header)
     post(MCP_ENDPOINT) {
         if (!call.checkMcpAccessToken(mcpAccessTokens)) {
             call.respondMcpUnauthorized()
             return@post
         }
 
-        val sessionId = call.request.queryParameters["sessionId"]
-        if (sessionId == null) {
-            logger.warn("MCP POST missing sessionId")
-            call.respond(HttpStatusCode.BadRequest, "sessionId query parameter is required")
+        val querySessionId = call.request.queryParameters["sessionId"]
+        if (querySessionId != null) {
+            val transport = mcpSessions[querySessionId]
+            if (transport == null) {
+                logger.warn("MCP SSE POST unknown sessionId={}", querySessionId)
+                call.respond(HttpStatusCode.NotFound, "Session not found")
+                return@post
+            }
+            transport.handlePostMessage(call)
             return@post
         }
 
-        val transport = mcpSessions[sessionId]
-        if (transport == null) {
-            logger.warn("MCP POST unknown sessionId={}", sessionId)
-            call.respond(HttpStatusCode.NotFound, "Session not found")
+        val streamableSessionId = call.request.headers["Mcp-Session-Id"]
+        if (streamableSessionId != null) {
+            val transport = streamableTransports[streamableSessionId]
+            if (transport == null) {
+                logger.warn("MCP Streamable POST unknown sessionId={}", streamableSessionId)
+                call.respond(HttpStatusCode.NotFound, "Session not found")
+                return@post
+            }
+            transport.handleRequest(null, call)
             return@post
         }
 
-        transport.handlePostMessage(call)
+        // New Streamable HTTP session (initialize request without prior session)
+        val transport = StreamableHttpServerTransport(
+            StreamableHttpServerTransport.Configuration(enableJsonResponse = true)
+        )
+        transport.setOnSessionInitialized { id ->
+            streamableTransports[id] = transport
+            logger.info("MCP Streamable session initialized sessionId={}", id)
+        }
+        transport.setOnSessionClosed { id ->
+            streamableTransports.remove(id)
+            logger.info("MCP Streamable session closed sessionId={}", id)
+        }
+
+        val server = mcpHandler.createServer()
+        server.onClose {
+            transport.sessionId?.let { streamableTransports.remove(it) }
+        }
+        server.createSession(transport)
+        transport.handleRequest(null, call)
+    }
+
+    // DELETE to MCP endpoint - close Streamable HTTP session
+    delete(MCP_ENDPOINT) {
+        if (!call.checkMcpAccessToken(mcpAccessTokens)) {
+            call.respondMcpUnauthorized()
+            return@delete
+        }
+        val streamableSessionId = call.request.headers["Mcp-Session-Id"]
+            ?: return@delete call.respond(HttpStatusCode.BadRequest, "Mcp-Session-Id header required")
+        val transport = streamableTransports[streamableSessionId]
+            ?: return@delete call.respond(HttpStatusCode.NotFound, "Session not found")
+        transport.handleDeleteRequest(call)
     }
 }
 

@@ -3,6 +3,7 @@ package io.github.commandertvis.huemanager.automation
 import io.github.commandertvis.huemanager.config.Config
 import io.github.commandertvis.huemanager.config.GeoLocation
 import io.github.commandertvis.huemanager.hue.HueLightStateUpdate
+import io.github.commandertvis.huemanager.hue.HueSensor
 import io.github.commandertvis.huemanager.hue.HueService
 import io.github.commandertvis.huemanager.hue.LampStateCache
 import kotlin.time.Clock
@@ -100,7 +101,7 @@ class AutomationManager(
     private var userState: UserState = UserState.ASLEEP
     private var wakeUpTime: Instant? = null
     private val lampOverrides = mutableMapOf<String, LampOverride>()
-    private val automatedLampIds = mutableSetOf<String>()
+    private val excludedLampIds = mutableSetOf<String>()
     private var pseudoSunset: LocalTime = parsePseudoSunset(config.pseudoSunset)
     private var nightTime: LocalTime = defaultNightTime(pseudoSunset)
 
@@ -117,6 +118,16 @@ class AutomationManager(
 
     // Pending operations for real-time sync across clients
     private val pendingOperations = mutableMapOf<String, PendingOperation>()
+
+    // Smart-button toggle: sensor id whose state changes toggle wake/sleep
+    @Volatile
+    private var toggleButtonSensorId: String? = null
+
+    // Last observed `lastupdated` for the configured button — used to detect a new press.
+    // Null sentinel means "not initialized yet"; the first observation is treated as baseline,
+    // not a press, so the server doesn't fire on the most recent stored press at startup.
+    @Volatile
+    private var lastButtonUpdate: String? = null
 
     // Track lamp reachability to detect when lamps come back online
     private val lampReachability = mutableMapOf<String, LampReachabilityState>()
@@ -141,7 +152,9 @@ class AutomationManager(
         return (manualOverrides + outOfSyncLamps).toList()
     }
 
-    fun getAutomatedLampIds(): Set<String> = automatedLampIds.toSet()
+    fun getAutomatedLampIds(): Set<String> = lampStateCache.getLights().keys - excludedLampIds
+
+    fun getExcludedLampIds(): Set<String> = excludedLampIds.toSet()
 
     fun getDaylightColor(): ModeColorConfig = daylightColor
     fun getEveningColor(): ModeColorConfig = eveningColor
@@ -175,7 +188,7 @@ class AutomationManager(
         val outOfSync = mutableSetOf<String>()
         val entertainmentLamps = getActiveEntertainmentLamps()
 
-        for (lampId in automatedLampIds) {
+        for (lampId in getAutomatedLampIds()) {
             val override = lampOverrides[lampId]
             if (override != null && override.overrideUntil >= now) continue // Active manual override
 
@@ -402,7 +415,7 @@ class AutomationManager(
         }
 
         // Turn off all automated lamps
-        for (lampId in automatedLampIds) {
+        for (lampId in getAutomatedLampIds()) {
             hueService.setLightState(lampId, HueLightStateUpdate(on = false))
         }
 
@@ -467,7 +480,7 @@ class AutomationManager(
         logger.info("Cleared override for lamp $lampId")
 
         // Immediately apply automation state to this lamp
-        if (lampId in automatedLampIds) {
+        if (lampId in getAutomatedLampIds()) {
             val entertainmentLamps = getActiveEntertainmentLamps()
             if (!entertainmentLamps.contains(lampId)) {
                 if (userState == UserState.AWAKE) {
@@ -487,12 +500,44 @@ class AutomationManager(
         }
     }
 
-    fun setAutomatedLamps(lampIds: Set<String>) {
-        automatedLampIds.clear()
-        automatedLampIds.addAll(lampIds)
-        lampReachability.keys.retainAll(automatedLampIds)
-        lampPowerStates.keys.retainAll(automatedLampIds)
-        logger.info("Set automated lamps: $automatedLampIds")
+    fun getToggleButtonSensorId(): String? = toggleButtonSensorId
+
+    fun setToggleButtonSensorId(sensorId: String?) {
+        toggleButtonSensorId = sensorId?.takeIf { it.isNotBlank() }
+        // Reset baseline: next refresh re-establishes the current `lastupdated` without firing.
+        lastButtonUpdate = null
+        logger.info("Set toggle button sensor: $toggleButtonSensorId")
+    }
+
+    /**
+     * Called by [LampStateCache] after every sensor refresh. If a smart-button sensor is
+     * configured and its `lastupdated` changed since the previous refresh, toggle wake/sleep.
+     */
+    suspend fun onSensorsRefreshed(sensors: Map<String, HueSensor>) {
+        val sensorId = toggleButtonSensorId ?: return
+        val sensor = sensors[sensorId] ?: return
+        val updated = sensor.state?.lastupdated ?: return
+        if (updated == "none") return
+
+        val previous = lastButtonUpdate
+        lastButtonUpdate = updated
+
+        // First observation establishes baseline; don't fire on stale stored event.
+        if (previous == null) return
+        if (previous == updated) return
+
+        logger.info("Smart button press detected on sensor $sensorId (event=${sensor.state.buttonevent})")
+        if (userState == UserState.AWAKE) goToSleep() else wakeUp()
+    }
+
+    fun setExcludedLamps(lampIds: Set<String>) {
+        excludedLampIds.clear()
+        excludedLampIds.addAll(lampIds)
+        val automated = getAutomatedLampIds()
+        lampReachability.keys.retainAll(automated)
+        lampPowerStates.keys.retainAll(automated)
+        incrementSyncVersion()
+        logger.info("Set excluded lamps: $excludedLampIds")
     }
 
     fun setPseudoSunset(time: LocalTime) {
@@ -521,32 +566,12 @@ class AutomationManager(
             while (isActive) {
                 delay(10.minutes)
                 cleanExpiredOverrides()
-                discoverNewLamps()
                 if (userState == UserState.AWAKE) {
                     applyAutomatedState()
                 }
             }
         }
         logger.info("Started heartbeat")
-    }
-
-    /**
-     * Discover new lamps that were added to the Hue bridge while the server was running.
-     * New lamps are automatically added to automation.
-     *
-     * @param knownLampIds optional set of lamp IDs already fetched (to avoid extra API call)
-     * @return set of newly discovered lamp IDs
-     */
-    fun discoverNewLamps(knownLampIds: Set<String>? = null): Set<String> {
-        val currentLamps = knownLampIds ?: lampStateCache.getLights().keys
-        val newLamps = currentLamps - automatedLampIds
-
-        if (newLamps.isNotEmpty()) {
-            automatedLampIds.addAll(newLamps)
-            logger.info("Discovered ${newLamps.size} new lamp(s): $newLamps")
-        }
-
-        return newLamps
     }
 
     private fun stopHeartbeat() {
@@ -574,7 +599,7 @@ class AutomationManager(
         val desiredState = calculateDesiredState(localTime, sunTimes)
         val entertainmentLamps = getActiveEntertainmentLamps()
 
-        for (lampId in automatedLampIds) {
+        for (lampId in getAutomatedLampIds()) {
             if (entertainmentLamps.contains(lampId)) {
                 continue // Skip lamps in active entertainment areas
             }

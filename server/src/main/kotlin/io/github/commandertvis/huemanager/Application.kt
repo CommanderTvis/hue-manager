@@ -30,11 +30,13 @@ fun main() {
         LampStateCache(hueService).use { lampStateCache ->
             hueService.setCache(lampStateCache)
             AutomationManager(config, hueService, lampStateCache).use { automationManager ->
+                lampStateCache.setSensorRefreshListener { sensors ->
+                    automationManager.onSensorsRefreshed(sensors)
+                }
                 runBlocking {
                     val initialized = hueService.initialize()
                     if (initialized) {
                         lampStateCache.initialize()
-                        automationManager.setAutomatedLamps(lampStateCache.getLights().keys)
                         lampStateCache.startRefreshing()
                         logger.info("Connected to Philips Hue with ${lampStateCache.getLights().size} lamps")
                     } else {

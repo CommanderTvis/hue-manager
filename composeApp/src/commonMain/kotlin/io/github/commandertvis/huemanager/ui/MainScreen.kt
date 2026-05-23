@@ -35,6 +35,8 @@ fun MainScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var showMcpDialog by remember { mutableStateOf(false) }
     var showSchedulerDialog by remember { mutableStateOf(false) }
+    var showAutomatedLampsDialog by remember { mutableStateOf(false) }
+    var showSmartButtonDialog by remember { mutableStateOf(false) }
 
     // Show error in snackbar
     LaunchedEffect(uiState.error) {
@@ -51,6 +53,12 @@ fun MainScreen(
                 actions = {
                     TextButton(onClick = { showSchedulerDialog = true }) {
                         Text("Schedule")
+                    }
+                    TextButton(onClick = { showAutomatedLampsDialog = true }) {
+                        Text("Lamps")
+                    }
+                    TextButton(onClick = { showSmartButtonDialog = true }) {
+                        Text("Button")
                     }
                     TextButton(onClick = { showMcpDialog = true }) {
                         Text("MCP")
@@ -277,6 +285,31 @@ fun MainScreen(
                 }) {
                     Text("Close")
                 }
+            }
+        )
+    }
+
+    if (showSmartButtonDialog) {
+        SmartButtonDialog(
+            sensors = uiState.sensors,
+            selectedSensorId = uiState.toggleButtonSensorId,
+            onDismiss = { showSmartButtonDialog = false },
+            onSave = { sensorId ->
+                lampsViewModel.updateToggleButton(sensorId)
+                showSmartButtonDialog = false
+            },
+            onRefresh = { lampsViewModel.loadSensors() },
+        )
+    }
+
+    if (showAutomatedLampsDialog) {
+        AutomatedLampsDialog(
+            lamps = uiState.lamps,
+            excludedLampIds = uiState.excludedLampIds,
+            onDismiss = { showAutomatedLampsDialog = false },
+            onSave = { excluded ->
+                lampsViewModel.updateExcludedLamps(excluded)
+                showAutomatedLampsDialog = false
             }
         )
     }

@@ -158,7 +158,6 @@ fun Route.apiRoutes(
             is LinkResult.Success -> {
                 lampStateCache.forceRefresh()
                 val lamps = lampStateCache.getLights()
-                automationManager.setAutomatedLamps(lamps.keys)
                 lampStateCache.startRefreshing()
                 call.respond(GenericResponse(success = true, message = "Linked! Found ${lamps.size} lamps"))
             }
@@ -246,9 +245,6 @@ fun Route.apiRoutes(
     // Lamps
     get("/api/lamps") {
         val lights = lampStateCache.getLights()
-
-        // Discover new lamps added to the bridge since server started
-        automationManager.discoverNewLamps(lights.keys)
 
         val entertainmentGroups = lampStateCache.getEntertainmentGroups()
         val entertainmentLamps = mutableSetOf<String>()
@@ -354,6 +350,27 @@ fun Route.apiRoutes(
         }
     }
 
+    // Sensors (switches, smart buttons, motion, etc.)
+    get("/api/sensors") {
+        val sensors = lampStateCache.getSensors()
+        val response = SensorsResponse(
+            sensors = sensors.map { (id, sensor) ->
+                SensorInfo(
+                    id = id,
+                    name = sensor.name,
+                    type = sensor.type,
+                    modelId = sensor.modelid,
+                    productName = sensor.productname,
+                    reachable = sensor.config?.reachable ?: true,
+                    battery = sensor.config?.battery,
+                    lastButtonEvent = sensor.state?.buttonevent,
+                    lastUpdated = sensor.state?.lastupdated,
+                )
+            }
+        )
+        call.respond(response)
+    }
+
     // Groups
     get("/api/groups") {
         val groups = lampStateCache.getGroups()
@@ -436,7 +453,7 @@ fun Route.apiRoutes(
                 nightTime = automationManager.getNightTime().toString(),
                 latitude = location.latitude,
                 longitude = location.longitude,
-                automatedLampIds = automationManager.getAutomatedLampIds().toList(),
+                excludedLampIds = automationManager.getExcludedLampIds().toList(),
                 daylightColor = AutomationModeColorConfig(
                     hue = daylight.hue, saturation = daylight.saturation,
                     colorTemperature = daylight.colorTemperature, brightness = daylight.brightness
@@ -449,6 +466,7 @@ fun Route.apiRoutes(
                     hue = night.hue, saturation = night.saturation,
                     colorTemperature = night.colorTemperature, brightness = night.brightness
                 ),
+                toggleButtonSensorId = automationManager.getToggleButtonSensorId(),
             )
         )
     }
@@ -460,7 +478,7 @@ fun Route.apiRoutes(
 
         request.pseudoSunset?.let { automationManager.setPseudoSunset(it) }
         request.nightTime?.let { automationManager.setNightTime(it) }
-        request.automatedLampIds?.let { automationManager.setAutomatedLamps(it.toSet()) }
+        request.excludedLampIds?.let { automationManager.setExcludedLamps(it.toSet()) }
         request.daylightColor?.let {
             automationManager.setDaylightColor(
                 io.github.commandertvis.huemanager.automation.ModeColorConfig(
@@ -484,6 +502,9 @@ fun Route.apiRoutes(
                     colorTemperature = it.colorTemperature, brightness = it.brightness
                 )
             )
+        }
+        request.toggleButtonSensorId?.let {
+            automationManager.setToggleButtonSensorId(it.takeIf { id -> id.isNotBlank() })
         }
 
         call.respond(ApiSuccess("Settings updated"))

@@ -107,6 +107,13 @@ class ApiClient(private val baseUrl: String, private val client: HttpClient = cr
         Result.failure(e)
     }
 
+    suspend fun getSensors(): Result<SensorsResponse> = try {
+        val response = client.get("$baseUrl/api/sensors")
+        Result.success(response.body())
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
     suspend fun getGroups(): Result<GroupsResponse> = try {
         val response = client.get("$baseUrl/api/groups")
         Result.success(response.body())

@@ -265,31 +265,37 @@ class HueRemoteClient private constructor(
     }
 
     /**
+     * Issue an authenticated request and retry once with a refreshed token on 401.
+     * Returns null if there is no current token, or if a 401 retry's token refresh fails.
+     * The same rate-limiter slot covers both attempts.
+     */
+    private suspend fun authedRequest(
+        label: String,
+        request: suspend (token: String) -> HttpResponse,
+    ): HttpResponse? {
+        val initialToken = accessToken ?: return null
+        var response = request(initialToken)
+        if (response.status == HttpStatusCode.Unauthorized) {
+            logger.info("$label failed with 401. Refreshing token and retrying...")
+            if (!refreshAccessToken()) return null
+            val newToken = accessToken ?: return null
+            response = request(newToken)
+        }
+        return response
+    }
+
+    /**
      * Get all lights via Remote API.
      */
     suspend fun getLights(): Map<String, HueLight> {
-        val token = accessToken ?: return emptyMap()
         val user = username ?: return emptyMap()
-
         return lightRateLimiter.execute {
             try {
-                var response: HttpResponse = client.get("https://api.meethue.com/route/api/$user/lights") {
-                    header(HttpHeaders.Authorization, "Bearer $token")
-                }
-
-                if (response.status == HttpStatusCode.Unauthorized) {
-                    logger.info("getLights failed with 401. Refreshing token and retrying...")
-                    if (refreshAccessToken()) {
-                        // Retry with new token
-                        val newToken = accessToken
-                        response = client.get("https://api.meethue.com/route/api/$user/lights") {
-                            header(HttpHeaders.Authorization, "Bearer $newToken")
-                        }
-                    } else {
-                        return@execute emptyMap()
+                val response = authedRequest("getLights") { token ->
+                    client.get("https://api.meethue.com/route/api/$user/lights") {
+                        header(HttpHeaders.Authorization, "Bearer $token")
                     }
-                }
-
+                } ?: return@execute emptyMap()
                 response.body<Map<String, HueLight>>()
             } catch (e: Exception) {
                 logger.error("Error getting lights: ${e.message}", e)
@@ -302,27 +308,14 @@ class HueRemoteClient private constructor(
      * Get a single light.
      */
     suspend fun getLight(id: String): HueLight? {
-        val token = accessToken ?: return null
         val user = username ?: return null
-
         return lightRateLimiter.execute {
             try {
-                var response: HttpResponse = client.get("https://api.meethue.com/route/api/$user/lights/$id") {
-                    header(HttpHeaders.Authorization, "Bearer $token")
-                }
-
-                if (response.status == HttpStatusCode.Unauthorized) {
-                    logger.info("getLight failed with 401. Refreshing token and retrying...")
-                    if (refreshAccessToken()) {
-                        val newToken = accessToken
-                        response = client.get("https://api.meethue.com/route/api/$user/lights/$id") {
-                            header(HttpHeaders.Authorization, "Bearer $newToken")
-                        }
-                    } else {
-                        return@execute null
+                val response = authedRequest("getLight") { token ->
+                    client.get("https://api.meethue.com/route/api/$user/lights/$id") {
+                        header(HttpHeaders.Authorization, "Bearer $token")
                     }
-                }
-
+                } ?: return@execute null
                 response.body<HueLight>()
             } catch (e: Exception) {
                 logger.error("Error getting light $id: ${e.message}", e)
@@ -335,35 +328,20 @@ class HueRemoteClient private constructor(
      * Set light state.
      */
     suspend fun setLightState(id: String, state: HueLightStateUpdate): Boolean {
-        val token = accessToken ?: return false
         val user = username ?: return false
-
         return lightRateLimiter.execute {
             try {
-                var response: HttpResponse = client.put("https://api.meethue.com/route/api/$user/lights/$id/state") {
-                    header(HttpHeaders.Authorization, "Bearer $token")
-                    contentType(ContentType.Application.Json)
-                    setBody(state)
-                }
-
-                if (response.status == HttpStatusCode.Unauthorized) {
-                    logger.warn("Set light state failed with 401 Unauthorized. Attempting token refresh.")
-                    if (refreshAccessToken()) {
-                        val newToken = accessToken
-                        response = client.put("https://api.meethue.com/route/api/$user/lights/$id/state") {
-                            header(HttpHeaders.Authorization, "Bearer $newToken")
-                            contentType(ContentType.Application.Json)
-                            setBody(state)
-                        }
-                    } else {
-                        return@execute false
+                val response = authedRequest("setLightState") { token ->
+                    client.put("https://api.meethue.com/route/api/$user/lights/$id/state") {
+                        header(HttpHeaders.Authorization, "Bearer $token")
+                        contentType(ContentType.Application.Json)
+                        setBody(state)
                     }
-                }
+                } ?: return@execute false
 
                 if (!response.status.isSuccess()) {
                     logger.warn("Set light state failed: ${response.status} Body: ${response.bodyAsText()}")
                 }
-
                 response.status.isSuccess()
             } catch (e: Exception) {
                 logger.error("Error setting light state: ${e.message}", e)
@@ -376,30 +354,37 @@ class HueRemoteClient private constructor(
      * Get all groups.
      */
     suspend fun getGroups(): Map<String, HueGroup> {
-        val token = accessToken ?: return emptyMap()
         val user = username ?: return emptyMap()
-
         return groupRateLimiter.execute {
             try {
-                var response: HttpResponse = client.get("https://api.meethue.com/route/api/$user/groups") {
-                    header(HttpHeaders.Authorization, "Bearer $token")
-                }
-
-                if (response.status == HttpStatusCode.Unauthorized) {
-                    logger.info("getGroups failed with 401. Refreshing token and retrying...")
-                    if (refreshAccessToken()) {
-                        val newToken = accessToken
-                        response = client.get("https://api.meethue.com/route/api/$user/groups") {
-                            header(HttpHeaders.Authorization, "Bearer $newToken")
-                        }
-                    } else {
-                        return@execute emptyMap()
+                val response = authedRequest("getGroups") { token ->
+                    client.get("https://api.meethue.com/route/api/$user/groups") {
+                        header(HttpHeaders.Authorization, "Bearer $token")
                     }
-                }
-
+                } ?: return@execute emptyMap()
                 response.body<Map<String, HueGroup>>()
             } catch (e: Exception) {
                 logger.error("Error getting groups: ${e.message}", e)
+                emptyMap()
+            }
+        }
+    }
+
+    /**
+     * Get all sensors (motion sensors, switches, smart buttons, daylight, etc.) via Remote API.
+     */
+    suspend fun getSensors(): Map<String, HueSensor> {
+        val user = username ?: return emptyMap()
+        return lightRateLimiter.execute {
+            try {
+                val response = authedRequest("getSensors") { token ->
+                    client.get("https://api.meethue.com/route/api/$user/sensors") {
+                        header(HttpHeaders.Authorization, "Bearer $token")
+                    }
+                } ?: return@execute emptyMap()
+                response.body<Map<String, HueSensor>>()
+            } catch (e: Exception) {
+                logger.error("Error getting sensors: ${e.message}", e)
                 emptyMap()
             }
         }

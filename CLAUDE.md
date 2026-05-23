@@ -116,16 +116,21 @@ KEYSTORE_PASSWORD=<for HTTPS>
 ### Groups
 - `GET /api/groups` - List all groups
 
+### Sensors
+- `GET /api/sensors` - List all sensors (switches, smart buttons, motion, etc.). Used by the smart-button picker UI.
+
 ### Automation
 - `GET /api/automation` - Get automation status
 - `POST /api/wakeup` - Wake action ("Lamps on")
 - `POST /api/sleep` - Sleep action ("Lamps off")
 
 ### Settings
-- `GET /api/settings` - Get current settings (pseudo-sunset time, location, automated lamp IDs)
+- `GET /api/settings` - Get current settings (pseudo-sunset time, location, excluded lamp IDs, automation mode colors)
 - `PUT /api/settings` - Update settings (auth required)
 
-**Note:** Settings API is fully implemented. Settings UI screen is not yet implemented - settings must be edited via API or in `.env` file.
+**Excluded lamps:** Automation now uses an opt-out model. All lamps known to the bridge are automated by default. The `excludedLampIds` field in `SettingsResponse`/`SettingsUpdateRequest` lists lamps the user has excluded (e.g. controlled by a motion sensor in the official Hue app). Configurable via the "Lamps" dialog on the main screen.
+
+**Smart-button toggle:** `GET /api/sensors` returns all bridge sensors (motion, switches, smart buttons, daylight, temperature). The `toggleButtonSensorId` settings field designates one `ZLLSwitch`/`ZGPSwitch` to act as a wake/sleep toggle. `LampStateCache` polls `/sensors` every 5s and notifies `AutomationManager.onSensorsRefreshed`; when the configured sensor's `state.lastupdated` changes, the manager calls `wakeUp()`/`goToSleep()` based on current `userState`. Configurable via the "Button" dialog on the main screen.
 
 ### Real-time Sync
 - `GET /api/sync` - Lightweight sync state (no Hue API calls) - returns automation state, pending operations, overrides
@@ -317,7 +322,7 @@ hue-manager/
 - `server/.../McpRoutes.kt` - MCP SSE transport, OAuth endpoints, `.well-known` metadata
 - `server/.../WebRoutes.kt` - SPA serving and static file routes
 - `server/.../config/Config.kt` - Configuration loading from .env
-- `server/.../hue/HueClient.kt` - HTTP client for local Hue REST API (legacy, kept for reference)
+- `server/.../hue/HueModels.kt` - Serializable DTOs for the Hue v1 REST API (lights, groups, sensors)
 - `server/.../hue/HueRemoteClient.kt` - HTTP client for Philips Hue Remote API (OAuth2)
 - `server/.../hue/HueService.kt` - Service layer managing Hue connection via Remote API
 - `server/.../hue/LampStateCache.kt` - In-memory cache of lamp/group state with background refresh

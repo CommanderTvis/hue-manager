@@ -75,6 +75,8 @@ class HueService(config: Config) : AutoCloseable {
 
     suspend fun getGroups(): Map<String, HueGroup> = remoteClient?.getGroups() ?: emptyMap()
 
+    suspend fun getSensors(): Map<String, HueSensor> = remoteClient?.getSensors() ?: emptyMap()
+
     suspend fun getEntertainmentGroups(): Map<String, HueGroup> =
         getGroups().filter { it.value.type == "Entertainment" }
 

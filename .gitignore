@@ -30,3 +30,5 @@ build-output/
 # Deployment scripts
 update.sh
 log.txt
+
+.mcp.json
