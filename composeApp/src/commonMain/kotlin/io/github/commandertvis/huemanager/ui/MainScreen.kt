@@ -7,6 +7,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,6 +39,7 @@ fun MainScreen(
     var showSchedulerDialog by remember { mutableStateOf(false) }
     var showAutomatedLampsDialog by remember { mutableStateOf(false) }
     var showSmartButtonDialog by remember { mutableStateOf(false) }
+    var showOverflowMenu by remember { mutableStateOf(false) }
 
     // Show error in snackbar
     LaunchedEffect(uiState.error) {
@@ -49,22 +52,59 @@ fun MainScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Hue Manager") },
+                title = {
+                    Text(
+                        text = "Hue Manager",
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                },
                 actions = {
-                    TextButton(onClick = { showSchedulerDialog = true }) {
-                        Text("Schedule")
+                    IconButton(onClick = { showOverflowMenu = true }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Menu"
+                        )
                     }
-                    TextButton(onClick = { showAutomatedLampsDialog = true }) {
-                        Text("Lamps")
-                    }
-                    TextButton(onClick = { showSmartButtonDialog = true }) {
-                        Text("Button")
-                    }
-                    TextButton(onClick = { showMcpDialog = true }) {
-                        Text("MCP")
-                    }
-                    TextButton(onClick = onLogout) {
-                        Text("Logout")
+                    DropdownMenu(
+                        expanded = showOverflowMenu,
+                        onDismissRequest = { showOverflowMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Schedule") },
+                            onClick = {
+                                showOverflowMenu = false
+                                showSchedulerDialog = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Lamps") },
+                            onClick = {
+                                showOverflowMenu = false
+                                showAutomatedLampsDialog = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Button") },
+                            onClick = {
+                                showOverflowMenu = false
+                                showSmartButtonDialog = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("MCP") },
+                            onClick = {
+                                showOverflowMenu = false
+                                showMcpDialog = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Logout") },
+                            onClick = {
+                                showOverflowMenu = false
+                                onLogout()
+                            }
+                        )
                     }
                 }
             )
