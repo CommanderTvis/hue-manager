@@ -396,6 +396,7 @@ class AutomationManager(
         applyAutomatedState()
         lampStateCache.forceRefresh()
         startHeartbeat()
+        incrementSyncVersion()
 
         return userState
     }
@@ -411,7 +412,6 @@ class AutomationManager(
         if (lampOverrides.isNotEmpty()) {
             logger.info("Clearing ${lampOverrides.size} manual override(s)")
             lampOverrides.clear()
-            incrementSyncVersion()
         }
 
         // Turn off all automated lamps
@@ -420,6 +420,7 @@ class AutomationManager(
         }
 
         lampStateCache.forceRefresh()
+        incrementSyncVersion()
         return userState
     }
 
