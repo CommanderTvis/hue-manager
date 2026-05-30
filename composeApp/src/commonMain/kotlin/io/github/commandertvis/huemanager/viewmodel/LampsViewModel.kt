@@ -80,6 +80,7 @@ class LampsViewModel(
         val syncResult = apiClient.getSync()
         syncResult.fold(
             onSuccess = { response ->
+                val previousVersion = _uiState.value.syncVersion
                 _uiState.value = _uiState.value.copy(
                     userState = response.userState,
                     automationMode = response.automationMode,
@@ -88,6 +89,12 @@ class LampsViewModel(
                     pendingLampIds = response.pendingLampIds.toSet(),
                     syncVersion = response.version
                 )
+                // Server signals that lamp state may have changed (wake/sleep,
+                // smart-button press, override mutations). Refresh lamps now
+                // instead of waiting for the next slow poll.
+                if (response.version != previousVersion) {
+                    pollLamps()
+                }
             },
             onFailure = { /* Silently ignore sync failures to avoid spamming errors */ }
         )
