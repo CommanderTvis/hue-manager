@@ -9,16 +9,21 @@
         </filter>
     </appender>
 
-    <!-- File appender - rolling every 24 hours, keeps only last 24 hours -->
+    <!-- File appender - size+time based rolling, hard total cap so disk can't fill -->
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>log.txt</file>
         <encoder>
             <pattern>%d{YYYY-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n</pattern>
         </encoder>
-        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>log.%d{yyyy-MM-dd}.txt</fileNamePattern>
-            <maxHistory>1</maxHistory>
-            <totalSizeCap>100MB</totalSizeCap>
+        <!-- Keep TRACE off disk; it's what filled 11GB via per-request engine logging -->
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>DEBUG</level>
+        </filter>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>log.%d{yyyy-MM-dd}.%i.txt</fileNamePattern>
+            <maxFileSize>20MB</maxFileSize>
+            <maxHistory>7</maxHistory>
+            <totalSizeCap>200MB</totalSizeCap>
         </rollingPolicy>
     </appender>
 
