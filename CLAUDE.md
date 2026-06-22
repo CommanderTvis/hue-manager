@@ -80,6 +80,9 @@ REGION=<latitude,longitude>
 PSEUDO_SUNSET=21:05
 TIMEZONE=Europe/Berlin
 
+# Persistence (SQLite) - path to runtime-settings DB (default: data/hue.db)
+DATABASE_PATH=data/hue.db
+
 # Philips Hue Remote API (OAuth2) - REQUIRED
 HUE_CLIENT_ID=<from developers.meethue.com/add-new-hue-remote-api-app/>
 HUE_CLIENT_SECRET=<from developers.meethue.com/add-new-hue-remote-api-app/>
@@ -204,6 +207,36 @@ The server maintains an in-memory cache of all lamp and group state from the Phi
 - MCP tools read from cache (was: multiple API calls per tool)
 - Background refresh: 2 API calls every 5s, regardless of number of clients (was: ~22 calls/sec with 10 lamps)
 
+## Persistent Settings (SQLite)
+
+Runtime-mutable settings survive server restarts via a SQLite database. Secrets and bootstrap
+config (password hash, Hue OAuth client id/secret/tokens, region, timezone) stay in `.env`;
+only the settings that the user changes at runtime live in the DB.
+
+**Implementation:** `server/.../persistence/SettingsStore.kt` — a tiny key/value store
+(`app_state(key TEXT PRIMARY KEY, value TEXT)`, WAL mode, UPSERT) over a single synchronized
+JDBC connection (`org.xerial:sqlite-jdbc`). DB path from `DATABASE_PATH` (default `data/hue.db`;
+`/app/data/hue.db` in Docker).
+
+**Persisted keys** (written by `AutomationManager`):
+- `user_state` — the on/off button state (`AWAKE`/`ASLEEP`)
+- `pseudo_sunset`, `night_time` — schedule times
+- `daylight_color`, `evening_color`, `night_color` — JSON `ModeColorConfig`
+- `excluded_lamp_ids` — JSON array
+- `toggle_button_sensor_id` — smart-button sensor id
+
+**Lifecycle:**
+- `AutomationManager` takes an optional `SettingsStore` (null = no persistence, used by tests).
+  Its `init` block loads persisted values, overriding the `.env`-derived defaults.
+- Every settings setter and `wakeUp()`/`goToSleep()` writes through to the store immediately.
+- `resumeFromPersistedState()` (called from `Application.kt` after the lamp cache initializes)
+  re-applies automation + restarts the heartbeat if the persisted `user_state` was `AWAKE`.
+- **Not** persisted (ephemeral by design): 1-hour lamp overrides, `wakeUpTime`, reachability/
+  power-state tracking.
+
+**Docker:** named volume `hue-data:/app/data` (in `docker-compose.yml`). Dockerfiles pre-create
+`/app/data` owned by the non-root `huemanager` user so the volume inherits write permission.
+
 ## Rate Limiting
 
 Philips Hue Remote API has rate limits:
@@ -327,7 +360,8 @@ hue-manager/
 - `server/.../hue/HueService.kt` - Service layer managing Hue connection via Remote API
 - `server/.../hue/LampStateCache.kt` - In-memory cache of lamp/group state with background refresh
 - `server/.../hue/RateLimiter.kt` - Token bucket and minimum delay rate limiters
-- `server/.../automation/AutomationManager.kt` - User state, lamp overrides, heartbeat, automation mode calculation
+- `server/.../persistence/SettingsStore.kt` - SQLite key/value store for persistent runtime settings
+- `server/.../automation/AutomationManager.kt` - User state, lamp overrides, heartbeat, automation mode calculation; loads/persists settings via `SettingsStore`
 - `server/.../automation/SunCalculator.kt` - NOAA Solar Calculator algorithm for sunrise/sunset/solar noon calculation
 - `server/.../mcp/McpHandler.kt` - MCP server configuration and tool implementations
 
@@ -455,6 +489,12 @@ The app implements Google Docs-style real-time synchronization across multiple c
 - Platform-specific URL opening for OAuth flow
 
 ## Recent Changes
+
+**June 2026:**
+- Added persistent runtime settings via SQLite (`SettingsStore`): on/off `user_state` and all schedule preferences (pseudo-sunset, night time, daylight/evening/night colors, excluded lamps, toggle button) now survive server restarts. Secrets/bootstrap stay in `.env`.
+- `AutomationManager` loads persisted settings on construction, writes through on every setter, and `resumeFromPersistedState()` restores AWAKE automation + heartbeat on boot.
+- Docker: added `hue-data` named volume at `/app/data`; Dockerfiles pre-create the dir owned by `huemanager`. New `DATABASE_PATH` env var (default `data/hue.db`).
+- Added `org.xerial:sqlite-jdbc` dependency.
 
 **March 2026:**
 - Redesigned lamp cards: compact layout with colored left border, inline brightness slider, reduced vertical spacing

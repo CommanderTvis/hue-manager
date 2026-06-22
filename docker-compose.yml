@@ -24,10 +24,14 @@ services:
     # Production: also mount .env at root for Docker environment
     volumes:
       - ./sessions.json:/app/sessions.json
+      # Persistent SQLite database for runtime settings (on/off state, schedule preferences).
+      # Named volume so the non-root container user keeps write access.
+      - hue-data:/app/data
     #   - ./.env:/.env
 
     environment:
       - TZ=Europe/Berlin
+      - DATABASE_PATH=/app/data/hue.db
 
     healthcheck:
       test:
@@ -71,7 +75,9 @@ services:
 #   hue-network:
 #     driver: bridge
 
-# Production only: Caddy persistent storage
-# volumes:
-#   caddy_data:
-#   caddy_config:
+volumes:
+  # Persistent runtime settings (SQLite). Survives container rebuilds/restarts.
+  hue-data:
+  # Production only: Caddy persistent storage
+  # caddy_data:
+  # caddy_config:

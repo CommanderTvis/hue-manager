@@ -6,6 +6,11 @@ import io.github.commandertvis.huemanager.hue.HueLightStateUpdate
 import io.github.commandertvis.huemanager.hue.HueSensor
 import io.github.commandertvis.huemanager.hue.HueService
 import io.github.commandertvis.huemanager.hue.LampStateCache
+import io.github.commandertvis.huemanager.persistence.SettingsStore
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.coroutines.*
@@ -80,6 +85,7 @@ private const val DEFAULT_WARM_WHITE_CT = 350
 private const val DEFAULT_ORANGE_HUE = 5000
 private const val DEFAULT_FULL_SATURATION = 254
 
+@Serializable
 data class ModeColorConfig(
     val hue: Int? = null,
     val saturation: Int? = null,
@@ -87,10 +93,21 @@ data class ModeColorConfig(
     val brightness: Int,
 )
 
+// Keys for persisted runtime settings in [SettingsStore].
+private const val KEY_USER_STATE = "user_state"
+private const val KEY_PSEUDO_SUNSET = "pseudo_sunset"
+private const val KEY_NIGHT_TIME = "night_time"
+private const val KEY_EXCLUDED_LAMPS = "excluded_lamp_ids"
+private const val KEY_DAYLIGHT_COLOR = "daylight_color"
+private const val KEY_EVENING_COLOR = "evening_color"
+private const val KEY_NIGHT_COLOR = "night_color"
+private const val KEY_TOGGLE_BUTTON = "toggle_button_sensor_id"
+
 class AutomationManager(
     private val config: Config,
     private val hueService: HueService,
-    private val lampStateCache: LampStateCache
+    private val lampStateCache: LampStateCache,
+    private val settingsStore: SettingsStore? = null
 ) : AutoCloseable {
     private val logger = LoggerFactory.getLogger(AutomationManager::class.java)
     private val overrideDuration = 1.hours
@@ -139,6 +156,42 @@ class AutomationManager(
     private var heartbeatJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
+    private val json = Json { ignoreUnknownKeys = true }
+
+    init {
+        loadPersistedState()
+    }
+
+    /** Loads runtime settings from [settingsStore], overriding the `.env`-derived defaults. */
+    private fun loadPersistedState() {
+        val store = settingsStore ?: return
+        store.get(KEY_USER_STATE)?.let { runCatching { userState = UserState.valueOf(it) } }
+        store.get(KEY_PSEUDO_SUNSET)?.let { pseudoSunset = parsePseudoSunset(it) }
+        store.get(KEY_NIGHT_TIME)?.let { nightTime = parsePseudoSunset(it) }
+        store.get(KEY_EXCLUDED_LAMPS)?.let {
+            runCatching { excludedLampIds.addAll(json.decodeFromString<List<String>>(it)) }
+        }
+        store.get(KEY_DAYLIGHT_COLOR)?.let { runCatching { daylightColor = json.decodeFromString(it) } }
+        store.get(KEY_EVENING_COLOR)?.let { runCatching { eveningColor = json.decodeFromString(it) } }
+        store.get(KEY_NIGHT_COLOR)?.let { runCatching { nightColor = json.decodeFromString(it) } }
+        store.get(KEY_TOGGLE_BUTTON)?.let { toggleButtonSensorId = it.takeIf { id -> id.isNotBlank() } }
+        logger.info("Loaded persisted settings: userState=$userState, pseudoSunset=$pseudoSunset")
+    }
+
+    /**
+     * Re-applies the persisted automation state after startup. If the user was AWAKE when the
+     * server last shut down, automation and the heartbeat resume. Must be called after the lamp
+     * cache is initialized, since it writes lamp state.
+     */
+    suspend fun resumeFromPersistedState() {
+        if (userState != UserState.AWAKE) return
+        logger.info("Restoring AWAKE state from persistence")
+        wakeUpTime = Clock.System.now()
+        applyAutomatedState()
+        startHeartbeat()
+        incrementSyncVersion()
+    }
+
     fun getUserState(): UserState = userState
     fun getWakeUpTime(): Instant? = wakeUpTime
     fun getPseudoSunset(): LocalTime = pseudoSunset
@@ -162,16 +215,19 @@ class AutomationManager(
 
     fun setDaylightColor(config: ModeColorConfig) {
         daylightColor = config
+        settingsStore?.put(KEY_DAYLIGHT_COLOR, json.encodeToString(config))
         logger.info("Set daylight color to $config")
     }
 
     fun setEveningColor(config: ModeColorConfig) {
         eveningColor = config
+        settingsStore?.put(KEY_EVENING_COLOR, json.encodeToString(config))
         logger.info("Set evening color to $config")
     }
 
     fun setNightColor(config: ModeColorConfig) {
         nightColor = config
+        settingsStore?.put(KEY_NIGHT_COLOR, json.encodeToString(config))
         logger.info("Set night color to $config")
     }
 
@@ -391,6 +447,7 @@ class AutomationManager(
     suspend fun wakeUp(): UserState {
         userState = UserState.AWAKE
         wakeUpTime = Clock.System.now()
+        settingsStore?.put(KEY_USER_STATE, userState.name)
         logger.info("User woke up at $wakeUpTime")
 
         applyAutomatedState()
@@ -404,6 +461,7 @@ class AutomationManager(
     suspend fun goToSleep(): UserState {
         userState = UserState.ASLEEP
         wakeUpTime = null
+        settingsStore?.put(KEY_USER_STATE, userState.name)
         logger.info("User going to sleep")
 
         stopHeartbeat()
@@ -507,6 +565,7 @@ class AutomationManager(
         toggleButtonSensorId = sensorId?.takeIf { it.isNotBlank() }
         // Reset baseline: next refresh re-establishes the current `lastupdated` without firing.
         lastButtonUpdate = null
+        settingsStore?.put(KEY_TOGGLE_BUTTON, toggleButtonSensorId ?: "")
         logger.info("Set toggle button sensor: $toggleButtonSensorId")
     }
 
@@ -537,27 +596,32 @@ class AutomationManager(
         val automated = getAutomatedLampIds()
         lampReachability.keys.retainAll(automated)
         lampPowerStates.keys.retainAll(automated)
+        settingsStore?.put(KEY_EXCLUDED_LAMPS, json.encodeToString(excludedLampIds.toList()))
         incrementSyncVersion()
         logger.info("Set excluded lamps: $excludedLampIds")
     }
 
     fun setPseudoSunset(time: LocalTime) {
         pseudoSunset = time
+        settingsStore?.put(KEY_PSEUDO_SUNSET, pseudoSunset.toString())
         logger.info("Set pseudo sunset to $time")
     }
 
     fun setPseudoSunset(timeStr: String) {
         pseudoSunset = parsePseudoSunset(timeStr)
+        settingsStore?.put(KEY_PSEUDO_SUNSET, pseudoSunset.toString())
         logger.info("Set pseudo sunset to $pseudoSunset")
     }
 
     fun setNightTime(time: LocalTime) {
         nightTime = time
+        settingsStore?.put(KEY_NIGHT_TIME, nightTime.toString())
         logger.info("Set night time to $time")
     }
 
     fun setNightTime(timeStr: String) {
         nightTime = parsePseudoSunset(timeStr)
+        settingsStore?.put(KEY_NIGHT_TIME, nightTime.toString())
         logger.info("Set night time to $nightTime")
     }
 

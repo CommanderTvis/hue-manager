@@ -22,7 +22,8 @@ data class Config(
     val hueAppId: String,
     val hueRedirectUri: String?,
     val hueAccessToken: String?,
-    val hueRefreshToken: String?
+    val hueRefreshToken: String?,
+    val databasePath: String
 )
 
 @Serializable
@@ -68,6 +69,8 @@ object ConfigLoader {
         val hueAccessToken = env["HUE_ACCESS_TOKEN"]?.trim()?.takeIf { it.isNotBlank() }
         val hueRefreshToken = env["HUE_REFRESH_TOKEN"]?.trim()?.takeIf { it.isNotBlank() }
 
+        val databasePath = env["DATABASE_PATH"]?.trim()?.takeIf { it.isNotBlank() } ?: "data/hue.db"
+
         return Config(
             passwordHash = passwordHash,
             region = region,
@@ -80,7 +83,8 @@ object ConfigLoader {
             hueAppId = hueAppId,
             hueRedirectUri = hueRedirectUri,
             hueAccessToken = hueAccessToken,
-            hueRefreshToken = hueRefreshToken
+            hueRefreshToken = hueRefreshToken,
+            databasePath = databasePath
         )
     }
 

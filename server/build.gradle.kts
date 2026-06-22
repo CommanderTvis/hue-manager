@@ -41,6 +41,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
 
     implementation(libs.dotenv)
+    implementation(libs.sqlite.jdbc)
 
     testImplementation(libs.ktor.serverTestHost)
     testImplementation(libs.mcp.sdk)

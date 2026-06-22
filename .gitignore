@@ -20,6 +20,12 @@ node_modules/
 .env
 Caddyfile
 
+# Local SQLite settings database (and WAL sidecar files)
+/data/
+*.db
+*.db-wal
+*.db-shm
+
 kotlin-js-store/
 
 .claude/settings.local.json

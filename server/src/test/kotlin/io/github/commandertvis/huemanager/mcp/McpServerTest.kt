@@ -130,6 +130,7 @@ class McpServerTest {
         hueAppId = "test-app",
         hueRedirectUri = null,
         hueAccessToken = null,
-        hueRefreshToken = null
+        hueRefreshToken = null,
+        databasePath = "build/test-hue.db"
     )
 }

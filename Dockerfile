@@ -42,6 +42,11 @@ LABEL org.opencontainers.image.source=https://github.com/CommanderTvis/hue-manag
 WORKDIR /app
 
 RUN addgroup -S huemanager && adduser -S huemanager -G huemanager
+
+# Data dir for the SQLite settings DB. Pre-created with the right owner so a mounted
+# named volume inherits write permission for the non-root user.
+RUN mkdir -p /app/data && chown huemanager:huemanager /app/data
+
 USER huemanager
 
 # Copy the built JAR

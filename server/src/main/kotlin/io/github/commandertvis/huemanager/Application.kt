@@ -5,6 +5,7 @@ import io.github.commandertvis.huemanager.config.Config
 import io.github.commandertvis.huemanager.config.ConfigLoader
 import io.github.commandertvis.huemanager.hue.HueService
 import io.github.commandertvis.huemanager.hue.LampStateCache
+import io.github.commandertvis.huemanager.persistence.SettingsStore
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
@@ -16,6 +17,7 @@ import io.ktor.server.routing.*
 import io.ktor.server.sse.*
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlin.io.path.Path
 
 fun main() {
     val config = try {
@@ -26,27 +28,30 @@ fun main() {
         return
     }
 
-    HueService(config).use { hueService ->
-        LampStateCache(hueService).use { lampStateCache ->
-            hueService.setCache(lampStateCache)
-            AutomationManager(config, hueService, lampStateCache).use { automationManager ->
-                lampStateCache.setSensorRefreshListener { sensors ->
-                    automationManager.onSensorsRefreshed(sensors)
-                }
-                runBlocking {
-                    val initialized = hueService.initialize()
-                    if (initialized) {
-                        lampStateCache.initialize()
-                        lampStateCache.startRefreshing()
-                        logger.info("Connected to Philips Hue with ${lampStateCache.getLights().size} lamps")
-                    } else {
-                        logger.info("Philips Hue not configured. Use the web UI or API to configure connection.")
+    SettingsStore(Path(config.databasePath)).use { settingsStore ->
+        HueService(config).use { hueService ->
+            LampStateCache(hueService).use { lampStateCache ->
+                hueService.setCache(lampStateCache)
+                AutomationManager(config, hueService, lampStateCache, settingsStore).use { automationManager ->
+                    lampStateCache.setSensorRefreshListener { sensors ->
+                        automationManager.onSensorsRefreshed(sensors)
                     }
-                }
+                    runBlocking {
+                        val initialized = hueService.initialize()
+                        if (initialized) {
+                            lampStateCache.initialize()
+                            lampStateCache.startRefreshing()
+                            automationManager.resumeFromPersistedState()
+                            logger.info("Connected to Philips Hue with ${lampStateCache.getLights().size} lamps")
+                        } else {
+                            logger.info("Philips Hue not configured. Use the web UI or API to configure connection.")
+                        }
+                    }
 
-                embeddedServer(Netty, port = SERVER_PORT, host = "0.0.0.0") {
-                    module(config, hueService, automationManager, lampStateCache)
-                }.start(wait = true)
+                    embeddedServer(Netty, port = SERVER_PORT, host = "0.0.0.0") {
+                        module(config, hueService, automationManager, lampStateCache)
+                    }.start(wait = true)
+                }
             }
         }
     }
