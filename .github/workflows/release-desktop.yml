@@ -79,9 +79,10 @@ jobs:
 
       - name: Send APK to Telegram
         run: |
+          MSG="$(git log -1 --pretty=%s)"
           curl -s -F chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -F document=@hue-manager-release.apk \
-            -F caption="Nightly $(git rev-parse --short HEAD) — $(date -u +%Y-%m-%d)" \
+            -F caption="Nightly $(git rev-parse --short HEAD) — $(date -u +%Y-%m-%d): ${MSG}" \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument"
 
       - name: Get DMG asset ID
