@@ -12,8 +12,13 @@ import jakarta.ws.rs.core.HttpHeaders
 import jakarta.ws.rs.core.MediaType
 import jakarta.ws.rs.core.Response
 import jakarta.ws.rs.core.UriInfo
+import kotlinx.serialization.Serializable
 import org.jboss.logging.Logger
 import java.util.UUID
+
+/** Authorization URL + CSRF state returned by `GET /api/hue/authorize`. */
+@Serializable
+data class AuthorizeUrlResponse(val authorizationUrl: String, val state: String)
 
 /**
  * Philips Hue Remote API OAuth2 endpoints, ported from `apiRoutes`.
@@ -32,16 +37,17 @@ class HueOAuthResource @Inject constructor(
     @GET
     @Path("/authorize")
     @Produces(MediaType.APPLICATION_JSON)
-    fun authorize(@Context headers: HttpHeaders, @Context uriInfo: UriInfo): Response {
+    fun authorize(@Context headers: HttpHeaders, @Context uriInfo: UriInfo): AuthorizeUrlResponse {
         val redirectUri = resolveRedirectUri(headers, uriInfo)
         val state = UUID.randomUUID().toString()
 
         logger.info("Generating authorization URL for redirectUri: $redirectUri")
         // Client id/secret/app id are required config (the app fails to boot without them),
-        // so the URL is always produced.
+        // so the URL is always produced. Typed return → the kotlinx serializer is registered for
+        // native (a raw Response with a Map body fails the reflective lookup at runtime).
         val authUrl = hueService.getAuthorizationUrl(redirectUri, state)
         logger.info("Generated URL: $authUrl")
-        return Response.ok(mapOf("authorizationUrl" to authUrl, "state" to state)).build()
+        return AuthorizeUrlResponse(authUrl, state)
     }
 
     @GET
