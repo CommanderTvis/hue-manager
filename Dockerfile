@@ -10,8 +10,9 @@
 FROM ghcr.io/graalvm/graalvm-community:21 AS build
 WORKDIR /app
 
-# native-image toolchain
-RUN microdnf install -y gcc glibc-devel zlib-devel libstdc++-static && microdnf clean all
+# native-image toolchain: graalvm-community already ships gcc; add only the dev headers
+# (gcc/libstdc++-static would pull conflicting versions, and static libc isn't used here).
+RUN microdnf install -y glibc-devel zlib-devel && microdnf clean all
 
 # Build scripts first for layer caching (androidApp is configured but never built here —
 # it needs the Android SDK, which is absent; only :server and :composeApp tasks run).
