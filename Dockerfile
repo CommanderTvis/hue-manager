@@ -31,6 +31,10 @@ COPY shared shared
 COPY server server
 COPY composeApp composeApp
 
+# Commit hash for BuildInfo.kt (git isn't available in the image); passed by CI.
+ARG BUILD_COMMIT=unknown
+ENV BUILD_COMMIT=$BUILD_COMMIT
+
 # Build the web SPA and the native server binary (native only, no JAR).
 # Config cache is disabled here: a fresh container gains nothing from it, and it keeps
 # the build independent of the androidJdkImage cc limitation.

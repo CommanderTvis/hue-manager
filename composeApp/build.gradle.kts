@@ -76,11 +76,17 @@ val generateBuildInfo = tasks.register("generateBuildInfo") {
     outputs.dir(outputDir)
 
     doLast {
-        val gitCommit = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
-            .directory(rootDir)
-            .redirectErrorStream(true)
-            .start()
-            .inputStream.bufferedReader().readText().trim()
+        // Prefer the BUILD_COMMIT env var (set in Docker/CI where git isn't available);
+        // fall back to `git`, then to "unknown" so the build never hard-depends on git.
+        val gitCommit = System.getenv("BUILD_COMMIT")?.trim()?.takeIf { it.isNotEmpty() }?.take(7)
+            ?: runCatching {
+                ProcessBuilder("git", "rev-parse", "--short", "HEAD")
+                    .directory(rootDir)
+                    .redirectErrorStream(true)
+                    .start()
+                    .inputStream.bufferedReader().readText().trim()
+            }.getOrNull()?.takeIf { it.isNotEmpty() }
+            ?: "unknown"
 
         val file = outputDir.get().file(
             "io/github/commandertvis/huemanager/BuildInfo.kt"
