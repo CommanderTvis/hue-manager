@@ -53,3 +53,77 @@ jobs:
             BUILD_COMMIT=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Boots the freshly-built native image (with a throwaway in-memory Hydra so the OIDC proxy starts)
+  # and asserts the JSON paths return 401/200/401 — never 500. Catches native-only serialization
+  # regressions before deploy: update.sh deploys only when this workflow concludes 'success'.
+  smoke-test:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Log in to the Container registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Native smoke test (auth + error paths)
+        run: |
+          set -euo pipefail
+          IMG="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]'):sha-${{ github.sha }}"
+          docker pull "$IMG"
+          docker network create huesmoke
+
+          docker run -d --name hydra --network huesmoke \
+            -e DSN=memory \
+            -e SECRETS_SYSTEM=smoke-system-secret-0123456789abcdef \
+            -e URLS_SELF_ISSUER=http://hydra:4444 \
+            oryd/hydra:v2.2.0 serve all --dev
+          echo "Waiting for Hydra..."
+          for _ in $(seq 1 20); do
+            docker run --rm --network huesmoke curlimages/curl:latest -sf http://hydra:4444/health/ready >/dev/null 2>&1 && break
+            sleep 2
+          done
+
+          PWHASH=$(printf 'smoke' | sha256sum | cut -d' ' -f1)
+          docker run -d --name app --network huesmoke -p 8080:8080 \
+            -e HUE_PASSWORD_HASH="$PWHASH" \
+            -e HUE_JWT_SECRET=smoke-jwt-secret-at-least-32-bytes-long \
+            -e HUE_REGION=52.5,13.4 -e HUE_PSEUDO_SUNSET=21:05 -e HUE_TIMEZONE=UTC \
+            -e HUE_CLIENT_ID=dummy -e HUE_CLIENT_SECRET=dummy -e HUE_APP_ID=dummy \
+            -e HUE_REDIRECT_URI=https://example.com/cb \
+            -e HYDRA_ISSUER_URL=http://hydra:4444 -e HYDRA_ADMIN_URL=http://hydra:4445 \
+            -e DATABASE_PATH=/app/data/hue.db \
+            "$IMG"
+
+          echo "Waiting for app..."
+          code=000
+          for _ in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/status || true)
+            [ "$code" = "200" ] && break
+            sleep 2
+          done
+          if [ "$code" != "200" ]; then echo "::error::app did not become healthy"; docker logs app; exit 1; fi
+
+          fail=0
+          check() {
+            local name=$1 exp=$2; shift 2
+            local got; got=$(curl -s -o /dev/null -w '%{http_code}' "$@")
+            echo "$name -> HTTP $got (expected $exp)"
+            [ "$got" = "$exp" ] || { echo "::error::$name returned $got, expected $exp"; fail=1; }
+          }
+          check "wrong-password"   401 -X POST http://localhost:8080/api/auth      -H 'Content-Type: application/json' -d '{"password":"nope"}'
+          check "correct-password" 200 -X POST http://localhost:8080/api/auth      -H 'Content-Type: application/json' -d '{"password":"smoke"}'
+          check "unauth-write"     401 -X PUT  http://localhost:8080/api/lamps/all -H 'Content-Type: application/json' -d '{"on":true}'
+          if [ "$fail" != "0" ]; then echo "=== app logs ==="; docker logs app | tail -50; exit 1; fi
+          echo "Native smoke test passed."
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker rm -f app hydra >/dev/null 2>&1 || true
+          docker network rm huesmoke >/dev/null 2>&1 || true
