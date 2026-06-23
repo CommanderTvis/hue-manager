@@ -5,40 +5,47 @@
 ## Project Overview
 
 A Philips Hue lamp management system with:
-- **server/**: Ktor backend for managing lamp state via Philips Hue Remote API (OAuth2)
+- **server/**: Quarkus backend, compiled to a **GraalVM native image** (~86 MB binary, ~45 MB RSS at idle), managing lamp state via the Philips Hue Remote API (OAuth2)
 - **composeApp/**: Compose Multiplatform UI library (Desktop JVM, Web JS/WasmJS, Android target)
 - **androidApp/**: Android application module (depends on composeApp)
 - **shared/**: Shared data models and constants
 
-**Deployment:** Self-hosted on VDS with Docker + Caddy reverse proxy for HTTPS.
+**Deployment:** Self-hosted on VDS with Docker + Caddy reverse proxy for HTTPS. The server runs alongside an **Ory Hydra** container (OAuth2 authorization server for MCP).
 
 **IMPORTANT:** Philips Hue OAuth2 requires HTTPS and a valid domain name. The redirect URI must be publicly accessible over HTTPS.
 
 ## Tech Stack
 
-- Kotlin 2.3.10
-- Ktor 3.4.1 (server + client)
-- Compose Multiplatform 1.10.2
-- kotlinx-serialization 1.10.0
-- kotlinx-datetime 0.7.1-0.6.x-compat
-- kotlinx-coroutines 1.10.2
-- dotenv-kotlin 6.5.1
-- MCP Kotlin SDK 0.9.0
-- Gradle with version catalog
+- Kotlin 2.4.0
+- **Quarkus 3.36.3** (server; replaced Ktor) — RESTEasy/JAX-RS, CDI (Arc), `quarkus-rest-kotlin-serialization`, `quarkus-rest-client`, `quarkus-scheduler`
+- **GraalVM 21** — the sole JDK; the server compiles to a native image
+- Ktor **client** 3.5.0 (composeApp only — the server no longer uses Ktor)
+- Compose Multiplatform 1.11.1
+- kotlinx-serialization 1.11.0, kotlinx-coroutines 1.11.0, kotlinx-datetime 0.8.0-0.6.x-compat
+- jose4j (via Quarkus) for SPA session JWTs
+- `quarkus-oidc` + `quarkus-oidc-proxy` 0.7.0 + Ory Hydra for MCP OAuth
+- `quarkus-mcp-server-sse` 1.13.0 (replaced MCP Kotlin SDK)
+- `quarkus-jdbc-sqlite` 3.0.11 / sqlite-jdbc 3.53.2.0 (persistent settings)
+- Gradle 9.6.0 with version catalog; AGP 9.0.0
 
 **Build Configuration:**
 - Maven Central and Google repositories only (no JitPack needed)
+- Configuration cache is **enabled**, but `:androidApp:assembleDebug` requires `--no-configuration-cache` (AGP's `androidJdkImage` jlink transform is config-cache-incompatible on GraalVM — oracle/graal#7064). The "incompatible with Gradle 10" deprecation warnings come from the AGP/Quarkus/Kotlin plugins (upstream, not fixable here).
 - Android context management via shared AndroidContext singleton
 
 ## Architecture
 
 ```
-Client (composeApp) <--HTTP--> Server (Ktor on VDS) <--OAuth2/REST--> Philips Cloud (api.meethue.com) <--> Hue Bridge
-                                     |
-                              LampStateCache (in-memory)
-                              Refreshed every 5s from Philips Cloud
-                              All reads served from cache (instant)
+Client (composeApp) ──HTTP/JWT──┐
+                                ├─▶ Server (Quarkus native on VDS) ──OAuth2/REST──▶ Philips Cloud ──▶ Hue Bridge
+Claude / MCP client ──MCP/OAuth─┘          │
+                                           ├─ LampStateCache (in-memory, 5s refresh, all reads instant)
+                                           └─ Ory Hydra (OAuth2 AS for MCP; login/consent delegated back to the server)
 ```
+
+**Authentication:**
+- **SPA / desktop / web / Android clients:** plain password → `POST /api/auth` returns a signed JWT (jose4j HS256). Clients send it as `Bearer`; the password is sent only at login. Validated per-request by `AuthVerifier` (`rest/RestSupport.kt`).
+- **MCP clients:** OAuth via Ory Hydra (token issuance/DCR/discovery) + `quarkus-oidc` (resource server, validates Hydra JWTs on `/mcp`) + `quarkus-oidc-proxy` (fronts Hydra under the app's domain). Login/consent is delegated to the server (`auth/HydraLoginConsentResource.kt`), so the user still sees only the Hue Manager password screen. The server requires Hydra to boot.
 
 **Bridge Connection via OAuth2:**
 The server connects to the Hue bridge through Philips Cloud using OAuth2. No local network access, port forwarding, or VPN is required.
@@ -54,7 +61,7 @@ The server connects to the Hue bridge through Philips Cloud using OAuth2. No loc
 5. User logs in with their Philips Hue account in the browser
 6. User presses the link button on their bridge when prompted
 7. User completes authorization - Philips redirects to `/api/hue/callback`
-8. Server handles callback, exchanges code for tokens, and stores them in `.env`
+8. Server handles callback, exchanges code for tokens, and persists them via `TokenStore`
 9. User returns to the app and clicks "Check Again" to verify connection
 
 **IMPORTANT OAuth2 Requirements:**
@@ -71,14 +78,21 @@ The server acts as a persistent process that:
 
 ## Environment Variables (.env)
 
+Config is bound via a `@ConfigMapping(prefix = "hue")` interface (`config/AppConfig.kt`), so
+env vars use the `HUE_` prefix (`HUE_REGION` → `hue.region`, etc.). Quarkus reads `.env`
+natively — **dotenv-kotlin was removed**. Bootstrap secrets live in `.env`; runtime-mutable
+settings live in SQLite (see Persistent Settings).
+
 ```bash
 # Authentication
-PASSWORD=<auth password>
+HUE_PASSWORD_HASH=<SHA-256 hex of the password>   # no plaintext-hash auto-migration anymore
+HUE_JWT_SECRET=<>= 32-byte HMAC secret for SPA session JWTs>   # e.g. openssl rand -base64 48
+# HUE_JWT_TTL_DAYS=30   # optional, session token lifetime
 
 # Location for sunrise/sunset calculation
-REGION=<latitude,longitude>
-PSEUDO_SUNSET=21:05
-TIMEZONE=Europe/Berlin
+HUE_REGION=<latitude,longitude>
+HUE_PSEUDO_SUNSET=21:05
+HUE_TIMEZONE=Europe/Berlin
 
 # Persistence (SQLite) - path to runtime-settings DB (default: data/hue.db)
 DATABASE_PATH=data/hue.db
@@ -89,19 +103,20 @@ HUE_CLIENT_SECRET=<from developers.meethue.com/add-new-hue-remote-api-app/>
 HUE_APP_ID=<from developers.meethue.com/add-new-hue-remote-api-app/>
 HUE_REDIRECT_URI=<OAuth2 callback URL, e.g., https://yourdomain.com/api/hue/callback>
 
-# OAuth2 tokens (populated automatically after authorization)
-HUE_ACCESS_TOKEN=
-HUE_REFRESH_TOKEN=
-HUE_USERNAME=
-
-# Optional
-KEYSTORE_PASSWORD=<for HTTPS>
+# Hydra (MCP OAuth) — see docker-compose.yml
+HYDRA_ISSUER_URL=<public Hydra issuer, e.g. https://yourdomain.com or http://localhost:4444>
+HYDRA_ADMIN_URL=http://hydra:4445
+HYDRA_SECRETS_SYSTEM=<Hydra cookie/token encryption secret>
+APP_PUBLIC_URL=<base URL Hydra redirects login/consent to>
 ```
+
+Hue OAuth tokens (access/refresh/username) are obtained at runtime and persisted via the
+`TokenStore` (not written back to `.env`).
 
 ## API Endpoints
 
 ### Authentication
-- `POST /api/auth` - Verify password
+- `POST /api/auth` - Verify password; on success returns a signed session JWT. Protected `/api/*` endpoints require `Authorization: Bearer <jwt>`.
 
 ### OAuth2 (Bridge Authorization)
 - `GET /api/hue/authorize` - Start OAuth2 flow (returns authorization URL)
@@ -141,13 +156,11 @@ KEYSTORE_PASSWORD=<for HTTPS>
 - `DELETE /api/sync/pending` - Clear pending lamps (after operation completes)
 
 ### MCP (Model Context Protocol)
-- `GET /mcp/authorize` - MCP OAuth-style authorization page
-- `POST /mcp/authorize` - MCP OAuth password submit
-- `POST /mcp/register` - OAuth dynamic client registration
-- `POST /mcp/token` - OAuth token exchange
-- `GET /.well-known/oauth-authorization-server` - OAuth metadata for connectors
-- `GET /.well-known/oauth-protected-resource` - OAuth protected resource metadata
-- `/mcp` - MCP SSE endpoint (auth required for tools)
+- `/mcp` - MCP SSE endpoint (served by the `quarkus-mcp-server-sse` extension; bearer-token protected via `quarkus-oidc`)
+- OAuth discovery / token / DCR endpoints are provided by **Hydra** fronted by `quarkus-oidc-proxy` (under the app domain, e.g. `/q/oidc/...`) — no longer hand-rolled.
+- `GET /login`, `GET/POST /consent` - login/consent provider Hydra delegates to (`auth/HydraLoginConsentResource.kt`), reusing the app password.
+
+The hand-rolled `/mcp/authorize`, `/mcp/token`, `/mcp/register`, and `.well-known` endpoints were removed in the Quarkus migration.
 
 ## MCP (Model Context Protocol)
 
@@ -156,15 +169,16 @@ The server exposes an MCP endpoint for integration with MCP clients via HTTP OAu
 **Connection:** Add `https://<domain>/mcp` as a connector URL in your MCP client (Claude Desktop, Claude Code, etc.).
 **Important:** The MCP base path is `/mcp` (not `/api/mcp`). Using `/api/mcp` will result in errors.
 
-**Authentication:** OAuth 2.1 over HTTP (Authorization Code + PKCE). Use `/mcp/authorize` as the authorization URL.
-- Requires password entry for authorization (OAuth page shows password form).
+**Authentication:** OAuth 2.1 (Authorization Code + PKCE), with Ory Hydra as the authorization
+server and `quarkus-oidc` validating the resulting bearer JWT on `/mcp`. Hydra delegates
+login/consent to the app, which prompts for the Hue Manager password.
 
 **Implementation:**
-- Uses official MCP Kotlin SDK (`io.modelcontextprotocol:kotlin-sdk:0.9.0`)
-- SSE transport is wired manually via `SseServerTransport` for correct endpoint advertisement
-- SSE connection: `GET /mcp` (establishes connection, receives server messages)
-- Client messages: `POST /mcp` (sends client requests with `sessionId` parameter)
-- Server file: `server/.../mcp/McpHandler.kt`
+- Uses the **`quarkus-mcp-server-sse`** extension (`io.quarkiverse.mcp`, 1.13.0) — tools/resources
+  are declared with `@Tool` / `@Resource` annotations; the extension provides the SSE transport.
+- Server file: `server/.../mcp/McpServer.kt`
+- Note: the extension rejects `suspend` `@Tool` methods, so the async tools wrap their suspend
+  service calls in `runBlocking`.
 
 **Available Resources:**
 | Resource URI | Description |
@@ -210,13 +224,13 @@ The server maintains an in-memory cache of all lamp and group state from the Phi
 ## Persistent Settings (SQLite)
 
 Runtime-mutable settings survive server restarts via a SQLite database. Secrets and bootstrap
-config (password hash, Hue OAuth client id/secret/tokens, region, timezone) stay in `.env`;
-only the settings that the user changes at runtime live in the DB.
+config (password hash, JWT secret, Hue OAuth client id/secret/tokens, region, timezone) stay in
+`.env`; only the settings that the user changes at runtime live in the DB.
 
 **Implementation:** `server/.../persistence/SettingsStore.kt` — a tiny key/value store
-(`app_state(key TEXT PRIMARY KEY, value TEXT)`, WAL mode, UPSERT) over a single synchronized
-JDBC connection (`org.xerial:sqlite-jdbc`). DB path from `DATABASE_PATH` (default `data/hue.db`;
-`/app/data/hue.db` in Docker).
+(`app_state(key TEXT PRIMARY KEY, value TEXT)`, WAL mode, UPSERT) over JDBC; SQLite native
+support comes from `quarkus-jdbc-sqlite` (Agroal datasource configured in `application.properties`).
+DB path from `DATABASE_PATH` (default `data/hue.db`; `/app/data/hue.db` in Docker).
 
 **Persisted keys** (written by `AutomationManager`):
 - `user_state` — the on/off button state (`AWAKE`/`ASLEEP`)
@@ -229,13 +243,14 @@ JDBC connection (`org.xerial:sqlite-jdbc`). DB path from `DATABASE_PATH` (defaul
 - `AutomationManager` takes an optional `SettingsStore` (null = no persistence, used by tests).
   Its `init` block loads persisted values, overriding the `.env`-derived defaults.
 - Every settings setter and `wakeUp()`/`goToSleep()` writes through to the store immediately.
-- `resumeFromPersistedState()` (called from `Application.kt` after the lamp cache initializes)
-  re-applies automation + restarts the heartbeat if the persisted `user_state` was `AWAKE`.
+- `resumeFromPersistedState()` (called from `Startup.kt` on the Quarkus `StartupEvent`, after the
+  lamp cache initializes) re-applies automation + restarts the heartbeat if the persisted
+  `user_state` was `AWAKE`.
 - **Not** persisted (ephemeral by design): 1-hour lamp overrides, `wakeUpTime`, reachability/
   power-state tracking.
 
-**Docker:** named volume `hue-data:/app/data` (in `docker-compose.yml`). Dockerfiles pre-create
-`/app/data` owned by the non-root `huemanager` user so the volume inherits write permission.
+**Docker:** named volume `hue-data:/app/data` (in `docker-compose.yml`). The `Dockerfile` pre-creates
+`/app/data` owned by the non-root runtime user (uid 1001) so the volume inherits write permission.
 
 ## Rate Limiting
 
@@ -306,64 +321,62 @@ When Hue Sync entertainment areas are active:
 
 ## File Structure
 
+Package directories are **flattened**: sources live directly under each source set's `kotlin/`
+root (no `io/github/commandertvis/huemanager/` prefix dirs). Package declarations are unchanged
+(`io.github.commandertvis.huemanager.*`); Kotlin allows directory ≠ package.
+
 ```
 hue-manager/
-├── server/src/main/kotlin/io/github/commandertvis/huemanager/
-│   ├── Application.kt       # Entry point, plugin setup
-│   ├── ApiRoutes.kt         # REST API route definitions
-│   ├── AuthRoutes.kt        # Authentication routes
-│   ├── McpRoutes.kt         # MCP SSE/OAuth route definitions
-│   ├── WebRoutes.kt         # SPA serving routes
-│   ├── Logging.kt           # Logging configuration
-│   ├── automation/          # Daylight automation
-│   ├── config/              # Environment configuration
-│   ├── hue/                 # Hue API clients, cache, rate limiting
-│   └── mcp/                 # MCP server (McpHandler.kt)
-├── shared/src/commonMain/kotlin/io/github/commandertvis/huemanager/
-│   ├── models/              # Data models
-│   ├── api/                 # API DTOs
-│   ├── network/             # Shared JSON configuration
-│   ├── Platform.kt          # Platform utilities (expect/actual)
-│   └── Constants.kt         # Shared constants
-├── composeApp/src/commonMain/kotlin/io/github/commandertvis/huemanager/
-│   ├── App.kt               # Main app entry
-│   ├── ui/                  # UI screens
-│   ├── viewmodel/           # ViewModels
-│   ├── network/             # Server API client + rate limiting
-│   ├── auth/                # Session storage (AuthStorage)
-│   └── storage/             # Platform-specific persistent storage
+├── server/src/main/kotlin/                 # base package io.github.commandertvis.huemanager
+│   ├── AuthResource.kt      # POST /api/auth → issues session JWT
+│   ├── PasswordAuthService.kt
+│   ├── SpaResource.kt       # serves the Wasm SPA from runtime web/ dir
+│   ├── Startup.kt           # @Observes StartupEvent: init Hue + cache + resume automation
+│   ├── auth/                # JwtService, PasswordAuthenticator, HydraLoginConsentResource, HydraAdminClient
+│   ├── rest/                # ApiResource, HueOAuthResource, RestSupport (AuthVerifier)
+│   ├── mcp/                 # McpServer.kt (quarkus-mcp-server @Tool/@Resource)
+│   ├── automation/          # Daylight automation (AutomationManager, SunCalculator)
+│   ├── config/              # AppConfig (@ConfigMapping), Config
+│   ├── hue/                 # HueApi (REST client), HueRemoteClient, HueService, LampStateCache, RateLimiter, HueModels
+│   └── persistence/         # SettingsStore
+│   src/main/resources/application.properties   # Quarkus config (http, datasource, oidc, oidc-proxy)
+├── shared/src/commonMain/kotlin/            # models/, api/, network/, Platform.kt, Constants.kt
+├── composeApp/src/commonMain/kotlin/        # App.kt, ui/, viewmodel/, network/, auth/ (AuthStorage), storage/
 ├── composeApp/src/{jvmMain,wasmJsMain,androidMain}/  # Platform-specific implementations
 ├── androidApp/              # Android entry point
 ├── gradle/libs.versions.toml  # Gradle version catalog
 ├── .env.example             # Environment configuration template
-├── Dockerfile               # Multi-stage build for local docker compose
-├── Dockerfile.runtime       # Runtime-only image for CI/CD (uses pre-built artifacts)
-├── docker-compose.yml       # Docker deployment config (template)
-├── .github/workflows/docker-publish.yml  # CI/CD pipeline (Docker image)
+├── Dockerfile               # Multi-stage: GraalVM native build → ubi9-minimal runtime (used by compose + CI)
+├── docker-compose.yml       # hue-manager + hydra + hydra-migrate (+ optional Caddy)
+├── .github/workflows/docker-publish.yml  # CI/CD pipeline (buildx native image → GHCR)
 ├── .github/workflows/release-desktop.yml # CI/CD pipeline (DMG + Homebrew Cask)
 ├── Caddyfile.example        # Caddy reverse proxy config (HTTPS)
 ├── TASK.md                  # Human-written design document
 ├── AGENTS.md                # Simplified context for AI sub-agents
-└── CLAUDE.md                # This file - AI memory/context
+├── CLAUDE.md                # This file - AI memory/context
+└── CLAUDE.local.md          # Machine-local (gitignored) Kotlin code-intelligence policy
 ```
 
 ## Key Server Files
 
-- `server/.../Application.kt` - Entry point, Ktor plugin setup, service wiring
-- `server/.../ApiRoutes.kt` - REST API route definitions (lamps, groups, automation, settings, sync)
-- `server/.../AuthRoutes.kt` - Authentication routes (password verification, sessions)
-- `server/.../McpRoutes.kt` - MCP SSE transport, OAuth endpoints, `.well-known` metadata
-- `server/.../WebRoutes.kt` - SPA serving and static file routes
-- `server/.../config/Config.kt` - Configuration loading from .env
+- `server/.../Startup.kt` - Quarkus `StartupEvent` observer: initializes Hue + lamp cache, resumes automation (replaces the old `Application.kt` `main()`)
+- `server/.../AuthResource.kt` - `POST /api/auth`: verifies password (`PasswordAuthService`), returns a session JWT
+- `server/.../rest/ApiResource.kt` - JAX-RS REST API (lamps, groups, sensors, automation, settings, sync)
+- `server/.../rest/HueOAuthResource.kt` - Philips Hue bridge OAuth (`/api/hue/authorize|callback|link`)
+- `server/.../rest/RestSupport.kt` - `AuthVerifier.requireAuth()` (session-JWT bearer check) + helpers
+- `server/.../auth/JwtService.kt` - jose4j HS256 sign/verify of SPA session tokens
+- `server/.../auth/HydraLoginConsentResource.kt` / `HydraAdminClient.kt` - Hydra login/consent provider for MCP OAuth
+- `server/.../SpaResource.kt` - serves the Compose/Wasm SPA dist from the runtime `web/` dir
+- `server/.../config/AppConfig.kt` - `@ConfigMapping(prefix="hue")` typed config; `Config.kt` helpers
 - `server/.../hue/HueModels.kt` - Serializable DTOs for the Hue v1 REST API (lights, groups, sensors)
-- `server/.../hue/HueRemoteClient.kt` - HTTP client for Philips Hue Remote API (OAuth2)
+- `server/.../hue/HueApi.kt` / `HueRemoteClient.kt` - Quarkus REST client + service for the Hue Remote API (OAuth2)
 - `server/.../hue/HueService.kt` - Service layer managing Hue connection via Remote API
 - `server/.../hue/LampStateCache.kt` - In-memory cache of lamp/group state with background refresh
 - `server/.../hue/RateLimiter.kt` - Token bucket and minimum delay rate limiters
 - `server/.../persistence/SettingsStore.kt` - SQLite key/value store for persistent runtime settings
 - `server/.../automation/AutomationManager.kt` - User state, lamp overrides, heartbeat, automation mode calculation; loads/persists settings via `SettingsStore`
 - `server/.../automation/SunCalculator.kt` - NOAA Solar Calculator algorithm for sunrise/sunset/solar noon calculation
-- `server/.../mcp/McpHandler.kt` - MCP server configuration and tool implementations
+- `server/.../mcp/McpServer.kt` - MCP `@Tool`/`@Resource` implementations (quarkus-mcp-server)
 
 ## Key Shared Files
 
@@ -380,8 +393,8 @@ hue-manager/
 
 - `composeApp/.../network/ApiClient.kt` - Multiplatform Ktor client with all API methods
 - `composeApp/.../network/RateLimiter.kt` - Client-side rate limiting
-- `composeApp/.../auth/AuthStorage.kt` - Persistent password storage with StateFlow (delegates to PlatformStorage)
-- `composeApp/.../storage/PlatformStorage.kt` - Platform-specific persistent storage interface (server URL + password)
+- `composeApp/.../auth/AuthStorage.kt` - Persistent session-JWT storage with StateFlow (delegates to PlatformStorage); the password is never persisted
+- `composeApp/.../storage/PlatformStorage.kt` - Platform-specific persistent storage interface (server URL + auth token)
 - `composeApp/.../viewmodel/AuthViewModel.kt` - Login state management
 - `composeApp/.../viewmodel/LampsViewModel.kt` - Lamp state and control management
 - `composeApp/.../viewmodel/ServerConnectViewModel.kt` - Server URL validation
@@ -395,36 +408,25 @@ hue-manager/
 
 ## Production Deployment
 
-**Two Deployment Methods:**
+A single multi-stage **`Dockerfile`** is used for both local `docker compose up --build` and CI:
+- **Build stage** (`ghcr.io/graalvm/graalvm-community:21`): builds the Wasm SPA
+  (`:composeApp:wasmJsBrowserDistribution`) and the native server
+  (`:server:quarkusBuild -Dquarkus.native.enabled=true -Dquarkus.package.jar.enabled=false`).
+- **Runtime stage** (`ubi9-minimal`, glibc): ships the native binary + `web/` dir, runs as a
+  non-root user, healthcheck via `curl`. (`Dockerfile.runtime` was removed.)
 
-### Method 1: Local Build (`docker compose up`)
-- Uses `Dockerfile` (multi-stage build)
-- Builds from source during `docker compose up --build`
-- Good for: Local development, testing, small deployments
-- Configuration: Edit `docker-compose.yml` to use `build: .`
+CI (`.github/workflows/docker-publish.yml`) builds this Dockerfile via Docker **buildx** with GHA
+layer cache and pushes to GHCR (`ghcr.io/commandertvis/hue-manager:sha-...` + `latest`). The
+native compile is memory/CPU-heavy (several minutes).
 
-### Method 2: CI/CD with Pre-built Images (Production)
-- Uses `Dockerfile.runtime` (runtime-only)
-- GitHub Actions builds artifacts and creates Docker image
-- Published to GitHub Container Registry (GHCR)
-- Container visibility inherits from repository (private repository → private packages)
-- Tagged with commit hash (e.g., `ghcr.io/commandertvis/hue-manager:sha-abc1234`)
-- Good for: Production deployments, faster deploys, reproducible builds
+**Production setup:**
+1. Clone repo to server; `cp .env.example .env` and configure (incl. `HYDRA_*`, `HUE_JWT_SECRET`).
+2. `cp Caddyfile.example Caddyfile` and set domain.
+3. `docker compose up -d` — starts `hue-manager` (native), `hydra` + `hydra-migrate`, and (uncomment) Caddy.
 
-**Production Setup (Method 2):**
-1. Clone repository to server
-2. Copy `.env.example` to `.env` and configure
-3. Copy `Caddyfile.example` to `Caddyfile` and set domain
-4. Update `docker-compose.yml` to use GHCR image
-5. Run `docker compose up -d`
-
-**Production docker-compose.yml structure:**
-- Uses pre-built GHCR image (not local build)
-- Caddy reverse proxy for HTTPS with automatic Let's Encrypt certificates
-- Bridge network for service communication
-- Volume mounts for `.env` file (both `/.env` for Docker, `./.env` for local)
-- Health checks for both services
-- Named volumes for Caddy data persistence
+**docker-compose.yml services:** `hue-manager` (built from `Dockerfile` or pulled from GHCR),
+`hydra` + `hydra-migrate` (Ory Hydra OAuth2 AS, SQLite-backed), optional `caddy` for HTTPS.
+Named volumes: `hue-data` (settings DB), `hydra-data` (Hydra DB).
 
 ## Desktop App Distribution
 
@@ -489,6 +491,24 @@ The app implements Google Docs-style real-time synchronization across multiple c
 - Platform-specific URL opening for OAuth flow
 
 ## Recent Changes
+
+**June 2026 — Quarkus + GraalVM native migration:**
+- Migrated the server from **Ktor + Netty to Quarkus**, compiled to a **GraalVM native image**
+  (~86 MB binary, ~45 MB RSS vs ~215 MB on the JVM). CDI beans + JAX-RS resources replaced the
+  Ktor route DSL; `Application.kt` removed (Quarkus self-boots; `Startup.kt` runs init).
+- **JWT session auth** for the SPA: `POST /api/auth` returns a jose4j HS256 token; the password is
+  sent only at login (was: raw password as a bearer on every request). `HUE_JWT_SECRET` env.
+- **Dropped the hand-rolled MCP OAuth server**: MCP now uses Ory Hydra (separate container) +
+  `quarkus-oidc` (resource server) + `quarkus-oidc-proxy`. Login/consent delegated to the app.
+- **MCP** ported from the MCP Kotlin SDK to the `quarkus-mcp-server-sse` extension.
+- Hue client → Quarkus REST client; persistence → `quarkus-jdbc-sqlite`; logging → Quarkus/JBoss
+  (logback removed); config → `@ConfigMapping(prefix="hue")` (dotenv removed, `HUE_*` env keys).
+- **Flattened package directories** (removed the `io/github/commandertvis/huemanager` prefix dirs;
+  package declarations unchanged).
+- Toolchain bumps: **Gradle 9.6.0, AGP 9.0.0, Kotlin 2.4.0, Quarkus 3.36.3, Compose MP 1.11.1**,
+  kotlinx 1.11.0, ktor client 3.5.0, sqlite-jdbc 3.53.2.0. **GraalVM 21** is the sole JDK.
+- Docker consolidated to one multi-stage native `Dockerfile` (removed `Dockerfile.runtime`); CI
+  builds it via buildx. Config cache enabled (Android APK needs `--no-configuration-cache`).
 
 **June 2026:**
 - Added persistent runtime settings via SQLite (`SettingsStore`): on/off `user_state` and all schedule preferences (pseudo-sunset, night time, daylight/evening/night colors, excluded lamps, toggle button) now survive server restarts. Secrets/bootstrap stay in `.env`.
