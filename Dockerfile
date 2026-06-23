@@ -39,8 +39,9 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal:9.4
 LABEL org.opencontainers.image.source=https://github.com/CommanderTvis/hue-manager
 WORKDIR /app
 
-RUN microdnf install -y curl && microdnf clean all \
-    && echo 'huemanager:x:1001:1001::/app:/sbin/nologin' >> /etc/passwd \
+# ubi9-minimal already ships curl-minimal (provides /usr/bin/curl for the healthcheck);
+# installing full curl conflicts with it, so don't.
+RUN echo 'huemanager:x:1001:1001::/app:/sbin/nologin' >> /etc/passwd \
     && mkdir -p /app/data && chown -R 1001:1001 /app
 USER 1001
 
