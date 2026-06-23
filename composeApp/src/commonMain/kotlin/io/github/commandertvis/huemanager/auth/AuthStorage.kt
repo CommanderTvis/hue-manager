@@ -9,23 +9,23 @@ import kotlinx.coroutines.flow.asStateFlow
 class AuthStorage(
     private val storage: PlatformStorage = platformStorage
 ) {
-    private val _password = MutableStateFlow(storage.getPassword())
-    val password: StateFlow<String?> = _password.asStateFlow()
+    private val _token = MutableStateFlow(storage.getAuthToken())
+    val token: StateFlow<String?> = _token.asStateFlow()
 
     val isLoggedIn: Boolean
-        get() = _password.value != null
+        get() = _token.value != null
 
-    fun setPassword(password: String?) {
-        _password.value = password
-        if (password != null) {
-            storage.setPassword(password)
+    fun setToken(token: String?) {
+        _token.value = token
+        if (token != null) {
+            storage.setAuthToken(token)
         } else {
-            storage.clearPassword()
+            storage.clearAuthToken()
         }
     }
 
-    fun clearPassword() {
-        _password.value = null
-        storage.clearPassword()
+    fun clearToken() {
+        _token.value = null
+        storage.clearAuthToken()
     }
 }

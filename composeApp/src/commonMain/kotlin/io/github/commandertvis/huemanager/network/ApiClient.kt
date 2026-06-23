@@ -42,7 +42,7 @@ class ApiClient(private val baseUrl: String, private val client: HttpClient = cr
         if (response.status.isSuccess()) {
             val authResponse = response.body<AuthResponse>()
             if (authResponse.success) {
-                authToken = password
+                authToken = authResponse.token
             }
             Result.success(authResponse)
         } else {

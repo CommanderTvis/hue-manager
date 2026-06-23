@@ -10,12 +10,15 @@ data class AuthRequest(
 @Serializable
 data class AuthResponse(
     val success: Boolean,
-    val error: String?
+    val error: String?,
+    /** Signed JWT issued on successful login; the client sends it as a Bearer token. */
+    val token: String? = null
 ) {
     companion object {
-        fun success() = AuthResponse(
+        fun success(token: String) = AuthResponse(
             success = true,
-            error = null
+            error = null,
+            token = token
         )
 
         fun failure(error: String) = AuthResponse(

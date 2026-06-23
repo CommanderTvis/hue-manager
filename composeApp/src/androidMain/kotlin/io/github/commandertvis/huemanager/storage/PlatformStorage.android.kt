@@ -9,7 +9,7 @@ import io.github.commandertvis.huemanager.initializeAndroidContext
 private object AndroidPlatformStorage : PlatformStorage {
     private const val PREFS_NAME = "hue_manager_prefs"
     private const val KEY_SERVER_URL = "server_url"
-    private const val KEY_AUTH_PASSWORD = "auth_password"
+    private const val KEY_AUTH_TOKEN = "auth_token"
 
     private val prefs: SharedPreferences by lazy {
         getAndroidApplicationContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -25,14 +25,14 @@ private object AndroidPlatformStorage : PlatformStorage {
         prefs.edit { remove(KEY_SERVER_URL) }
     }
 
-    override fun getPassword(): String? = prefs.getString(KEY_AUTH_PASSWORD, null)
+    override fun getAuthToken(): String? = prefs.getString(KEY_AUTH_TOKEN, null)
 
-    override fun setPassword(password: String) {
-        prefs.edit { putString(KEY_AUTH_PASSWORD, password) }
+    override fun setAuthToken(token: String) {
+        prefs.edit { putString(KEY_AUTH_TOKEN, token) }
     }
 
-    override fun clearPassword() {
-        prefs.edit { remove(KEY_AUTH_PASSWORD) }
+    override fun clearAuthToken() {
+        prefs.edit { remove(KEY_AUTH_TOKEN) }
     }
 }
 

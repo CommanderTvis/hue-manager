@@ -1,7 +1,10 @@
 package io.github.commandertvis.huemanager.hue
 
+import jakarta.annotation.PreDestroy
+import jakarta.enterprise.context.ApplicationScoped
+import jakarta.inject.Inject
 import kotlinx.coroutines.*
-import org.slf4j.LoggerFactory
+import org.jboss.logging.Logger
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -14,12 +17,16 @@ import kotlin.time.Duration.Companion.seconds
  *
  * Write operations optimistically update the cache so that subsequent reads
  * immediately reflect the change without waiting for the next refresh cycle.
+ *
+ * The 5s background refresh is kept on a coroutine loop (started explicitly at app startup),
+ * preserving the original behavior rather than switching to `@Scheduled`.
  */
-class LampStateCache(
+@ApplicationScoped
+class LampStateCache @Inject constructor(
     private val hueService: HueService,
-    private val refreshInterval: Duration = 5.seconds
 ) : AutoCloseable {
-    private val logger = LoggerFactory.getLogger(LampStateCache::class.java)
+    private val refreshInterval: Duration = 5.seconds
+    private val logger = Logger.getLogger(LampStateCache::class.java)
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     @Volatile
@@ -114,6 +121,7 @@ class LampStateCache(
         cachedLights = cachedLights + (id to patched)
     }
 
+    @PreDestroy
     override fun close() {
         refreshJob?.cancel()
         scope.cancel()

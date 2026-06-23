@@ -32,6 +32,15 @@ services:
     environment:
       - TZ=Europe/Berlin
       - DATABASE_PATH=/app/data/hue.db
+      # OAuth: validate Hydra-issued tokens (resource server) and front Hydra via OIDC proxy.
+      # HYDRA_ISSUER_URL is Hydra's PUBLIC issuer URL as seen by the browser/MCP client.
+      - HYDRA_ISSUER_URL=${HYDRA_ISSUER_URL:-http://localhost:4444}
+      # Hydra admin API (internal only) used by the login/consent provider.
+      - HYDRA_ADMIN_URL=http://hydra:4445
+
+    depends_on:
+      hydra:
+        condition: service_started
 
     healthcheck:
       test:
@@ -52,6 +61,46 @@ services:
     # Production: use bridge network with Caddy
     # networks:
     #   - hue-network
+
+  # Ory Hydra: the OAuth2 Authorization Server (tokens, refresh, DCR, .well-known discovery).
+  # Delegates login & consent to our app's /login and /consent endpoints, so the user still only
+  # ever sees the Hue Manager password screen. SQLite-backed to keep the footprint tiny.
+  hydra-migrate:
+    image: oryd/hydra:v2.2.0
+    container_name: hue-hydra-migrate
+    command: migrate sql -e --yes
+    environment:
+      - DSN=sqlite:///var/lib/sqlite/hydra.db?_fk=true&mode=rwc
+    volumes:
+      - hydra-data:/var/lib/sqlite
+    restart: "no"
+
+  hydra:
+    image: oryd/hydra:v2.2.0
+    container_name: hue-hydra
+    command: serve all --dev
+    restart: unless-stopped
+    depends_on:
+      hydra-migrate:
+        condition: service_completed_successfully
+    ports:
+      # 4444 = public (OAuth2: authorize/token/.well-known); 4445 = admin (login/consent accept).
+      - "4444:4444"
+      - "4445:4445"
+    environment:
+      - DSN=sqlite:///var/lib/sqlite/hydra.db?_fk=true&mode=rwc
+      # Public issuer URL as seen by browsers / MCP clients. Override for HTTPS production.
+      - URLS_SELF_ISSUER=${HYDRA_ISSUER_URL:-http://localhost:4444}
+      # Hydra delegates login + consent to our app's endpoints.
+      - URLS_LOGIN=${APP_PUBLIC_URL:-http://localhost:8080}/login
+      - URLS_CONSENT=${APP_PUBLIC_URL:-http://localhost:8080}/consent
+      # System secret for cookie/token encryption.
+      - SECRETS_SYSTEM=${HYDRA_SECRETS_SYSTEM:?HYDRA_SECRETS_SYSTEM is required}
+      # Allow public clients (PKCE, no client secret) for MCP connectors.
+      - OAUTH2_PKCE_ENFORCED_FOR_PUBLIC_CLIENTS=true
+      - STRATEGIES_ACCESS_TOKEN=jwt
+    volumes:
+      - hydra-data:/var/lib/sqlite
 
   # Production only: Caddy reverse proxy for HTTPS
   # caddy:
@@ -78,6 +127,8 @@ services:
 volumes:
   # Persistent runtime settings (SQLite). Survives container rebuilds/restarts.
   hue-data:
+  # Ory Hydra's SQLite database (OAuth clients, grants, tokens).
+  hydra-data:
   # Production only: Caddy persistent storage
   # caddy_data:
   # caddy_config:

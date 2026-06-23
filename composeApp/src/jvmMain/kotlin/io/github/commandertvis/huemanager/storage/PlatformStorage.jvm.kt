@@ -6,7 +6,7 @@ private object JvmPlatformStorage : PlatformStorage {
     private val prefs = Preferences.userNodeForPackage(JvmPlatformStorage::class.java)
 
     private const val KEY_SERVER_URL = "server_url"
-    private const val KEY_AUTH_PASSWORD = "auth_password"
+    private const val KEY_AUTH_TOKEN = "auth_token"
 
     override fun getServerUrl(): String? = prefs.get(KEY_SERVER_URL, null)
 
@@ -20,15 +20,15 @@ private object JvmPlatformStorage : PlatformStorage {
         prefs.flush()
     }
 
-    override fun getPassword(): String? = prefs.get(KEY_AUTH_PASSWORD, null)
+    override fun getAuthToken(): String? = prefs.get(KEY_AUTH_TOKEN, null)
 
-    override fun setPassword(password: String) {
-        prefs.put(KEY_AUTH_PASSWORD, password)
+    override fun setAuthToken(token: String) {
+        prefs.put(KEY_AUTH_TOKEN, token)
         prefs.flush()
     }
 
-    override fun clearPassword() {
-        prefs.remove(KEY_AUTH_PASSWORD)
+    override fun clearAuthToken() {
+        prefs.remove(KEY_AUTH_TOKEN)
         prefs.flush()
     }
 }

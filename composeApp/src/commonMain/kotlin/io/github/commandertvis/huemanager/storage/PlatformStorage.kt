@@ -9,10 +9,10 @@ interface PlatformStorage {
     fun setServerUrl(url: String)
     fun clearServerUrl()
 
-    // Authentication
-    fun getPassword(): String?
-    fun setPassword(password: String)
-    fun clearPassword()
+    // Authentication — persisted session JWT (not the password)
+    fun getAuthToken(): String?
+    fun setAuthToken(token: String)
+    fun clearAuthToken()
 }
 
 /**

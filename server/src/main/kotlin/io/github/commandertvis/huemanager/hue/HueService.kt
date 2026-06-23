@@ -1,49 +1,51 @@
 package io.github.commandertvis.huemanager.hue
 
-import io.github.commandertvis.huemanager.config.Config
-import org.slf4j.LoggerFactory
+import jakarta.enterprise.context.ApplicationScoped
+import jakarta.inject.Inject
+import org.jboss.logging.Logger
 
-class HueService(config: Config) : AutoCloseable {
-    private val logger = LoggerFactory.getLogger(HueService::class.java)
-
-    // Remote API client (cloud connection via OAuth2)
-    private var remoteClient: HueRemoteClient? = HueRemoteClient.fromConfig(config)
-
-    // Back-reference to cache for optimistic updates after writes
-    private var cache: LampStateCache? = null
-
-    fun setCache(cache: LampStateCache) {
-        this.cache = cache
-    }
+/**
+ * Service layer over the Philips Hue Remote API. Wraps [HueRemoteClient] and, on successful
+ * writes, optimistically patches [LampStateCache] so subsequent reads reflect the change before
+ * the next background refresh.
+ *
+ * [LampStateCache] and [HueService] reference each other; CDI injects client proxies, so the
+ * cycle is fine as long as neither dereferences the other during construction. This replaces the
+ * old manual `setCache()` wiring.
+ */
+@ApplicationScoped
+class HueService @Inject constructor(
+    private val remoteClient: HueRemoteClient,
+    private val cache: LampStateCache,
+) {
+    private val logger = Logger.getLogger(HueService::class.java)
 
     val isConnected: Boolean
-        get() = remoteClient?.isConfigured == true
+        get() = remoteClient.isConfigured
 
     val needsLinking: Boolean
-        get() = remoteClient?.isConfigured != true
+        get() = !remoteClient.isConfigured
 
     /**
      * Returns true if the OAuth2 session is outdated and user needs to re-authorize.
      * This happens when the refresh token is expired or revoked.
      */
     val needsReauthorization: Boolean
-        get() = remoteClient?.needsReauthorization == true
+        get() = remoteClient.needsReauthorization
 
-    fun getAuthorizationUrl(redirectUri: String, state: String): String? =
-        remoteClient?.getAuthorizationUrl(redirectUri, state)
+    fun getAuthorizationUrl(redirectUri: String, state: String): String =
+        remoteClient.getAuthorizationUrl(redirectUri, state)
 
     suspend fun handleOAuthCallback(code: String, redirectUri: String): Boolean {
-        val tokens = remoteClient?.exchangeCodeForTokens(code, redirectUri)
+        val tokens = remoteClient.exchangeCodeForTokens(code, redirectUri)
         return tokens != null
     }
 
-    suspend fun linkRemoteBridge(): LinkResult {
-        return remoteClient?.linkBridge() ?: LinkResult.Error("Remote client not configured")
-    }
+    suspend fun linkRemoteBridge(): LinkResult = remoteClient.linkBridge()
 
     fun initialize(): Boolean {
         // With remote API, we just check if we have valid tokens
-        if (remoteClient?.isConfigured == true) {
+        if (remoteClient.isConfigured) {
             logger.info("Remote API client configured, ready to use")
             return true
         }
@@ -52,13 +54,13 @@ class HueService(config: Config) : AutoCloseable {
         return false
     }
 
-    suspend fun getLights(): Map<String, HueLight> = remoteClient?.getLights() ?: emptyMap()
+    suspend fun getLights(): Map<String, HueLight> = remoteClient.getLights()
 
-    suspend fun getLight(id: String): HueLight? = remoteClient?.getLight(id)
+    suspend fun getLight(id: String): HueLight? = remoteClient.getLight(id)
 
     suspend fun setLightState(id: String, state: HueLightStateUpdate): Boolean {
-        val success = remoteClient?.setLightState(id, state) ?: false
-        if (success) cache?.updateLightState(id, state)
+        val success = remoteClient.setLightState(id, state)
+        if (success) cache.updateLightState(id, state)
         return success
     }
 
@@ -73,14 +75,10 @@ class HueService(config: Config) : AutoCloseable {
         return success
     }
 
-    suspend fun getGroups(): Map<String, HueGroup> = remoteClient?.getGroups() ?: emptyMap()
+    suspend fun getGroups(): Map<String, HueGroup> = remoteClient.getGroups()
 
-    suspend fun getSensors(): Map<String, HueSensor> = remoteClient?.getSensors() ?: emptyMap()
+    suspend fun getSensors(): Map<String, HueSensor> = remoteClient.getSensors()
 
     suspend fun getEntertainmentGroups(): Map<String, HueGroup> =
         getGroups().filter { it.value.type == "Entertainment" }
-
-    override fun close() {
-        remoteClient?.close()
-    }
 }

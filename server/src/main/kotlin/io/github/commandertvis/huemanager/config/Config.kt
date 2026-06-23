@@ -1,30 +1,14 @@
 package io.github.commandertvis.huemanager.config
 
-import io.github.cdimascio.dotenv.Dotenv
-import io.github.cdimascio.dotenv.dotenv
+import jakarta.annotation.PostConstruct
+import jakarta.enterprise.context.ApplicationScoped
+import jakarta.inject.Inject
 import kotlinx.serialization.Serializable
-import java.security.MessageDigest
+import org.jboss.logging.Logger
 import kotlin.io.path.Path
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
-
-@Serializable
-data class Config(
-    val passwordHash: String,
-    val region: GeoLocation,
-    val pseudoSunset: String,
-    val timezone: String,
-    val keystorePassword: String?,
-    val hueUsername: String?,
-    val hueClientId: String,
-    val hueClientSecret: String,
-    val hueAppId: String,
-    val hueRedirectUri: String?,
-    val hueAccessToken: String?,
-    val hueRefreshToken: String?,
-    val databasePath: String
-)
 
 @Serializable
 data class GeoLocation(
@@ -32,170 +16,69 @@ data class GeoLocation(
     val longitude: Double
 )
 
-object ConfigLoader {
+/**
+ * Holds the live Philips Hue OAuth2 credentials and the mutable tokens.
+ *
+ * The static credentials (client id / secret / app id) and the *initial* tokens are seeded from
+ * [AppConfig] at startup. Tokens then mutate at runtime on refresh and bridge linking; the new
+ * values are written back to the `.env` file so they survive a restart (Quarkus reads `.env`
+ * natively on boot, repopulating [AppConfig]).
+ *
+ * This is the single, framework-friendly injection point the Hue REST client uses to read and
+ * update tokens — replacing the old `Config` data class threaded through constructors.
+ */
+@ApplicationScoped
+class TokenStore @Inject constructor(private val config: AppConfig) {
+    private val logger = Logger.getLogger(TokenStore::class.java)
     private val envFile = if (Path("/.env").exists()) Path("/.env") else Path(".env")
-    private var dotenv: Dotenv? = null
 
-    fun load(): Config {
-        dotenv = dotenv {
-            ignoreIfMissing = true
-        }
+    val clientId: String get() = config.clientId()
+    val clientSecret: String get() = config.clientSecret()
+    val appId: String get() = config.appId()
 
-        val env = dotenv!!
+    @Volatile
+    private var _accessToken: String? = null
 
-        // Handle password hashing migration
-        val passwordHash = getOrMigratePasswordHash(env)
+    @Volatile
+    private var _refreshToken: String? = null
 
-        val regionStr = env["REGION"]
-            ?: throw IllegalStateException("REGION is required in .env (format: latitude,longitude)")
+    @Volatile
+    private var _username: String? = null
 
-        val region = parseRegion(regionStr)
+    val accessToken: String? get() = _accessToken
+    val refreshToken: String? get() = _refreshToken
+    val username: String? get() = _username
 
-        val pseudoSunset = env["PSEUDO_SUNSET"] ?: "21:05"
-        val timezone = env["TIMEZONE"] ?: "Europe/Berlin"
-        val keystorePassword = env["KEYSTORE_PASSWORD"]
-
-        val hueUsername = env["HUE_USERNAME"]?.takeIf { it.isNotBlank() }
-
-        // OAuth2 credentials - REQUIRED for app operation
-        val hueClientId = env["HUE_CLIENT_ID"]?.trim()?.takeIf { it.isNotBlank() }
-            ?: throw IllegalStateException("HUE_CLIENT_ID is required in .env for OAuth2 authentication")
-        val hueClientSecret = env["HUE_CLIENT_SECRET"]?.trim()?.takeIf { it.isNotBlank() }
-            ?: throw IllegalStateException("HUE_CLIENT_SECRET is required in .env for OAuth2 authentication")
-        val hueAppId = env["HUE_APP_ID"]?.trim()?.takeIf { it.isNotBlank() }
-            ?: throw IllegalStateException("HUE_APP_ID is required in .env for OAuth2 authentication")
-
-        val hueRedirectUri = env["HUE_REDIRECT_URI"]?.trim()?.takeIf { it.isNotBlank() }
-        val hueAccessToken = env["HUE_ACCESS_TOKEN"]?.trim()?.takeIf { it.isNotBlank() }
-        val hueRefreshToken = env["HUE_REFRESH_TOKEN"]?.trim()?.takeIf { it.isNotBlank() }
-
-        val databasePath = env["DATABASE_PATH"]?.trim()?.takeIf { it.isNotBlank() } ?: "data/hue.db"
-
-        return Config(
-            passwordHash = passwordHash,
-            region = region,
-            pseudoSunset = pseudoSunset,
-            timezone = timezone,
-            keystorePassword = keystorePassword,
-            hueUsername = hueUsername,
-            hueClientId = hueClientId,
-            hueClientSecret = hueClientSecret,
-            hueAppId = hueAppId,
-            hueRedirectUri = hueRedirectUri,
-            hueAccessToken = hueAccessToken,
-            hueRefreshToken = hueRefreshToken,
-            databasePath = databasePath
-        )
+    @PostConstruct
+    fun seed() {
+        _accessToken = config.accessToken().orElse(null)?.takeIf { it.isNotBlank() }
+        _refreshToken = config.refreshToken().orElse(null)?.takeIf { it.isNotBlank() }
+        _username = config.username().orElse(null)?.takeIf { it.isNotBlank() }
     }
 
-    fun updateHueTokens(accessToken: String, refreshToken: String, username: String? = null) {
-        val currentContent = if (envFile.exists()) {
-            envFile.readText()
-        } else {
-            // If .env doesn't exist, create it with empty content
-            ""
-        }
+    /** Update access/refresh tokens (and optionally username) and persist them to `.env`. */
+    @Synchronized
+    fun updateTokens(accessToken: String, refreshToken: String, username: String? = null) {
+        _accessToken = accessToken
+        _refreshToken = refreshToken.takeIf { it.isNotBlank() } ?: _refreshToken
+        if (username != null) _username = username
+        persist(accessToken, refreshToken, username)
+    }
 
-        val lines = currentContent.lines().toMutableList()
+    private fun persist(accessToken: String, refreshToken: String, username: String?) {
+        val current = if (envFile.exists()) envFile.readText() else ""
+        val lines = current.lines().toMutableList()
 
         fun updateOrAdd(key: String, value: String) {
             val index = lines.indexOfFirst { it.startsWith("$key=") }
-            if (index >= 0) {
-                lines[index] = "$key=$value"
-            } else {
-                lines.add("$key=$value")
-            }
+            if (index >= 0) lines[index] = "$key=$value" else lines.add("$key=$value")
         }
 
         updateOrAdd("HUE_ACCESS_TOKEN", accessToken)
         updateOrAdd("HUE_REFRESH_TOKEN", refreshToken)
-        if (username != null) {
-            updateOrAdd("HUE_USERNAME", username)
-        }
+        if (username != null) updateOrAdd("HUE_USERNAME", username)
 
-        envFile.writeText(lines.joinToString("\n"))
-    }
-
-    private fun parseRegion(regionStr: String): GeoLocation {
-        val parts = regionStr.split(",")
-        require(parts.size == 2) {
-            "REGION must be in format: latitude,longitude (e.g., 55.7558,37.6173)"
-        }
-        return GeoLocation(
-            latitude = parts[0].trim().toDouble(),
-            longitude = parts[1].trim().toDouble()
-        )
-    }
-
-    /**
-     * Gets the password hash, migrating from plaintext PASSWORD if needed.
-     * If PASSWORD is set (plaintext), it will be hashed, stored in PASSWORD_HASH,
-     * and PASSWORD will be cleared in the .env file.
-     */
-    private fun getOrMigratePasswordHash(env: Dotenv): String {
-        val existingHash = env["PASSWORD_HASH"]?.trim()?.takeIf { it.isNotBlank() }
-        val plaintextPassword = env["PASSWORD"]?.trim()?.takeIf { it.isNotBlank() }
-
-        return when {
-            // Already have a hash - use it
-            existingHash != null -> existingHash
-
-            // Have plaintext password - migrate it
-            plaintextPassword != null -> {
-                val hash = hashPassword(plaintextPassword)
-                migratePasswordToHash(hash)
-                println("Password migrated to hash in .env file")
-                hash
-            }
-
-            // No password at all
-            else -> throw IllegalStateException(
-                "PASSWORD or PASSWORD_HASH is required in .env"
-            )
-        }
-    }
-
-    /**
-     * Hash a password using SHA-256.
-     */
-    fun hashPassword(password: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        val hashBytes = digest.digest(password.toByteArray(Charsets.UTF_8))
-        return hashBytes.joinToString("") { "%02x".format(it) }
-    }
-
-    /**
-     * Verify a password against a hash.
-     */
-    fun verifyPassword(password: String, hash: String): Boolean {
-        return hashPassword(password) == hash
-    }
-
-    /**
-     * Updates .env file to store the hash and clear plaintext password.
-     */
-    private fun migratePasswordToHash(hash: String) {
-        val currentContent = if (envFile.exists()) {
-            envFile.readText()
-        } else {
-            ""
-        }
-
-        val lines = currentContent.lines().toMutableList()
-
-        fun updateOrAdd(key: String, value: String) {
-            val index = lines.indexOfFirst { it.startsWith("$key=") }
-            if (index >= 0) {
-                lines[index] = "$key=$value"
-            } else {
-                lines.add("$key=$value")
-            }
-        }
-
-        // Clear plaintext password and set hash
-        updateOrAdd("PASSWORD", "")
-        updateOrAdd("PASSWORD_HASH", hash)
-
-        envFile.writeText(lines.joinToString("\n"))
+        runCatching { envFile.writeText(lines.joinToString("\n")) }
+            .onFailure { logger.warn("Failed to persist Hue tokens to .env: ${it.message}") }
     }
 }

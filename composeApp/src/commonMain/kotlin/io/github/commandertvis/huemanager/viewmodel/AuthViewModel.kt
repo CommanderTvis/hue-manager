@@ -24,9 +24,9 @@ class AuthViewModel(
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
 
     init {
-        // Check if we have a stored password
-        authStorage.password.value?.let { password ->
-            apiClient.setAuthToken(password)
+        // Reuse a stored session token, if any (re-login on expiry).
+        authStorage.token.value?.let { token ->
+            apiClient.setAuthToken(token)
             _uiState.value = AuthUiState(isLoggedIn = true)
         }
     }
@@ -44,8 +44,8 @@ class AuthViewModel(
 
             result.fold(
                 onSuccess = { response ->
-                    if (response.success) {
-                        authStorage.setPassword(password)
+                    if (response.success && response.token != null) {
+                        authStorage.setToken(response.token)
                         _uiState.value = AuthUiState(isLoggedIn = true)
                     } else {
                         _uiState.value = AuthUiState(
@@ -63,7 +63,7 @@ class AuthViewModel(
     }
 
     fun logout() {
-        authStorage.clearPassword()
+        authStorage.clearToken()
         apiClient.setAuthToken(null)
         _uiState.value = AuthUiState(isLoggedIn = false)
     }

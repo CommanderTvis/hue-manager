@@ -1,6 +1,10 @@
 package io.github.commandertvis.huemanager.persistence
 
-import org.slf4j.LoggerFactory
+import jakarta.annotation.PostConstruct
+import jakarta.annotation.PreDestroy
+import jakarta.enterprise.context.ApplicationScoped
+import org.eclipse.microprofile.config.inject.ConfigProperty
+import org.jboss.logging.Logger
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.Connection
@@ -12,23 +16,30 @@ import java.sql.DriverManager
  * bootstrap configuration stay in `.env`.
  *
  * Access is serialized through a single connection guarded by [lock]; settings writes are
- * infrequent, so this is simpler and safer than juggling concurrent connections.
+ * infrequent, so this is simpler and safer than juggling concurrent connections. Kept on raw
+ * sqlite-jdbc (rather than the Agroal datasource) deliberately: a single serialized connection
+ * is the right model for this store and compiles cleanly to native.
  */
-class SettingsStore(dbPath: Path) : AutoCloseable {
-    private val logger = LoggerFactory.getLogger(SettingsStore::class.java)
+@ApplicationScoped
+class SettingsStore(
+    @ConfigProperty(name = "database.path", defaultValue = "data/hue.db") private val dbPath: String
+) : AutoCloseable {
+    private val logger = Logger.getLogger(SettingsStore::class.java)
     private val lock = Any()
-    private val connection: Connection
+    private lateinit var connection: Connection
 
-    init {
-        dbPath.toAbsolutePath().parent?.let { Files.createDirectories(it) }
-        connection = DriverManager.getConnection("jdbc:sqlite:$dbPath")
+    @PostConstruct
+    fun init() {
+        val path = Path.of(dbPath)
+        path.toAbsolutePath().parent?.let { Files.createDirectories(it) }
+        connection = DriverManager.getConnection("jdbc:sqlite:$path")
         connection.createStatement().use { statement ->
             statement.executeUpdate("PRAGMA journal_mode=WAL")
             statement.executeUpdate(
                 "CREATE TABLE IF NOT EXISTS app_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
             )
         }
-        logger.info("Settings store ready at $dbPath")
+        logger.info("Settings store ready at $path")
     }
 
     fun get(key: String): String? = synchronized(lock) {
@@ -49,5 +60,8 @@ class SettingsStore(dbPath: Path) : AutoCloseable {
         }
     }
 
-    override fun close(): Unit = synchronized(lock) { connection.close() }
+    @PreDestroy
+    override fun close(): Unit = synchronized(lock) {
+        if (::connection.isInitialized) connection.close()
+    }
 }

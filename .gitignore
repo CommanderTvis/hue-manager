@@ -28,7 +28,7 @@ Caddyfile
 
 kotlin-js-store/
 
-.claude/settings.local.json
+.claude/
 
 # CI build artifacts
 build-output/

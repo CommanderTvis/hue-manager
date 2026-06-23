@@ -7,7 +7,6 @@ import androidx.compose.material3.Surface
 import io.github.commandertvis.huemanager.ui.HueManagerTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import io.github.commandertvis.huemanager.storage.platformStorage
 import io.github.commandertvis.huemanager.ui.McpOAuthScreen
 import kotlinx.browser.document
 import org.w3c.dom.HTMLFormElement
@@ -21,12 +20,10 @@ import org.w3c.dom.HTMLInputElement
 fun McpOAuthApp(params: OAuthParams) {
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var storedPassword by remember { mutableStateOf<String?>(null) }
+    val storedPassword: String? = null // password is no longer persisted; MCP OAuth always asks for it
     var checkedStorage by remember { mutableStateOf(false) }
 
-    // Check if user has stored password
     LaunchedEffect(Unit) {
-        storedPassword = platformStorage.getPassword()
         checkedStorage = true
     }
 

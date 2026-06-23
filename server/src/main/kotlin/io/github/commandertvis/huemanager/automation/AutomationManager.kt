@@ -1,12 +1,16 @@
 package io.github.commandertvis.huemanager.automation
 
-import io.github.commandertvis.huemanager.config.Config
+import io.github.commandertvis.huemanager.config.AppConfig
 import io.github.commandertvis.huemanager.config.GeoLocation
 import io.github.commandertvis.huemanager.hue.HueLightStateUpdate
 import io.github.commandertvis.huemanager.hue.HueSensor
 import io.github.commandertvis.huemanager.hue.HueService
 import io.github.commandertvis.huemanager.hue.LampStateCache
 import io.github.commandertvis.huemanager.persistence.SettingsStore
+import jakarta.annotation.PostConstruct
+import jakarta.annotation.PreDestroy
+import jakarta.enterprise.context.ApplicationScoped
+import jakarta.inject.Inject
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -17,7 +21,7 @@ import kotlinx.coroutines.*
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import org.slf4j.LoggerFactory
+import org.jboss.logging.Logger
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -103,23 +107,25 @@ private const val KEY_EVENING_COLOR = "evening_color"
 private const val KEY_NIGHT_COLOR = "night_color"
 private const val KEY_TOGGLE_BUTTON = "toggle_button_sensor_id"
 
-class AutomationManager(
-    private val config: Config,
+@ApplicationScoped
+class AutomationManager @Inject constructor(
+    private val config: AppConfig,
     private val hueService: HueService,
     private val lampStateCache: LampStateCache,
-    private val settingsStore: SettingsStore? = null
+    private val settingsStore: SettingsStore,
 ) : AutoCloseable {
-    private val logger = LoggerFactory.getLogger(AutomationManager::class.java)
+    private val logger = Logger.getLogger(AutomationManager::class.java)
     private val overrideDuration = 1.hours
     private val recentOnGracePeriod = 5.seconds
     private val pendingOperationTimeout = 5.seconds
-    private val timeZone = TimeZone.of(config.timezone)
+    private val region: GeoLocation = config.geoLocation()
+    private val timeZone = TimeZone.of(config.timezone())
 
     private var userState: UserState = UserState.ASLEEP
     private var wakeUpTime: Instant? = null
     private val lampOverrides = mutableMapOf<String, LampOverride>()
     private val excludedLampIds = mutableSetOf<String>()
-    private var pseudoSunset: LocalTime = parsePseudoSunset(config.pseudoSunset)
+    private var pseudoSunset: LocalTime = parsePseudoSunset(config.pseudoSunset())
     private var nightTime: LocalTime = defaultNightTime(pseudoSunset)
 
     // Configurable automation mode colors
@@ -158,13 +164,10 @@ class AutomationManager(
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    init {
-        loadPersistedState()
-    }
-
     /** Loads runtime settings from [settingsStore], overriding the `.env`-derived defaults. */
-    private fun loadPersistedState() {
-        val store = settingsStore ?: return
+    @PostConstruct
+    fun loadPersistedState() {
+        val store = settingsStore
         store.get(KEY_USER_STATE)?.let { runCatching { userState = UserState.valueOf(it) } }
         store.get(KEY_PSEUDO_SUNSET)?.let { pseudoSunset = parsePseudoSunset(it) }
         store.get(KEY_NIGHT_TIME)?.let { nightTime = parsePseudoSunset(it) }
@@ -196,7 +199,7 @@ class AutomationManager(
     fun getWakeUpTime(): Instant? = wakeUpTime
     fun getPseudoSunset(): LocalTime = pseudoSunset
     fun getNightTime(): LocalTime = nightTime
-    fun getLocation(): GeoLocation = config.region
+    fun getLocation(): GeoLocation = region
 
     fun getOverriddenLampIds(): List<String> {
         cleanExpiredOverrides()
@@ -215,19 +218,19 @@ class AutomationManager(
 
     fun setDaylightColor(config: ModeColorConfig) {
         daylightColor = config
-        settingsStore?.put(KEY_DAYLIGHT_COLOR, json.encodeToString(config))
+        settingsStore.put(KEY_DAYLIGHT_COLOR, json.encodeToString(config))
         logger.info("Set daylight color to $config")
     }
 
     fun setEveningColor(config: ModeColorConfig) {
         eveningColor = config
-        settingsStore?.put(KEY_EVENING_COLOR, json.encodeToString(config))
+        settingsStore.put(KEY_EVENING_COLOR, json.encodeToString(config))
         logger.info("Set evening color to $config")
     }
 
     fun setNightColor(config: ModeColorConfig) {
         nightColor = config
-        settingsStore?.put(KEY_NIGHT_COLOR, json.encodeToString(config))
+        settingsStore.put(KEY_NIGHT_COLOR, json.encodeToString(config))
         logger.info("Set night color to $config")
     }
 
@@ -235,7 +238,7 @@ class AutomationManager(
         val now = Clock.System.now()
         val targetState = if (userState == UserState.AWAKE) {
             val localTime = now.toLocalDateTime(timeZone).time
-            val sunTimes = SunCalculator.calculateSunTimes(now, config.region, timeZone)
+            val sunTimes = SunCalculator.calculateSunTimes(now, region, timeZone)
             calculateDesiredState(localTime, sunTimes)
         } else {
             null
@@ -321,7 +324,7 @@ class AutomationManager(
     fun getCurrentAutomationMode(): AutomationMode {
         val now = Clock.System.now()
         val localTime = now.toLocalDateTime(timeZone).time
-        val sunTimes = SunCalculator.calculateSunTimes(now, config.region, timeZone)
+        val sunTimes = SunCalculator.calculateSunTimes(now, region, timeZone)
         return calculateAutomationMode(localTime, sunTimes)
     }
 
@@ -360,7 +363,7 @@ class AutomationManager(
     fun getAutomationColor(): LampColorInfo {
         val now = Clock.System.now()
         val localTime = now.toLocalDateTime(timeZone).time
-        val sunTimes = SunCalculator.calculateSunTimes(now, config.region, timeZone)
+        val sunTimes = SunCalculator.calculateSunTimes(now, region, timeZone)
         val mode = calculateAutomationMode(localTime, sunTimes)
 
         return when (mode) {
@@ -440,14 +443,14 @@ class AutomationManager(
             }
         }
 
-        logger.debug("Active entertainment lamps: {}", activeLamps)
+        logger.debug("Active entertainment lamps: $activeLamps")
         return activeLamps
     }
 
     suspend fun wakeUp(): UserState {
         userState = UserState.AWAKE
         wakeUpTime = Clock.System.now()
-        settingsStore?.put(KEY_USER_STATE, userState.name)
+        settingsStore.put(KEY_USER_STATE, userState.name)
         logger.info("User woke up at $wakeUpTime")
 
         applyAutomatedState()
@@ -461,7 +464,7 @@ class AutomationManager(
     suspend fun goToSleep(): UserState {
         userState = UserState.ASLEEP
         wakeUpTime = null
-        settingsStore?.put(KEY_USER_STATE, userState.name)
+        settingsStore.put(KEY_USER_STATE, userState.name)
         logger.info("User going to sleep")
 
         stopHeartbeat()
@@ -546,7 +549,7 @@ class AutomationManager(
                     // User is awake: apply calculated automation state
                     val now = Clock.System.now()
                     val localTime = now.toLocalDateTime(timeZone).time
-                    val sunTimes = SunCalculator.calculateSunTimes(now, config.region, timeZone)
+                    val sunTimes = SunCalculator.calculateSunTimes(now, region, timeZone)
                     val desiredState = calculateDesiredState(localTime, sunTimes)
                     hueService.setLightState(lampId, desiredState)
                     logger.info("Applied automation state to lamp $lampId after clearing override")
@@ -565,7 +568,7 @@ class AutomationManager(
         toggleButtonSensorId = sensorId?.takeIf { it.isNotBlank() }
         // Reset baseline: next refresh re-establishes the current `lastupdated` without firing.
         lastButtonUpdate = null
-        settingsStore?.put(KEY_TOGGLE_BUTTON, toggleButtonSensorId ?: "")
+        settingsStore.put(KEY_TOGGLE_BUTTON, toggleButtonSensorId ?: "")
         logger.info("Set toggle button sensor: $toggleButtonSensorId")
     }
 
@@ -596,32 +599,32 @@ class AutomationManager(
         val automated = getAutomatedLampIds()
         lampReachability.keys.retainAll(automated)
         lampPowerStates.keys.retainAll(automated)
-        settingsStore?.put(KEY_EXCLUDED_LAMPS, json.encodeToString(excludedLampIds.toList()))
+        settingsStore.put(KEY_EXCLUDED_LAMPS, json.encodeToString(excludedLampIds.toList()))
         incrementSyncVersion()
         logger.info("Set excluded lamps: $excludedLampIds")
     }
 
     fun setPseudoSunset(time: LocalTime) {
         pseudoSunset = time
-        settingsStore?.put(KEY_PSEUDO_SUNSET, pseudoSunset.toString())
+        settingsStore.put(KEY_PSEUDO_SUNSET, pseudoSunset.toString())
         logger.info("Set pseudo sunset to $time")
     }
 
     fun setPseudoSunset(timeStr: String) {
         pseudoSunset = parsePseudoSunset(timeStr)
-        settingsStore?.put(KEY_PSEUDO_SUNSET, pseudoSunset.toString())
+        settingsStore.put(KEY_PSEUDO_SUNSET, pseudoSunset.toString())
         logger.info("Set pseudo sunset to $pseudoSunset")
     }
 
     fun setNightTime(time: LocalTime) {
         nightTime = time
-        settingsStore?.put(KEY_NIGHT_TIME, nightTime.toString())
+        settingsStore.put(KEY_NIGHT_TIME, nightTime.toString())
         logger.info("Set night time to $time")
     }
 
     fun setNightTime(timeStr: String) {
         nightTime = parsePseudoSunset(timeStr)
-        settingsStore?.put(KEY_NIGHT_TIME, nightTime.toString())
+        settingsStore.put(KEY_NIGHT_TIME, nightTime.toString())
         logger.info("Set night time to $nightTime")
     }
 
@@ -660,7 +663,7 @@ class AutomationManager(
 
         val now = Clock.System.now()
         val localTime = now.toLocalDateTime(timeZone).time
-        val sunTimes = SunCalculator.calculateSunTimes(now, config.region, timeZone)
+        val sunTimes = SunCalculator.calculateSunTimes(now, region, timeZone)
         val desiredState = calculateDesiredState(localTime, sunTimes)
         val entertainmentLamps = getActiveEntertainmentLamps()
 
@@ -777,5 +780,6 @@ class AutomationManager(
         return LocalTime((eveningTime.hour + PSEUDO_SUNSET_WINDOW_HOURS) % 24, eveningTime.minute)
     }
 
+    @PreDestroy
     override fun close() = scope.cancel()
 }
