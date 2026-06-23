@@ -1,6 +1,5 @@
 package io.github.commandertvis.huemanager.rest
 
-import io.github.commandertvis.huemanager.api.ApiError
 import io.github.commandertvis.huemanager.api.GenericResponse
 import io.github.commandertvis.huemanager.config.AppConfig
 import io.github.commandertvis.huemanager.hue.HueService
@@ -38,21 +37,11 @@ class HueOAuthResource @Inject constructor(
         val state = UUID.randomUUID().toString()
 
         logger.info("Generating authorization URL for redirectUri: $redirectUri")
+        // Client id/secret/app id are required config (the app fails to boot without them),
+        // so the URL is always produced.
         val authUrl = hueService.getAuthorizationUrl(redirectUri, state)
-        return if (authUrl != null) {
-            logger.info("Generated URL: $authUrl")
-            Response.ok(mapOf("authorizationUrl" to authUrl, "state" to state)).build()
-        } else {
-            logger.warn("Failed to generate authorization URL - HueService returned null")
-            Response.status(Response.Status.SERVICE_UNAVAILABLE)
-                .entity(
-                    ApiError(
-                        "OAuth2 not configured. Set HUE_CLIENT_ID, HUE_CLIENT_SECRET, and HUE_APP_ID in .env",
-                        503
-                    )
-                )
-                .build()
-        }
+        logger.info("Generated URL: $authUrl")
+        return Response.ok(mapOf("authorizationUrl" to authUrl, "state" to state)).build()
     }
 
     @GET

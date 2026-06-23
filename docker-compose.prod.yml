@@ -1,0 +1,89 @@
+# Production: pulls the prebuilt native image from GHCR (no local build), fronted by Caddy for HTTPS.
+#   docker compose -f docker-compose.prod.yml up -d
+# Pin a version with APP_TAG (default: latest). Requires a configured Caddyfile (see Caddyfile.example).
+services:
+  hue-manager:
+    image: ghcr.io/commandertvis/hue-manager:${APP_TAG:-latest}
+    container_name: hue-manager
+    restart: unless-stopped
+
+    # Internal only — Caddy terminates TLS and reverse-proxies to hue-manager:8080.
+    expose:
+      - "8080"
+
+    env_file:
+      - .env
+
+    volumes:
+      - hue-data:/app/data
+
+    environment:
+      - TZ=Europe/Berlin
+      - DATABASE_PATH=/app/data/hue.db
+      # Public HTTPS issuer URL as seen by the browser/MCP client (e.g. https://yourdomain.com).
+      - HYDRA_ISSUER_URL=${HYDRA_ISSUER_URL:?HYDRA_ISSUER_URL is required}
+      - HYDRA_ADMIN_URL=http://hydra:4445
+
+    depends_on:
+      hydra:
+        condition: service_started
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  caddy:
+    image: caddy:2
+    container_name: hue-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - hue-manager
+
+  # Ory Hydra: OAuth2 authorization server for MCP. Internal only — the app's OIDC proxy fronts it,
+  # so MCP clients never reach Hydra directly.
+  # WARNING: `serve all --dev` relaxes HTTPS enforcement. For an internet-facing deployment, drop
+  # --dev and configure Hydra with HTTPS + secure cookies before exposing it.
+  hydra-migrate:
+    image: oryd/hydra:v2.2.0
+    container_name: hue-hydra-migrate
+    command: migrate sql -e --yes
+    environment:
+      - DSN=sqlite:///var/lib/sqlite/hydra.db?_fk=true&mode=rwc
+    volumes:
+      - hydra-data:/var/lib/sqlite
+    restart: "no"
+
+  hydra:
+    image: oryd/hydra:v2.2.0
+    container_name: hue-hydra
+    command: serve all --dev
+    restart: unless-stopped
+    depends_on:
+      hydra-migrate:
+        condition: service_completed_successfully
+    environment:
+      - DSN=sqlite:///var/lib/sqlite/hydra.db?_fk=true&mode=rwc
+      - URLS_SELF_ISSUER=${HYDRA_ISSUER_URL:?HYDRA_ISSUER_URL is required}
+      - URLS_LOGIN=${APP_PUBLIC_URL:?APP_PUBLIC_URL is required}/login
+      - URLS_CONSENT=${APP_PUBLIC_URL:?APP_PUBLIC_URL is required}/consent
+      - SECRETS_SYSTEM=${HYDRA_SECRETS_SYSTEM:?HYDRA_SECRETS_SYSTEM is required}
+      - OAUTH2_PKCE_ENFORCED_FOR_PUBLIC_CLIENTS=true
+      - STRATEGIES_ACCESS_TOKEN=jwt
+    volumes:
+      - hydra-data:/var/lib/sqlite
+
+volumes:
+  hue-data:
+  hydra-data:
+  caddy_data:
+  caddy_config:
