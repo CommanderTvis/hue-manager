@@ -14,6 +14,9 @@ FROM quay.io/quarkus/ubi9-quarkus-mandrel-builder-image:jdk-21 AS build
 USER root
 WORKDIR /app
 
+# The Kotlin/Wasm build downloads a Node.js runtime whose binary needs libatomic at runtime.
+RUN microdnf install -y libatomic && microdnf clean all
+
 # Build scripts first for layer caching (androidApp is configured but never built here —
 # it needs the Android SDK, which is absent; only :server and :composeApp tasks run).
 COPY gradlew settings.gradle.kts build.gradle.kts gradle.properties ./
