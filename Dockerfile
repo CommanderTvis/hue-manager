@@ -6,13 +6,13 @@
 #
 # NOTE: the native build is memory-hungry (~6 GB) and slow (several minutes).
 
-### Build stage — GraalVM 21 (provides native-image)
-FROM ghcr.io/graalvm/graalvm-community:21 AS build
+### Build stage — Quarkus Mandrel builder (GraalVM-for-Quarkus, JDK 21)
+# Ships native-image + the full C toolchain (gcc, glibc-devel, zlib-devel) pre-installed and
+# version-consistent, so no microdnf is needed (graalvm-community's base packages conflict with
+# the current appstream repo). Run as root so Gradle can write build outputs under /app.
+FROM quay.io/quarkus/ubi9-quarkus-mandrel-builder-image:jdk-21 AS build
+USER root
 WORKDIR /app
-
-# native-image toolchain: graalvm-community already ships gcc; add only the dev headers
-# (gcc/libstdc++-static would pull conflicting versions, and static libc isn't used here).
-RUN microdnf install -y glibc-devel zlib-devel && microdnf clean all
 
 # Build scripts first for layer caching (androidApp is configured but never built here —
 # it needs the Android SDK, which is absent; only :server and :composeApp tasks run).
