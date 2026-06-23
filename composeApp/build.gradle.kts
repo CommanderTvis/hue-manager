@@ -68,7 +68,9 @@ kotlin {
     }
 }
 
-val generateBuildInfo by tasks.registering {
+val generateBuildInfo = tasks.register("generateBuildInfo") {
+    group = "build"
+    description = "Generates BuildInfo.kt with the current git short commit hash (BUILD_COMMIT)."
     val outputDir = layout.buildDirectory.dir("generated/buildinfo")
     val rootDir = rootProject.layout.projectDirectory.asFile
     outputs.dir(outputDir)

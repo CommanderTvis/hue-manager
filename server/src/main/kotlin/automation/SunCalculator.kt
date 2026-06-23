@@ -14,7 +14,6 @@ import kotlinx.datetime.toLocalDateTime
  * Uses the NOAA Solar Calculator algorithm.
  */
 object SunCalculator {
-
     data class SunTimes(
         val sunrise: LocalTime,
         val sunset: LocalTime,

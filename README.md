@@ -1,25 +1,20 @@
 # Hue Manager
 
-Self-hosted control and **daylight automation** for Philips Hue — because the official
-app forgets your all-day scene the moment a lamp is switched off, and there's no real
-desktop control when your phone isn't around.
+Self-hosted daylight automation and control for Philips Hue, with Desktop, Web, and
+Android clients. It keeps an all-day lighting schedule running without manual
+re-triggering and provides lamp control independent of the phone app.
 
-## What makes it different
+## Features
 
-- **Daylight simulation** — lamps follow the real sun for your location: warm white while
-  it's dark, off when the sun is up, then orange "evening" and dim "night" after your
-  chosen pseudo-sunset.
-- **It never forgets.** Turn a lamp off and on and automation simply resumes — no daily
-  babysitting from your phone.
-- **Manual changes are temporary.** Adjust a lamp by hand and it holds for 1 hour, then
-  returns to automation on its own.
-- **Control from anywhere** — native Desktop, Web, and Android clients, all in real-time
-  sync across every connected device.
-- **Stays out of Hue Sync's way** — automation pauses for any lamp in an active
-  entertainment session and resumes when it ends.
-- **Control it from Claude** — exposes an MCP endpoint, so an AI assistant can read and
-  set lamp state directly.
-- **Tiny.** The server compiles to a single ~86 MB native binary that idles around 45 MB RAM.
+- Daylight automation: lamps track the sun for the configured location — warm white when
+  it is dark, off when the sun is up, and an orange evening/night profile after a
+  configurable pseudo-sunset.
+- Automation resumes on its own after a lamp is switched off and back on.
+- Manual changes apply for one hour, then revert to the schedule.
+- Desktop (JVM), Web (Wasm), and Android clients, kept in sync in real time.
+- Lamps in an active Hue Sync entertainment session are left untouched until it ends.
+- MCP endpoint for reading and setting lamp state from an AI assistant.
+- The server is compiled to a GraalVM native image (~86 MB binary, ~45 MB RAM at idle).
 
 ## Architecture
 
@@ -47,9 +42,9 @@ graph LR
     style Bridge fill:#ffe1f5
 ```
 
-The server talks to your bridge entirely through Philips Cloud over OAuth2 — no local
-network access, port forwarding, or VPN. MCP clients authenticate via OAuth (handled by
-Ory Hydra); the SPA uses a plain password.
+The server reaches the bridge through Philips Cloud over OAuth2; no local network access,
+port forwarding, or VPN is required. MCP clients authenticate via OAuth (Ory Hydra); the
+web and desktop clients use a password.
 
 ## Getting started
 
@@ -58,10 +53,9 @@ cp .env.example .env   # set password, location, timezone, and Hue OAuth app cre
 docker compose up -d
 ```
 
-Then open the app, authorize your bridge once (Philips login + press the bridge link
-button), and you're running. HTTPS via Caddy is required for Hue's OAuth2 — see
-`Caddyfile.example`.
+Then open the app and authorize the bridge once (Philips login, then press the bridge
+link button). HTTPS via Caddy is required for Hue's OAuth2 — see `Caddyfile.example`.
 
-**Desktop (macOS):** `brew install --cask commandertvis/hue-manager/hue-manager`
+Desktop (macOS): `brew install --cask commandertvis/hue-manager/hue-manager`
 
-See `.env.example` for all configuration and `CLAUDE.md` for the full technical reference.
+See `.env.example` for configuration and `CLAUDE.md` for the technical reference.
