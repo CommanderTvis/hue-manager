@@ -7,6 +7,7 @@ import io.github.commandertvis.huemanager.models.AuthResponse
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.request.*
+import io.ktor.client.statement.*
 import io.ktor.http.*
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -32,6 +33,19 @@ class ApiClient(private val baseUrl: String, private val client: HttpClient = cr
     fun getAuthToken(): String? = authToken
 
     fun getBaseUrl(): String = baseUrl
+
+    /** Invoked when an authenticated request returns 401 (stored session JWT invalid/expired). */
+    var onSessionExpired: (() -> Unit)? = null
+
+    // Maps an authenticated-request failure to an error; on 401 it also signals session expiry so
+    // the app routes back to the login screen instead of showing a dead-end "<action> failed: 401".
+    private fun authFailure(response: HttpResponse, action: String): ApiException =
+        if (response.status == HttpStatusCode.Unauthorized) {
+            onSessionExpired?.invoke()
+            ApiException("Session expired — please log in again")
+        } else {
+            ApiException("$action failed: ${response.status}")
+        }
 
     suspend fun login(password: String): Result<AuthResponse> = try {
         val response = client.post("$baseUrl/api/auth") {
@@ -86,7 +100,7 @@ class ApiClient(private val baseUrl: String, private val client: HttpClient = cr
         if (response.status.isSuccess()) {
             Result.success(response.body())
         } else {
-            Result.failure(ApiException("Update failed: ${response.status}"))
+            Result.failure(authFailure(response, "Update"))
         }
     } catch (e: Exception) {
         Result.failure(e)
@@ -101,7 +115,7 @@ class ApiClient(private val baseUrl: String, private val client: HttpClient = cr
         if (response.status.isSuccess()) {
             Result.success(response.body())
         } else {
-            Result.failure(ApiException("Update failed: ${response.status}"))
+            Result.failure(authFailure(response, "Update"))
         }
     } catch (e: Exception) {
         Result.failure(e)
@@ -128,7 +142,7 @@ class ApiClient(private val baseUrl: String, private val client: HttpClient = cr
         if (response.status.isSuccess()) {
             Result.success(response.body())
         } else {
-            Result.failure(ApiException("Wakeup failed: ${response.status}"))
+            Result.failure(authFailure(response, "Wake"))
         }
     } catch (e: Exception) {
         Result.failure(e)
@@ -141,7 +155,7 @@ class ApiClient(private val baseUrl: String, private val client: HttpClient = cr
         if (response.status.isSuccess()) {
             Result.success(response.body())
         } else {
-            Result.failure(ApiException("Sleep failed: ${response.status}"))
+            Result.failure(authFailure(response, "Sleep"))
         }
     } catch (e: Exception) {
         Result.failure(e)
@@ -205,7 +219,7 @@ class ApiClient(private val baseUrl: String, private val client: HttpClient = cr
         if (response.status.isSuccess()) {
             Result.success(response.body())
         } else {
-            Result.failure(ApiException("Update failed: ${response.status}"))
+            Result.failure(authFailure(response, "Update"))
         }
     } catch (e: Exception) {
         Result.failure(e)
@@ -218,7 +232,7 @@ class ApiClient(private val baseUrl: String, private val client: HttpClient = cr
         if (response.status.isSuccess()) {
             Result.success(response.body())
         } else {
-            Result.failure(ApiException("Clear override failed: ${response.status}"))
+            Result.failure(authFailure(response, "Clear override"))
         }
     } catch (e: Exception) {
         Result.failure(e)

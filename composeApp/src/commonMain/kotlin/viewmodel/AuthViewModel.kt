@@ -29,6 +29,15 @@ class AuthViewModel(
             apiClient.setAuthToken(token)
             _uiState.value = AuthUiState(isLoggedIn = true)
         }
+        // When an authenticated request 401s (token expired or HUE_JWT_SECRET rotated), drop the
+        // stale session and return to the login screen with a clear message.
+        apiClient.onSessionExpired = ::sessionExpired
+    }
+
+    private fun sessionExpired() {
+        authStorage.clearToken()
+        apiClient.setAuthToken(null)
+        _uiState.value = AuthUiState(isLoggedIn = false, error = "Session expired — please log in again")
     }
 
     fun login(password: String) {
