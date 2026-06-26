@@ -123,6 +123,13 @@ jobs:
           # signature hides the return type from Quarkus' build-time scan, so the serializer must be
           # registered explicitly or native 500s here (unlinked bridge → "Not authenticated", 200).
           check "hue-link-serialize" 200 -X POST http://localhost:8080/api/hue/link
+
+          # An authed /api write with the SPA session JWT must reach AuthVerifier and succeed — NOT be
+          # eaten by the OIDC/Hydra bearer mechanism. Proactive auth (the default) would 401 here even
+          # though /api/* is `permit`, because OIDC tries to validate our HS256 token as a Hydra JWT.
+          TOKEN=$(curl -s -X POST http://localhost:8080/api/auth -H 'Content-Type: application/json' -d '{"password":"smoke"}' | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+          [ -n "$TOKEN" ] || { echo "::error::could not obtain session token"; fail=1; }
+          check "authed-write"     200 -X PUT  http://localhost:8080/api/settings  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"pseudoSunset":"21:05"}'
           if [ "$fail" != "0" ]; then echo "=== app logs ==="; docker logs app | tail -50; exit 1; fi
           echo "Native smoke test passed."
 
