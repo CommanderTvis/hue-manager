@@ -14,6 +14,7 @@ import jakarta.ws.rs.core.Context
 import jakarta.ws.rs.core.HttpHeaders
 import jakarta.ws.rs.core.MediaType
 import jakarta.ws.rs.core.Response
+import org.jboss.resteasy.reactive.RestResponse
 import io.github.commandertvis.huemanager.models.UserState as ModelUserState
 
 /**
@@ -192,18 +193,27 @@ class ApiResource @Inject constructor(
 
     // --- Automation ---
 
+    // wakeUp/sleep return explicitly-encoded JSON (see [jsonResponse]): both are suspend methods, so
+    // their WakeUpResponse/SleepResponse return types are erased to Object in the scanned signature
+    // and Quarkus would not register the serializers for the native image (→ HTTP 500).
     @POST
     @Path("/wakeup")
-    suspend fun wakeUp(@Context headers: HttpHeaders): WakeUpResponse {
+    suspend fun wakeUp(@Context headers: HttpHeaders): RestResponse<String> {
         authVerifier.requireAuth(headers)
-        return WakeUpResponse(success = true, state = automationManager.wakeUp().toModel())
+        return jsonResponse(
+            WakeUpResponse.serializer(),
+            WakeUpResponse(success = true, state = automationManager.wakeUp().toModel())
+        )
     }
 
     @POST
     @Path("/sleep")
-    suspend fun sleep(@Context headers: HttpHeaders): SleepResponse {
+    suspend fun sleep(@Context headers: HttpHeaders): RestResponse<String> {
         authVerifier.requireAuth(headers)
-        return SleepResponse(success = true, state = automationManager.goToSleep().toModel())
+        return jsonResponse(
+            SleepResponse.serializer(),
+            SleepResponse(success = true, state = automationManager.goToSleep().toModel())
+        )
     }
 
     @GET

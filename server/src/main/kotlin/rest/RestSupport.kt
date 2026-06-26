@@ -7,9 +7,27 @@ import jakarta.inject.Inject
 import jakarta.ws.rs.core.HttpHeaders
 import jakarta.ws.rs.core.MediaType
 import jakarta.ws.rs.core.Response
+import kotlinx.serialization.SerializationStrategy
 import kotlinx.serialization.json.Json
 import org.jboss.resteasy.reactive.RestResponse
 import org.jboss.resteasy.reactive.server.ServerExceptionMapper
+
+/**
+ * Encode a `@Serializable` [value] to a JSON [RestResponse] using its compile-time [serializer].
+ *
+ * Required for values returned from `suspend` resource methods: the Kotlin compiler erases such a
+ * method's signature to `(…, Continuation) -> Object`, so Quarkus' build-time scan of resource
+ * signatures never sees the real return type and does not register its kotlinx serializer. The
+ * native image then fails the reflective serializer lookup at runtime (HTTP 500). Encoding
+ * explicitly with the generated serializer avoids reflection entirely — same rationale as
+ * [ApiExceptionMapper].
+ */
+internal fun <T> jsonResponse(serializer: SerializationStrategy<T>, value: T): RestResponse<String> =
+    RestResponse.ResponseBuilder
+        .create<String>(RestResponse.Status.OK)
+        .entity(Json.encodeToString(serializer, value))
+        .type(MediaType.APPLICATION_JSON)
+        .build()
 
 /**
  * Application error carrying an HTTP status + message, mapped to a JSON [ApiError] body by

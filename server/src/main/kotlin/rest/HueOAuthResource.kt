@@ -13,6 +13,7 @@ import jakarta.ws.rs.core.MediaType
 import jakarta.ws.rs.core.Response
 import jakarta.ws.rs.core.UriInfo
 import kotlinx.serialization.Serializable
+import org.jboss.resteasy.reactive.RestResponse
 import org.jboss.logging.Logger
 import java.util.UUID
 
@@ -158,21 +159,27 @@ class HueOAuthResource @Inject constructor(
         }
     }
 
+    // Returns an explicitly-encoded JSON String (see [jsonResponse]): `link` is a suspend method, so
+    // its real GenericResponse return type is erased to Object in the scanned signature and Quarkus
+    // would not register the serializer for the native image (→ HTTP 500).
     @POST
     @Path("/link")
     @Produces(MediaType.APPLICATION_JSON)
-    suspend fun link(): GenericResponse = when (val result = hueService.linkRemoteBridge()) {
-        is LinkResult.Success -> {
-            lampStateCache.forceRefresh()
-            val lamps = lampStateCache.getLights()
-            lampStateCache.startRefreshing()
-            GenericResponse(success = true, message = "Linked! Found ${lamps.size} lamps")
+    suspend fun link(): RestResponse<String> {
+        val response = when (val result = hueService.linkRemoteBridge()) {
+            is LinkResult.Success -> {
+                lampStateCache.forceRefresh()
+                val lamps = lampStateCache.getLights()
+                lampStateCache.startRefreshing()
+                GenericResponse(success = true, message = "Linked! Found ${lamps.size} lamps")
+            }
+
+            is LinkResult.Error -> GenericResponse(success = false, message = result.message)
+
+            LinkResult.LinkButtonNotPressed ->
+                GenericResponse(success = false, message = "Press the link button on your Hue Bridge first")
         }
-
-        is LinkResult.Error -> GenericResponse(success = false, message = result.message)
-
-        LinkResult.LinkButtonNotPressed ->
-            GenericResponse(success = false, message = "Press the link button on your Hue Bridge first")
+        return jsonResponse(GenericResponse.serializer(), response)
     }
 
     private fun html(status: Response.Status, body: String): Response =
