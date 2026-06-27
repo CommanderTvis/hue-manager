@@ -20,8 +20,9 @@ services:
     environment:
       - TZ=Europe/Berlin
       - DATABASE_PATH=/app/data/hue.db
-      # Public HTTPS issuer URL as seen by the browser/MCP client (e.g. https://yourdomain.com).
-      - HYDRA_ISSUER_URL=${HYDRA_ISSUER_URL:?HYDRA_ISSUER_URL is required}
+      # App → Hydra over the internal Docker network (JWKS for token validation). The public OAuth
+      # issuer is APP_PUBLIC_URL (from .env); clients reach Hydra's endpoints via Caddy, not this URL.
+      - HYDRA_INTERNAL_URL=http://hydra:4444
       - HYDRA_ADMIN_URL=http://hydra:4445
 
     depends_on:
@@ -49,8 +50,9 @@ services:
     depends_on:
       - hue-manager
 
-  # Ory Hydra: OAuth2 authorization server for MCP. Internal only — the app's OIDC proxy fronts it,
-  # so MCP clients never reach Hydra directly.
+  # Ory Hydra: OAuth2 authorization server for MCP. Not published — Caddy path-routes /oauth2/* and
+  # /.well-known/jwks.json on the app domain to this container (same origin as /mcp, as claude.ai
+  # requires), and the app reaches it internally for JWKS. Its issuer is APP_PUBLIC_URL.
   # WARNING: `serve all --dev` relaxes HTTPS enforcement. For an internet-facing deployment, drop
   # --dev and configure Hydra with HTTPS + secure cookies before exposing it.
   hydra-migrate:
@@ -73,11 +75,13 @@ services:
         condition: service_completed_successfully
     environment:
       - DSN=sqlite:///var/lib/sqlite/hydra.db?_fk=true&mode=rwc
-      - URLS_SELF_ISSUER=${HYDRA_ISSUER_URL:?HYDRA_ISSUER_URL is required}
+      - URLS_SELF_ISSUER=${APP_PUBLIC_URL:?APP_PUBLIC_URL is required}
       - URLS_LOGIN=${APP_PUBLIC_URL:?APP_PUBLIC_URL is required}/login
       - URLS_CONSENT=${APP_PUBLIC_URL:?APP_PUBLIC_URL is required}/consent
       - SECRETS_SYSTEM=${HYDRA_SECRETS_SYSTEM:?HYDRA_SECRETS_SYSTEM is required}
       - OAUTH2_PKCE_ENFORCED_FOR_PUBLIC_CLIENTS=true
+      # Dynamic Client Registration: MCP clients (claude.ai) self-register via /oauth2/register.
+      - OIDC_DYNAMIC_CLIENT_REGISTRATION_ENABLED=true
       - STRATEGIES_ACCESS_TOKEN=jwt
     volumes:
       - hydra-data:/var/lib/sqlite

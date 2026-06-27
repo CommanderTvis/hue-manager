@@ -25,7 +25,6 @@ dependencies {
 
     implementation(libs.quarkus.mcp.server.sse)
     implementation(libs.quarkus.jdbc.sqlite)
-    implementation(libs.quarkus.oidc.proxy)
 
     implementation(projects.shared)
     implementation(libs.kotlinx.serialization.json)

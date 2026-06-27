@@ -24,7 +24,6 @@ mcp-sdk = "0.10.0"
 quarkus = "3.36.3"
 quarkusMcpServer = "1.13.0"
 quarkusJdbcSqlite = "3.0.11"
-quarkusOidcProxy = "0.7.0"
 sqlite-jdbc = "3.53.2.0"
 colorpicker-compose = "1.2.0"
 
@@ -63,7 +62,6 @@ kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-c
 quarkus-bom = { module = "io.quarkus.platform:quarkus-bom", version.ref = "quarkus" }
 quarkus-mcp-server-sse = { module = "io.quarkiverse.mcp:quarkus-mcp-server-sse", version.ref = "quarkusMcpServer" }
 quarkus-jdbc-sqlite = { module = "io.quarkiverse.jdbc:quarkus-jdbc-sqlite", version.ref = "quarkusJdbcSqlite" }
-quarkus-oidc-proxy = { module = "io.quarkiverse.oidc-proxy:quarkus-oidc-proxy", version.ref = "quarkusOidcProxy" }
 
 composeRuntime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "composeMultiplatform" }
 composeFoundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "composeMultiplatform" }

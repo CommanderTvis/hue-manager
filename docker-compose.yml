@@ -23,8 +23,9 @@ services:
     environment:
       - TZ=Europe/Berlin
       - DATABASE_PATH=/app/data/hue.db
-      # Hydra public issuer URL as seen by the browser/MCP client.
-      - HYDRA_ISSUER_URL=${HYDRA_ISSUER_URL:-http://localhost:4444}
+      # App → Hydra over the internal Docker network (JWKS for token validation). The public OAuth
+      # endpoints are reached by clients via Caddy, never via this URL.
+      - HYDRA_INTERNAL_URL=http://hydra:4444
       # Hydra admin API (internal only) used by the login/consent provider.
       - HYDRA_ADMIN_URL=http://hydra:4445
 
@@ -39,8 +40,12 @@ services:
       retries: 3
       start_period: 10s
 
-  # Ory Hydra: OAuth2 authorization server for MCP (tokens, refresh, DCR, discovery).
-  # Delegates login & consent to the app's /login and /consent endpoints. SQLite-backed.
+  # Ory Hydra: OAuth2 authorization server for MCP (authorize/token/refresh, dynamic client
+  # registration). Its issuer is the app's PUBLIC origin (APP_PUBLIC_URL); Caddy path-routes
+  # /oauth2/* and /.well-known/jwks.json on that domain to this container, so clients see the
+  # OAuth server on the same origin as /mcp. Delegates login & consent to the app's /login and
+  # /consent endpoints. SQLite-backed. Ports are NOT published — only Caddy and the app reach it
+  # over the internal network.
   hydra-migrate:
     image: oryd/hydra:v2.2.0
     container_name: hue-hydra-migrate
@@ -59,16 +64,15 @@ services:
     depends_on:
       hydra-migrate:
         condition: service_completed_successfully
-    ports:
-      - "4444:4444"
-      - "4445:4445"
     environment:
       - DSN=sqlite:///var/lib/sqlite/hydra.db?_fk=true&mode=rwc
-      - URLS_SELF_ISSUER=${HYDRA_ISSUER_URL:-http://localhost:4444}
+      - URLS_SELF_ISSUER=${APP_PUBLIC_URL:-http://localhost:8080}
       - URLS_LOGIN=${APP_PUBLIC_URL:-http://localhost:8080}/login
       - URLS_CONSENT=${APP_PUBLIC_URL:-http://localhost:8080}/consent
       - SECRETS_SYSTEM=${HYDRA_SECRETS_SYSTEM:?HYDRA_SECRETS_SYSTEM is required}
       - OAUTH2_PKCE_ENFORCED_FOR_PUBLIC_CLIENTS=true
+      # Dynamic Client Registration: MCP clients (claude.ai) self-register via /oauth2/register.
+      - OIDC_DYNAMIC_CLIENT_REGISTRATION_ENABLED=true
       - STRATEGIES_ACCESS_TOKEN=jwt
     volumes:
       - hydra-data:/var/lib/sqlite

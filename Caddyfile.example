@@ -12,10 +12,23 @@
 
 # Replace with your actual domain
 yourdomain.com {
-    # Reverse proxy to hue-manager container
-    # flush_interval -1 disables response buffering, required for SSE (MCP)
-    reverse_proxy hue-manager:8080 {
-        flush_interval -1
+    # MCP clients (claude.ai) require the OAuth authorization server on the SAME origin as /mcp, so
+    # the OAuth endpoints are served by Ory Hydra under this domain. Route them to the hydra
+    # container; the app serves the OAuth *metadata* (/.well-known/oauth-authorization-server,
+    # /.well-known/oauth-protected-resource) and everything else.
+    handle /oauth2/* {
+        reverse_proxy hydra:4444
+    }
+    handle /.well-known/jwks.json {
+        reverse_proxy hydra:4444
+    }
+
+    # Everything else → the app (SPA, /api, /mcp, OAuth metadata).
+    # flush_interval -1 disables response buffering, required for SSE (MCP).
+    handle {
+        reverse_proxy hue-manager:8080 {
+            flush_interval -1
+        }
     }
 
     # Enable gzip compression

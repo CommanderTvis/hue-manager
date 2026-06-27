@@ -81,7 +81,8 @@ jobs:
           docker run -d --name hydra --network huesmoke \
             -e DSN=memory \
             -e SECRETS_SYSTEM=smoke-system-secret-0123456789abcdef \
-            -e URLS_SELF_ISSUER=http://hydra:4444 \
+            -e URLS_SELF_ISSUER=http://localhost:8080 \
+            -e OIDC_DYNAMIC_CLIENT_REGISTRATION_ENABLED=true \
             oryd/hydra:v2.2.0 serve all --dev
           echo "Waiting for Hydra..."
           for _ in $(seq 1 20); do
@@ -96,7 +97,8 @@ jobs:
             -e HUE_REGION=52.5,13.4 -e HUE_PSEUDO_SUNSET=21:05 -e HUE_TIMEZONE=UTC \
             -e HUE_CLIENT_ID=dummy -e HUE_CLIENT_SECRET=dummy -e HUE_APP_ID=dummy \
             -e HUE_REDIRECT_URI=https://example.com/cb \
-            -e HYDRA_ISSUER_URL=http://hydra:4444 -e HYDRA_ADMIN_URL=http://hydra:4445 \
+            -e APP_PUBLIC_URL=http://localhost:8080 \
+            -e HYDRA_INTERNAL_URL=http://hydra:4444 -e HYDRA_ADMIN_URL=http://hydra:4445 \
             -e DATABASE_PATH=/app/data/hue.db \
             "$IMG"
 
@@ -130,6 +132,17 @@ jobs:
           TOKEN=$(curl -s -X POST http://localhost:8080/api/auth -H 'Content-Type: application/json' -d '{"password":"smoke"}' | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
           [ -n "$TOKEN" ] || { echo "::error::could not obtain session token"; fail=1; }
           check "authed-write"     200 -X PUT  http://localhost:8080/api/settings  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"pseudoSunset":"21:05"}'
+
+          # MCP OAuth discovery surface (claude.ai): /mcp must 401 with a resource_metadata pointer,
+          # and the app must serve RFC 9728 protected-resource + RFC 8414 authorization-server metadata
+          # (the latter carries the registration_endpoint Hydra itself never advertises).
+          check "mcp-protected"    200 http://localhost:8080/.well-known/oauth-protected-resource
+          check "mcp-as-metadata"  200 http://localhost:8080/.well-known/oauth-authorization-server
+          chal=$(curl -s -D - -o /dev/null -X POST http://localhost:8080/mcp -d '{}' | grep -i 'www-authenticate' || true)
+          echo "$chal" | grep -q 'resource_metadata=' || { echo "::error::/mcp 401 missing resource_metadata pointer ($chal)"; fail=1; }
+          curl -s http://localhost:8080/.well-known/oauth-authorization-server | grep -q 'registration_endpoint' \
+            || { echo "::error::authorization-server metadata missing registration_endpoint"; fail=1; }
+
           if [ "$fail" != "0" ]; then echo "=== app logs ==="; docker logs app | tail -50; exit 1; fi
           echo "Native smoke test passed."
 
