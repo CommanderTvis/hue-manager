@@ -58,4 +58,6 @@ link button). HTTPS via Caddy is required for Hue's OAuth2 — see `Caddyfile.ex
 
 Desktop (macOS): `brew install --cask commandertvis/hue-manager/hue-manager`
 
+Desktop (Linux): `flatpak install --user https://commandertvis.github.io/hue-manager/hue-manager.flatpakref`
+
 See `.env.example` for configuration and `CLAUDE.md` for the technical reference.
