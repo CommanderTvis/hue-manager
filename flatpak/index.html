@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hue Manager — Flatpak</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 42rem;
+      margin: 3rem auto;
+      padding: 0 1rem;
+      line-height: 1.6;
+    }
+    pre {
+      background: rgba(127, 127, 127, .15);
+      padding: .75rem 1rem;
+      border-radius: .5rem;
+      overflow-x: auto;
+    }
+    a { color: #f50; }
+  </style>
+</head>
+<body>
+  <h1>Hue Manager</h1>
+  <p>Philips Hue lamp management with daylight automation — Linux desktop app, distributed as a Flatpak. Nightly builds from <code>master</code>.</p>
+
+  <h2>Install</h2>
+  <pre><code>flatpak install --user https://commandertvis.github.io/hue-manager/hue-manager.flatpakref</code></pre>
+
+  <h2>Update</h2>
+  <pre><code>flatpak update io.github.commandertvis.huemanager</code></pre>
+
+  <h2>Run</h2>
+  <pre><code>flatpak run io.github.commandertvis.huemanager</code></pre>
+
+  <p><a href="https://github.com/CommanderTvis/hue-manager">Source on GitHub</a></p>
+</body>
+</html>

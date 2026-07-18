@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Hue Manager
+Comment=Philips Hue lamp management with daylight automation
+Exec=hue-manager
+Icon=io.github.commandertvis.huemanager
+Terminal=false
+Categories=Utility;Settings;

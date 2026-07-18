@@ -1,0 +1,5 @@
+[Flatpak Repo]
+Title=Hue Manager
+Url=https://commandertvis.github.io/hue-manager/repo
+Homepage=https://github.com/CommanderTvis/hue-manager
+Comment=Philips Hue lamp management with daylight automation

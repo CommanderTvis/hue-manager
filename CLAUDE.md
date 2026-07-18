@@ -350,6 +350,8 @@ hue-manager/
 ├── docker-compose.yml       # hue-manager + hydra + hydra-migrate (+ optional Caddy)
 ├── .github/workflows/docker-publish.yml  # CI/CD pipeline (buildx native image → GHCR)
 ├── .github/workflows/release-desktop.yml # CI/CD pipeline (DMG + Homebrew Cask)
+├── .github/workflows/flatpak-pages.yml   # CI/CD pipeline (Linux Flatpak → GitHub Pages)
+├── flatpak/                 # Flatpak manifest, wrapper, .desktop, .flatpakref/.flatpakrepo, Pages index.html
 ├── Caddyfile.example        # Caddy reverse proxy config (HTTPS)
 ├── TASK.md                  # Human-written design document
 ├── AGENTS.md                # Simplified context for AI sub-agents
@@ -440,6 +442,26 @@ The desktop (macOS) app is built as a DMG and published via GitHub Actions (`rel
 - `master` — main development branch (code + CI)
 - `brew` — orphan branch containing only the Homebrew Cask formula (auto-updated by CI)
 
+### Linux (Flatpak via GitHub Pages)
+
+The Linux desktop app is distributed as a Flatpak from an OSTree repo hosted on **GitHub
+Pages** using the **actions-based Pages deployment** (`actions/deploy-pages` — no `gh-pages`
+branch). Workflow: `.github/workflows/flatpak-pages.yml`, packaging files in `flatpak/`.
+
+- On push to `master`: builds `:composeApp:createDistributable` (jpackage app image, bundled
+  JRE), repackages it with `flatpak-builder` (manifest
+  `flatpak/io.github.commandertvis.huemanager.yml`, freedesktop Platform 24.08 runtime),
+  exports an OSTree repo, and deploys `repo/` + `.flatpakref`/`.flatpakrepo` + `index.html`
+  to Pages (`actions/configure-pages` with `enablement: true` auto-enables the site).
+- Install: `flatpak install --user https://commandertvis.github.io/hue-manager/hue-manager.flatpakref`
+- App id `io.github.commandertvis.huemanager`, branch `master`. Repo is **unsigned** (no
+  GPGKey in the flatpakref → remote added with `gpg-verify=false`); each CI run regenerates
+  the OSTree repo from scratch with one fresh commit (fine for `flatpak update`).
+- Sandbox: `--share=network`, `--socket=x11` (AWT needs X11/XWayland), `--device=dri`, and
+  `--persist=.java` so Java Preferences (server URL + session JWT) survive in the sandbox.
+- The manifest only repackages the CI-staged app image (`flatpak/app/`, gitignored); the
+  wrapper `flatpak/hue-manager.sh` resolves the space-containing jpackage launcher name.
+
 ## Real-time State Synchronization
 
 The app implements Google Docs-style real-time synchronization across multiple clients:
@@ -491,6 +513,11 @@ The app implements Google Docs-style real-time synchronization across multiple c
 - Platform-specific URL opening for OAuth flow
 
 ## Recent Changes
+
+**July 2026:**
+- Added Linux Flatpak distribution published to GitHub Pages via the actions-based
+  deployment (`flatpak-pages.yml` + `flatpak/` packaging files) — no `gh-pages` branch.
+  OSTree repo + `.flatpakref` served from `https://commandertvis.github.io/hue-manager/`.
 
 **June 2026 — Quarkus + GraalVM native migration:**
 - Migrated the server from **Ktor + Netty to Quarkus**, compiled to a **GraalVM native image**

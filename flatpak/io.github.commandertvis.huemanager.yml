@@ -1,0 +1,45 @@
+# Flatpak manifest for the Compose Desktop (JVM) Linux build.
+#
+# The app image (jpackage output of :composeApp:createDistributable) is staged by CI
+# into flatpak/app/ before flatpak-builder runs — this manifest only repackages it;
+# it does not run Gradle. The jlink'd JRE is bundled, so the freedesktop runtime is
+# all that's needed at runtime.
+app-id: io.github.commandertvis.huemanager
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+command: hue-manager
+finish-args:
+  # Talks to the hue-manager server over HTTP(S)
+  - --share=network
+  # Compose Desktop renders via AWT/Skia → X11 (XWayland on Wayland sessions)
+  - --socket=x11
+  - --share=ipc
+  - --device=dri
+  # JvmPlatformStorage uses java.util.prefs → ~/.java; persist it so the stored
+  # server URL + session token survive across runs inside the sandbox
+  - --persist=.java
+modules:
+  - name: hue-manager
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/dist
+      - cp -a app/bin app/lib /app/dist/
+      - install -Dm755 hue-manager.sh /app/bin/hue-manager
+      - install -Dm644 io.github.commandertvis.huemanager.desktop -t /app/share/applications
+      # jpackage drops a default icon at lib/<name>.png; it's 1024x1024, but flatpak's
+      # export validation caps icons at 512x512, so downscale with the Sdk's thumbnailer
+      - |
+        icon=$(find /app/dist/lib -maxdepth 1 -name '*.png' | head -n 1)
+        if [ -n "$icon" ]; then
+          gdk-pixbuf-thumbnailer -s 512 "$icon" icon-512.png
+          install -Dm644 icon-512.png /app/share/icons/hicolor/512x512/apps/io.github.commandertvis.huemanager.png
+        fi
+    sources:
+      - type: dir
+        path: app
+        dest: app
+      - type: file
+        path: hue-manager.sh
+      - type: file
+        path: io.github.commandertvis.huemanager.desktop

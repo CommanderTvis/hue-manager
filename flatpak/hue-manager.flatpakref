@@ -1,0 +1,8 @@
+[Flatpak Ref]
+Name=io.github.commandertvis.huemanager
+Branch=master
+Title=Hue Manager
+Url=https://commandertvis.github.io/hue-manager/repo
+IsRuntime=false
+SuggestRemoteName=hue-manager
+RuntimeRepo=https://dl.flathub.org/repo/flathub.flatpakrepo

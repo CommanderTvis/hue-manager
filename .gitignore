@@ -34,6 +34,12 @@ CLAUDE.local.md
 # CI build artifacts
 build-output/
 
+# CI-staged jpackage app image for flatpak-builder (see flatpak-pages.yml)
+flatpak/app/
+/pages/
+/builddir/
+/.flatpak-builder/
+
 # Deployment scripts
 update.sh
 log.txt
