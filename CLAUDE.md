@@ -45,7 +45,7 @@ Claude / MCP client ──MCP/OAuth─┘          │
 
 **Authentication:**
 - **SPA / desktop / web / Android clients:** plain password → `POST /api/auth` returns a signed JWT (jose4j HS256). Clients send it as `Bearer`; the password is sent only at login. Validated per-request by `AuthVerifier` (`rest/RestSupport.kt`).
-- **MCP clients:** OAuth via Ory Hydra (token issuance/DCR/discovery) + `quarkus-oidc` (resource server, validates Hydra JWTs on `/mcp`) + `quarkus-oidc-proxy` (fronts Hydra under the app's domain). Login/consent is delegated to the server (`auth/HydraLoginConsentResource.kt`), so the user still sees only the Hue Manager password screen. The server requires Hydra to boot.
+- **MCP clients:** OAuth via Ory Hydra (authorization server: authorize/token/refresh + Dynamic Client Registration) + `quarkus-oidc` (resource server, validates Hydra JWT access tokens on `/mcp`). claude.ai requires the OAuth server on the **same origin** as `/mcp`, so Caddy path-routes `/oauth2/*` and `/.well-known/jwks.json` on the app's domain to Hydra, while the app serves the OAuth metadata (`auth/OAuthMetadataResource.kt` for RFC 8414 + `quarkus-oidc` resource-metadata for RFC 9728). The token issuer is the app's public origin (`APP_PUBLIC_URL`); the app validates tokens against Hydra's JWKS over the internal Docker network (`HYDRA_INTERNAL_URL`, discovery disabled). Login/consent is delegated to the server (`auth/HydraLoginConsentResource.kt`), so the user still sees only the Hue Manager password screen. (`quarkus-oidc-proxy` was removed — it cannot serve a `registration_endpoint` and can't keep Hydra's interactive authorize endpoint off the browser path.)
 
 **Bridge Connection via OAuth2:**
 The server connects to the Hue bridge through Philips Cloud using OAuth2. No local network access, port forwarding, or VPN is required.
@@ -156,8 +156,10 @@ Hue OAuth tokens (access/refresh/username) are obtained at runtime and persisted
 - `DELETE /api/sync/pending` - Clear pending lamps (after operation completes)
 
 ### MCP (Model Context Protocol)
-- `/mcp` - MCP SSE endpoint (served by the `quarkus-mcp-server-sse` extension; bearer-token protected via `quarkus-oidc`)
-- OAuth discovery / token / DCR endpoints are provided by **Hydra** fronted by `quarkus-oidc-proxy` (under the app domain, e.g. `/q/oidc/...`) — no longer hand-rolled.
+- `/mcp` - MCP SSE endpoint (served by the `quarkus-mcp-server-sse` extension; bearer-token protected via `quarkus-oidc`). A 401 carries `WWW-Authenticate: Bearer resource_metadata="…"`.
+- `GET /.well-known/oauth-protected-resource` - RFC 9728 metadata (served by `quarkus-oidc` resource-metadata); points to the authorization server (the app's public origin).
+- `GET /.well-known/oauth-authorization-server` (and `/.well-known/openid-configuration`) - RFC 8414 metadata served by `auth/OAuthMetadataResource.kt`, advertising the `registration_endpoint` Hydra itself omits. Endpoints anchor at the app origin; Caddy path-routes them to Hydra.
+- `/oauth2/authorize|token|register|revoke`, `/.well-known/jwks.json` - Ory Hydra, reached via Caddy on the app's domain (same origin as `/mcp`, as claude.ai requires). DCR enabled (`OIDC_DYNAMIC_CLIENT_REGISTRATION_ENABLED`).
 - `GET /login`, `GET/POST /consent` - login/consent provider Hydra delegates to (`auth/HydraLoginConsentResource.kt`), reusing the app password.
 
 The hand-rolled `/mcp/authorize`, `/mcp/token`, `/mcp/register`, and `.well-known` endpoints were removed in the Quarkus migration.
@@ -339,7 +341,7 @@ hue-manager/
 │   ├── config/              # AppConfig (@ConfigMapping), Config
 │   ├── hue/                 # HueApi (REST client), HueRemoteClient, HueService, LampStateCache, RateLimiter, HueModels
 │   └── persistence/         # SettingsStore
-│   src/main/resources/application.properties   # Quarkus config (http, datasource, oidc, oidc-proxy)
+│   src/main/resources/application.properties   # Quarkus config (http, datasource, oidc resource-server + resource-metadata, forwarded-headers)
 ├── shared/src/commonMain/kotlin/            # models/, api/, network/, Platform.kt, Constants.kt
 ├── composeApp/src/commonMain/kotlin/        # App.kt, ui/, viewmodel/, network/, auth/ (AuthStorage), storage/
 ├── composeApp/src/{jvmMain,wasmJsMain,androidMain}/  # Platform-specific implementations
@@ -519,6 +521,23 @@ The app implements Google Docs-style real-time synchronization across multiple c
   deployment (`flatpak-pages.yml` + `flatpak/` packaging files) — no `gh-pages` branch.
   OSTree repo + `.flatpakref` served from `https://commandertvis.github.io/hue-manager/`.
 
+**June 2026 — MCP OAuth fixes (post-migration):**
+- Fixed native HTTP 500 on `suspend` resource methods returning `@Serializable` types (`/api/hue/link`,
+  `/api/wakeup`, `/api/sleep`): the erased return type hid the serializer from Quarkus' build-time scan
+  (same class as `ba7f3e5`). Now encoded explicitly via `jsonResponse()` in `rest/RestSupport.kt`.
+- Fixed "session expires instantly": `quarkus.http.auth.proactive=false` so `quarkus-oidc` stops
+  eagerly rejecting the SPA's HS256 session JWT on `permit` `/api/*` writes (it tried to validate it as
+  a Hydra token). Auth is now lazy — OIDC runs only on `/mcp`.
+- **Reworked MCP OAuth for claude.ai** (was fully broken: registration failed, internal issuer leaked,
+  `http://` endpoints). Removed `quarkus-oidc-proxy`. Hydra is now the authorization server on the
+  app's **same origin** (Caddy path-routes `/oauth2/*` + `/.well-known/jwks.json` to Hydra; admin stays
+  internal), with **DCR enabled**. The app serves RFC 8414 metadata (`auth/OAuthMetadataResource.kt`,
+  adding the `registration_endpoint` Hydra omits) + RFC 9728 protected-resource metadata + the `/mcp`
+  401 `resource_metadata` pointer (`quarkus-oidc` resource-metadata). Issuer = `APP_PUBLIC_URL`; tokens
+  validated against Hydra JWKS over the internal network (`HYDRA_INTERNAL_URL`, discovery disabled) with
+  `proxy-address-forwarding` for correct `https` URLs. Verified end-to-end on the native binary
+  (discovery → DCR → authorize → token-validated `/mcp` `initialize`).
+
 **June 2026 — Quarkus + GraalVM native migration:**
 - Migrated the server from **Ktor + Netty to Quarkus**, compiled to a **GraalVM native image**
   (~86 MB binary, ~45 MB RSS vs ~215 MB on the JVM). CDI beans + JAX-RS resources replaced the
@@ -526,7 +545,7 @@ The app implements Google Docs-style real-time synchronization across multiple c
 - **JWT session auth** for the SPA: `POST /api/auth` returns a jose4j HS256 token; the password is
   sent only at login (was: raw password as a bearer on every request). `HUE_JWT_SECRET` env.
 - **Dropped the hand-rolled MCP OAuth server**: MCP now uses Ory Hydra (separate container) +
-  `quarkus-oidc` (resource server) + `quarkus-oidc-proxy`. Login/consent delegated to the app.
+  `quarkus-oidc` (resource server). Login/consent delegated to the app.
 - **MCP** ported from the MCP Kotlin SDK to the `quarkus-mcp-server-sse` extension.
 - Hue client → Quarkus REST client; persistence → `quarkus-jdbc-sqlite`; logging → Quarkus/JBoss
   (logback removed); config → `@ConfigMapping(prefix="hue")` (dotenv removed, `HUE_*` env keys).
