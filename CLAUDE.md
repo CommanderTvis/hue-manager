@@ -438,6 +438,9 @@ The desktop (macOS) app is built as a DMG and published via GitHub Actions (`rel
 
 - On push to `master`, builds DMG, computes SHA256, uploads as "nightly" GitHub Release
 - Homebrew Cask formula lives on orphan `brew` branch (`Casks/hue-manager.rb`), auto-updated by CI
+  (version + sha256 only). The cask downloads the DMG from the `nightly` release by its plain
+  `browser_download_url` — since the repo went public, the old `api.github.com/.../releases/assets/<id>`
+  URL with an `Authorization` header is no longer needed, so CI no longer resolves an asset id.
 - Install: `brew install --cask commandertvis/hue-manager/hue-manager`
 
 **Branch structure:**

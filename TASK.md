@@ -164,7 +164,7 @@ Configure GitHub Actions to build snapshots from master. Images have to be tagge
 The desktop (macOS) app is built as a DMG and published via GitHub Actions:
 
 - On push to `master`, build a DMG, computes its SHA256, and uploads it as a "nightly" GitHub Release.
-- A Homebrew Cask - on orphan `brew` branch. The CI automatically updates the Cask version, SHA256, and asset ID after each build.
+- A Homebrew Cask - on orphan `brew` branch. The CI automatically updates the Cask version and SHA256 after each build.
 - Install with: `brew install --cask commandertvis/hue-manager/hue-manager`
 
 Authentication session has to be secure. Be vigilant because it's a private home management system.

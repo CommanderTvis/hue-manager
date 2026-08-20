@@ -13,7 +13,6 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       dmg-sha256: ${{ steps.sha.outputs.sha256 }}
-      dmg-asset-id: ${{ steps.asset.outputs.id }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -85,14 +84,6 @@ jobs:
             -F caption="Nightly $(git rev-parse --short HEAD) — $(date -u +%Y-%m-%d): ${MSG}" \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument"
 
-      - name: Get DMG asset ID
-        id: asset
-        run: |
-          ASSET_ID=$(gh api repos/CommanderTvis/hue-manager/releases/tags/nightly --jq '.assets[] | select(.name == "hue-manager.dmg") | .id')
-          echo "id=$ASSET_ID" >> "$GITHUB_OUTPUT"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   update-cask:
     needs: build
     runs-on: ubuntu-latest
@@ -109,10 +100,8 @@ jobs:
         run: |
           VERSION="${{ needs.build.outputs.version }}"
           SHA256="${{ needs.build.outputs.dmg-sha256 }}"
-          ASSET_ID="${{ needs.build.outputs.dmg-asset-id }}"
           sed -i "s/version \".*\"/version \"$VERSION\"/" Casks/hue-manager.rb
           sed -i "s/sha256 \".*\"/sha256 \"$SHA256\"/" Casks/hue-manager.rb
-          sed -i "s|releases/assets/[0-9A-Z_]*|releases/assets/$ASSET_ID|" Casks/hue-manager.rb
 
       - name: Commit and push updated Cask
         run: |
