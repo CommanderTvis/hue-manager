@@ -43,14 +43,16 @@ RUN ./gradlew --no-configuration-cache \
       :server:quarkusBuild -Dquarkus.native.enabled=true -Dquarkus.package.jar.enabled=false
 
 ### Runtime stage — minimal glibc base
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.4
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.7
 LABEL org.opencontainers.image.source=https://github.com/CommanderTvis/hue-manager
 WORKDIR /app
 
 # ubi9-minimal already ships curl-minimal (provides /usr/bin/curl for the healthcheck);
 # installing full curl conflicts with it, so don't.
-RUN echo 'huemanager:x:1001:1001::/app:/sbin/nologin' >> /etc/passwd \
-    && mkdir -p /app/data && chown -R 1001:1001 /app
+# The runtime user is a bare numeric UID — no /etc/passwd entry, no login shell, nothing to
+# escalate into. /app is only writable at /app/data (the settings-DB volume mount point), so
+# the container runs fine with a read-only root filesystem.
+RUN mkdir -p /app/data && chown -R 1001:1001 /app
 USER 1001
 
 # Native binary + web assets (served by SpaResource from ./web relative to WORKDIR).

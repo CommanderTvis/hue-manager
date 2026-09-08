@@ -519,6 +519,12 @@ The app implements Google Docs-style real-time synchronization across multiple c
 
 ## Recent Changes
 
+**September 2026:**
+- Container hardening: runtime base bumped to `ubi9/ubi-minimal:9.7`, runtime user is a bare
+  numeric UID (no `/etc/passwd` entry), and both compose files run every service with
+  `no-new-privileges`, `cap_drop: ALL`, a read-only root filesystem and a `/tmp` tmpfs
+  (Caddy keeps `NET_BIND_SERVICE` for :80/:443). Mirror this in the deploy repo's compose.
+
 **July 2026:**
 - Added Linux Flatpak distribution published to GitHub Pages via the actions-based
   deployment (`flatpak-pages.yml` + `flatpak/` packaging files) — no `gh-pages` branch.

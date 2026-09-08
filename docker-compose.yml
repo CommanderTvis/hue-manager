@@ -9,6 +9,12 @@ services:
     image: hue-manager:dev
     container_name: hue-manager
     restart: unless-stopped
+    # Hardening: no privilege escalation, no capabilities, immutable rootfs
+    # (writable state lives in the named volume; /tmp is a tmpfs).
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    read_only: true
+    tmpfs: ["/tmp"]
 
     ports:
       - "8080:8080"
@@ -50,6 +56,12 @@ services:
     image: oryd/hydra:v2.2.0
     container_name: hue-hydra-migrate
     command: migrate sql -e --yes
+    # Hardening: no privilege escalation, no capabilities, immutable rootfs
+    # (writable state lives in the named volume; /tmp is a tmpfs).
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    read_only: true
+    tmpfs: ["/tmp"]
     environment:
       - DSN=sqlite:///var/lib/sqlite/hydra.db?_fk=true&mode=rwc
     volumes:
@@ -61,6 +73,12 @@ services:
     container_name: hue-hydra
     command: serve all --dev   # --dev relaxes HTTPS; fine for local dev
     restart: unless-stopped
+    # Hardening: no privilege escalation, no capabilities, immutable rootfs
+    # (writable state lives in the named volume; /tmp is a tmpfs).
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    read_only: true
+    tmpfs: ["/tmp"]
     depends_on:
       hydra-migrate:
         condition: service_completed_successfully
