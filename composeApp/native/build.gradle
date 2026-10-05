@@ -1,0 +1,170 @@
+import groovy.json.JsonOutput
+import org.gradle.jvm.toolchain.*
+
+def versions = ['javaVersion', 'javaRuntimeVersion', 'nikVersion'].collectEntries {
+    [(it): providers.gradleProperty('desktop.' + it).get()]
+}
+def arch = System.getProperty('os.arch') in ['aarch64', 'arm64'] ? 'aarch64' : 'amd64'
+def nativeRoot = layout.buildDirectory.dir('native').get().asFile
+def sourceRoot = file('native')
+def metadataDir = new File(nativeRoot, 'metadata')
+def modelsDir = new File(nativeRoot, 'resources')
+def compileDir = new File(nativeRoot, 'compile')
+def launcherDir = new File(nativeRoot, 'launcher')
+def bridgeDir = new File(nativeRoot, 'bridge')
+def distDir = new File(nativeRoot, 'dist')
+def appDir = new File(distDir, 'Hue Manager.app')
+def executableDir = new File(appDir, 'Contents/MacOS')
+def binary = new File(executableDir, 'hue-manager')
+def compilation = kotlin.targets.getByName('jvm').compilations.getByName('main')
+def runtime = compilation.output.allOutputs + compilation.runtimeDependencyFiles
+def nik = javaToolchains.launcherFor {
+    languageVersion = JavaLanguageVersion.of(versions.javaVersion.toInteger())
+    vendor = JvmVendorSpec.BELLSOFT
+    nativeImageCapable = true
+}
+def nikHome = nik.map { it.metadata.installationPath.asFile }
+def staticLibraries = nikHome.map {
+    new File(it, "lib/static/darwin-${arch}")
+}
+
+tasks.register('nativeMetadata') {
+    def sources = rootProject.fileTree('shared/src/commonMain/kotlin') { include '**/*.kt' }
+    inputs.files(sources)
+    outputs.dir(metadataDir)
+    outputs.dir(modelsDir)
+    doLast {
+        def models = []
+        sources.each { source ->
+            def text = source.getText('UTF-8')
+            def pkg = (text =~ /(?m)^package ([\w.]+)/)[0][1]
+            (text =~ /@Serializable\s+(?:data |enum )?class (\w+)/).each { match ->
+                models.add("${pkg}.${match[1]}".toString())
+            }
+        }
+        models.sort()
+        def metadata = models.collectMany { name -> [
+            [name: name, allDeclaredClasses: true, fields: [[name: 'Companion']]],
+            [name: name + '$Companion', methods: [[name: 'serializer', parameterTypes: []]]]
+        ] }
+        metadataDir.mkdirs()
+        modelsDir.mkdirs()
+        new File(metadataDir, 'reflect-config.json').text = JsonOutput.prettyPrint(JsonOutput.toJson(metadata)) + '\n'
+        new File(modelsDir, 'native-models.txt').text = models.join('\n') + '\n'
+    }
+}
+
+tasks.register('compileNativeLauncher', JavaCompile) {
+    dependsOn('jvmJar')
+    source = fileTree(new File(sourceRoot, 'java')) { include '*.java' }
+    classpath = runtime
+    destinationDirectory = launcherDir
+    javaCompiler = javaToolchains.compilerFor {
+        languageVersion = JavaLanguageVersion.of(versions.javaVersion.toInteger())
+        vendor = JvmVendorSpec.BELLSOFT
+        nativeImageCapable = true
+    }
+}
+
+tasks.register('nativeCompile', Exec) {
+    dependsOn('compileNativeLauncher', 'nativeMetadata')
+    inputs.files(runtime, fileTree(new File(sourceRoot, 'metadata')), metadataDir, launcherDir, modelsDir)
+    inputs.properties(versions)
+    outputs.dir(compileDir)
+    doFirst {
+        def home = nikHome.get()
+        def release = new Properties()
+        new File(home, 'release').withInputStream { release.load(it) }
+        if (release.JAVA_VERSION != '"' + versions.javaRuntimeVersion + '"' ||
+            !release.MODULES.contains('javafx.graphics') || !new File(staticLibraries.get(), 'libjawt.a').isFile()) {
+            throw new GradleException("Expected pinned NIK Full ${versions.nikVersion}; Gradle selected ${home}")
+        }
+        compileDir.mkdirs()
+        // Gradle's provisioned bin/native-image may be an unexpanded symlink.
+        executable = new File(home, 'lib/svm/bin/native-image')
+        def configs = [new File(sourceRoot, 'metadata'), metadataDir]
+        args('--no-fallback', '-Djava.awt.headless=false', '--initialize-at-build-time=kotlin.DeprecationLevel',
+            '-H:ConfigurationFileDirectories=' + configs.join(','),
+            '-cp', (runtime + files(launcherDir, modelsDir)).asPath,
+            'NativeLauncher', new File(compileDir, 'hue-manager'))
+        args(
+            '-H:NativeLinkerOption=' + new File(staticLibraries.get(), 'libjawt.a'),
+            '-H:NativeLinkerOption=-Wl,-u,_JAWT_GetAWT',
+            '-H:NativeLinkerOption=-Wl,-exported_symbol,_JAWT_GetAWT')
+    }
+}
+
+tasks.register('nativeJawtBridge', Exec) {
+    inputs.file(new File(sourceRoot, 'jawt-bridge.c'))
+    inputs.properties(versions)
+    outputs.dir(bridgeDir)
+    doFirst {
+        def home = nikHome.get()
+        bridgeDir.mkdirs()
+        executable = 'cc'
+        args('-dynamiclib', '-I' + new File(home, 'include'), '-I' + new File(home, 'include/darwin'),
+            new File(sourceRoot, 'jawt-bridge.c'), '-o', new File(bridgeDir, 'libjawt.dylib'))
+    }
+}
+
+tasks.register('nativeDistributable', Sync) {
+    dependsOn('nativeCompile', 'nativeJawtBridge')
+    into(distDir)
+    into('Hue Manager.app/Contents/MacOS') {
+        from(compileDir) { include 'hue-manager', '*.dylib' }
+        into('runtime/lib') { from(bridgeDir) }
+    }
+    into('Hue Manager.app/Contents/Resources/licenses/nik') {
+        from(nikHome.map { new File(it, 'legal') })
+        filePermissions { unix('0644') }
+    }
+    into('Hue Manager.app/Contents') { from(new File(sourceRoot, 'Info.plist')) }
+    doLast {
+        // Sign after the bundle is assembled; no Developer ID is configured in this project.
+        def signing = providers.exec {
+            commandLine 'codesign', '--force', '--deep', '--sign', '-', appDir
+            ignoreExitValue = true
+        }
+        if (signing.result.get().exitValue != 0) throw new GradleException(signing.standardError.asText.get())
+    }
+}
+
+tasks.register('nativeCheck', Exec) {
+    dependsOn('nativeDistributable')
+    commandLine binary, '--check-serialization'
+}
+
+tasks.register('nativeGuiCheck', Exec) {
+    dependsOn('nativeCheck')
+    timeout = java.time.Duration.ofSeconds(45)
+    commandLine binary, '--smoke-test'
+}
+
+tasks.register('nativeRun', Exec) {
+    dependsOn('nativeDistributable')
+    commandLine binary
+}
+
+tasks.register('nativeTrace', JavaExec) {
+    dependsOn('jvmJar')
+    javaLauncher = nik
+    classpath = runtime
+    mainClass = 'io.github.commandertvis.huemanager.MainKt'
+    jvmArgs('--enable-native-access=ALL-UNNAMED',
+        '-agentlib:native-image-agent=config-output-dir=' + new File(nativeRoot, 'traced-metadata'))
+}
+
+tasks.register('nativeDmg', Exec) {
+    dependsOn('nativeGuiCheck')
+    def dmg = new File(nativeRoot, 'dmg/hue-manager.dmg')
+    inputs.dir(distDir)
+    outputs.file(dmg)
+    doFirst { dmg.parentFile.mkdirs() }
+    commandLine 'hdiutil', 'create', '-ov', '-volname', 'Hue Manager', '-srcfolder', distDir,
+        '-format', 'UDZO', dmg
+}
+
+tasks.matching { it.name.startsWith('native') || it.name == 'compileNativeLauncher' }.configureEach {
+    group = 'native desktop'
+    notCompatibleWithConfigurationCache('Native toolchain and packaging are configured by the desktop build script')
+}

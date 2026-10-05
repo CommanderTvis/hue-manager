@@ -3,7 +3,8 @@ package io.github.commandertvis.huemanager.storage
 import java.util.prefs.Preferences
 
 private object JvmPlatformStorage : PlatformStorage {
-    private val prefs = Preferences.userNodeForPackage(JvmPlatformStorage::class.java)
+    private val prefs = System.getProperty("hue.preferencesNode")?.let { Preferences.userRoot().node(it) }
+        ?: Preferences.userNodeForPackage(JvmPlatformStorage::class.java)
 
     private const val KEY_SERVER_URL = "server_url"
     private const val KEY_AUTH_TOKEN = "auth_token"

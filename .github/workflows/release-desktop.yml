@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-15
     outputs:
       version: ${{ steps.version.outputs.version }}
       dmg-sha256: ${{ steps.sha.outputs.sha256 }}
@@ -41,8 +41,8 @@ jobs:
       - name: Decode keystore
         run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > /tmp/release.keystore
 
-      - name: Build DMG and APK
-        run: ./gradlew :composeApp:packageDmg :androidApp:assembleRelease
+      - name: Build NIK DMG and APK
+        run: ./gradlew :composeApp:nativeDmg :androidApp:assembleRelease --no-configuration-cache
         env:
           ANDROID_KEYSTORE_FILE: /tmp/release.keystore
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -51,8 +51,7 @@ jobs:
 
       - name: Find and rename artifacts
         run: |
-          DMG_PATH=$(find composeApp/build/compose/binaries/main/dmg -name "*.dmg" -type f | head -1)
-          cp "$DMG_PATH" hue-manager.dmg
+          cp composeApp/build/native/dmg/hue-manager.dmg hue-manager.dmg
           APK_PATH=$(find androidApp/build/outputs/apk/release -name "*.apk" -type f | head -1)
           cp "$APK_PATH" hue-manager-release.apk
 

@@ -434,7 +434,15 @@ Named volumes: `hue-data` (settings DB), `hydra-data` (Hydra DB).
 
 ## Desktop App Distribution
 
-The desktop (macOS) app is built as a DMG and published via GitHub Actions (`release-desktop.yml`):
+macOS desktop releases compile to BellSoft NIK Full native executables, with versions pinned
+in `gradle.properties` (`desktop.*`) and toolchain provisioning through Gradle/Foojay. Build logic
+and checked-in reflection/JNI metadata live in `composeApp/native/`. On macOS a JAWT bridge
+forwards Skiko calls to statically linked AWT; no JVM is bundled. JVM `run` remains for
+development. Linux retains JVM packaging and Flatpak. Native tasks opt out of the configuration cache.
+
+The macOS app is built with `:composeApp:nativeDmg` and published via GitHub Actions
+(`release-desktop.yml`). Packaging requires serializer and GUI smoke tests and produces
+`composeApp/build/native/dmg/hue-manager.dmg` containing an ad-hoc-signed `Hue Manager.app`:
 
 - On push to `master`, builds DMG, computes SHA256, uploads as "nightly" GitHub Release
 - Homebrew Cask formula lives on orphan `brew` branch (`Casks/hue-manager.rb`), auto-updated by CI

@@ -32,6 +32,10 @@ plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
 
+if (System.getProperty("os.name").startsWith("Mac")) {
+    apply(from = "gradle/nik-toolchain.gradle")
+}
+
 include(":composeApp")
 include(":server")
 include(":shared")

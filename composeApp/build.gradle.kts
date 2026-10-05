@@ -111,16 +111,16 @@ compose.desktop.application {
     jvmArgs("--enable-native-access=ALL-UNNAMED")
     if (System.getProperty("os.name").startsWith("Mac")) {
         jvmArgs("-Xdock:name=Hue Manager")
-    }
-
-    nativeDistributions {
-        targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-        packageName = "Hue Manager"
-        packageVersion = "1.0.0"
-        modules("java.naming")
-
-        macOS {
-            bundleID = "io.github.commandertvis.huemanager"
+    } else {
+        nativeDistributions {
+            targetFormats(TargetFormat.Msi, TargetFormat.Deb)
+            packageName = "Hue Manager"
+            packageVersion = "1.0.0"
+            modules("java.naming")
         }
     }
+}
+
+if (System.getProperty("os.name").startsWith("Mac")) {
+    apply(from = "native/build.gradle")
 }

@@ -1,0 +1,54 @@
+import groovy.json.JsonSlurper
+import org.gradle.api.Plugin
+import org.gradle.api.initialization.Settings
+import org.gradle.api.provider.ProviderFactory
+import org.gradle.jvm.toolchain.*
+import javax.inject.Inject
+import java.util.Optional
+
+abstract class NikFullResolver implements JavaToolchainResolver {
+    @Inject abstract ProviderFactory getProviders()
+
+    Optional<JavaToolchainDownload> resolve(JavaToolchainRequest request) {
+        def spec = request.javaToolchainSpec
+        def versions = ['javaVersion', 'javaRuntimeVersion', 'nikVersion'].collectEntries {
+            [(it): providers.gradleProperty('desktop.' + it).get()]
+        }
+        if (!spec.nativeImageCapable.getOrElse(false) ||
+            spec.vendor.get() != JvmVendorSpec.BELLSOFT ||
+            spec.languageVersion.get().asInt() != versions.javaVersion.toInteger()) return Optional.empty()
+
+        def os = request.buildPlatform.operatingSystem.toString().toLowerCase()
+        def arch = request.buildPlatform.architecture.toString().toLowerCase()
+        if (os != 'mac_os') return Optional.empty()
+        os = 'macos'
+        arch = arch == 'aarch64' ? 'aarch64' : 'x64'
+        def query = "distribution=liberica_native&architecture=${arch}&operating_system=${os}" +
+            '&archive_type=tar.gz&package_type=jdk&javafx_bundled=true&directly_downloadable=true'
+        def connection = new URI('https://api.foojay.io/disco/v3.0/packages?' + query).toURL().openConnection()
+        connection.connectTimeout = 30000
+        connection.readTimeout = 30000
+        def packages = connection.inputStream.withCloseable { new JsonSlurper().parse(it).result }
+        def pkg = packages.find {
+            it.java_version == versions.nikVersion &&
+                it.filename.startsWith("bellsoft-liberica-vm-full-openjdk${versions.javaRuntimeVersion}+")
+        }
+        if (pkg == null) throw new GradleException("Foojay has no NIK Full ${versions.nikVersion} for ${os}/${arch}")
+        return Optional.of(JavaToolchainDownload.fromUri(new URI(pkg.links.pkg_download_redirect)))
+    }
+}
+
+abstract class NikFullToolchains implements Plugin<Settings> {
+    @Inject abstract JavaToolchainResolverRegistry getRegistry()
+
+    void apply(Settings settings) {
+        registry.register(NikFullResolver)
+        def repositories = settings.toolchainManagement.jvm.javaRepositories
+        def fallbackResolver = repositories.asList.find { it.name == 'foojay' }.resolverClass.get()
+        repositories.remove('foojay')
+        repositories.repository('foojayNikFull') { resolverClass = NikFullResolver }
+        repositories.repository('foojay') { resolverClass = fallbackResolver }
+    }
+}
+
+apply plugin: NikFullToolchains
