@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.commandertvis.huemanager.api.*
 import io.github.commandertvis.huemanager.models.Lamp
+import io.github.commandertvis.huemanager.models.LampSchedule
 import io.github.commandertvis.huemanager.models.UserState
 import io.github.commandertvis.huemanager.network.ApiClient
 import kotlinx.coroutines.Job
@@ -32,6 +33,9 @@ data class LampsUiState(
     val excludedLampIds: Set<String> = emptySet(),
     val sensors: List<SensorInfo> = emptyList(),
     val toggleButtonSensorId: String? = null,
+    val lampSchedules: List<LampSchedule> = emptyList(),
+    val timezone: String = "Europe/Berlin",
+    val isSavingSchedule: Boolean = false,
 )
 
 class LampsViewModel(
@@ -94,6 +98,7 @@ class LampsViewModel(
                 // instead of waiting for the next slow poll.
                 if (response.version != previousVersion) {
                     pollLamps()
+                    pollSettings()
                 }
             },
             onFailure = { /* Silently ignore sync failures to avoid spamming errors */ }
@@ -154,6 +159,8 @@ class LampsViewModel(
                         nightColor = response.nightColor,
                         excludedLampIds = response.excludedLampIds.toSet(),
                         toggleButtonSensorId = response.toggleButtonSensorId,
+                        lampSchedules = response.lampSchedules,
+                        timezone = response.timezone,
                     )
                 },
                 onFailure = { /* ignore */ }
@@ -353,18 +360,22 @@ class LampsViewModel(
         }
     }
 
-    fun updateExcludedLamps(excludedLampIds: Set<String>) {
+    fun updateLampAutomation(excludedLampIds: Set<String>, schedules: List<LampSchedule>, onSaved: () -> Unit) {
+        if (_uiState.value.isSavingSchedule) return
+        _uiState.value = _uiState.value.copy(isSavingSchedule = true)
         viewModelScope.launch {
-            val previous = _uiState.value.excludedLampIds
-            _uiState.value = _uiState.value.copy(excludedLampIds = excludedLampIds)
             val result = apiClient.updateSettings(
-                SettingsUpdateRequest(excludedLampIds = excludedLampIds.toList())
+                SettingsUpdateRequest(excludedLampIds = excludedLampIds.toList(), lampSchedules = schedules)
             )
             result.fold(
-                onSuccess = { /* state already updated optimistically */ },
+                onSuccess = {
+                    _uiState.value = _uiState.value.copy(excludedLampIds = excludedLampIds, lampSchedules = schedules, isSavingSchedule = false)
+                    pollLamps()
+                    onSaved()
+                },
                 onFailure = { e ->
                     _uiState.value = _uiState.value.copy(
-                        excludedLampIds = previous,
+                        isSavingSchedule = false,
                         error = e.message,
                     )
                 }
@@ -374,6 +385,34 @@ class LampsViewModel(
 
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
+    }
+
+    private suspend fun pollSettings() {
+        apiClient.getSettings().onSuccess { response ->
+            _uiState.value = _uiState.value.copy(
+                lampSchedules = response.lampSchedules,
+                timezone = response.timezone,
+                excludedLampIds = response.excludedLampIds.toSet(),
+            )
+        }
+    }
+
+    fun updateLampSchedule(lampId: String, schedule: LampSchedule?, onSaved: () -> Unit) {
+        if (_uiState.value.isSavingSchedule) return
+        _uiState.value = _uiState.value.copy(isSavingSchedule = true)
+        viewModelScope.launch {
+            val schedules = _uiState.value.lampSchedules.filter { it.lampId != lampId } + listOfNotNull(schedule)
+            apiClient.updateSettings(SettingsUpdateRequest(lampSchedules = schedules)).fold(
+                onSuccess = {
+                    _uiState.value = _uiState.value.copy(lampSchedules = schedules, isSavingSchedule = false)
+                    pollLamps()
+                    onSaved()
+                },
+                onFailure = { e ->
+                    _uiState.value = _uiState.value.copy(error = e.message, isSavingSchedule = false)
+                },
+            )
+        }
     }
 
     override fun onCleared() {

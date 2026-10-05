@@ -29,7 +29,10 @@ import kotlinx.coroutines.launch
 @Composable
 @Preview
 fun App(
-    initialServerUrl: String? = null
+    initialServerUrl: String? = null,
+    compactWindowHeader: Boolean = false,
+    desktop: Boolean = false,
+    onTitleBarDoubleClick: () -> Unit = {},
 ) {
     val storedUrl = remember { platformStorage.getServerUrl() }
     var serverUrl by remember { mutableStateOf(initialServerUrl ?: storedUrl) }
@@ -133,6 +136,10 @@ fun App(
 
                         bridgeStatus == BridgeStatus.Connected -> {
                             MainScreen(
+                                compactWindowHeader = compactWindowHeader,
+                                desktop = desktop,
+                                onTitleBarDoubleClick = onTitleBarDoubleClick,
+                                serverUrl = serverUrl,
                                 apiClient = apiClient,
                                 onLogout = { authViewModel.logout() }
                             )

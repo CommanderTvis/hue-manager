@@ -77,10 +77,12 @@ fun SmartButtonDialog(
                         }
                     }
                 }
-                VerticalScrollbarCompat(
-                    scrollState = scrollState,
-                    modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight()
-                )
+                Box(Modifier.matchParentSize()) {
+                    VerticalScrollbarCompat(
+                        scrollState = scrollState,
+                        modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight()
+                    )
+                }
             }
         },
         confirmButton = {

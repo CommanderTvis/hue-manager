@@ -9,6 +9,7 @@ import io.github.commandertvis.huemanager.hue.HueService
 import io.github.commandertvis.huemanager.hue.LampStateCache
 import io.github.commandertvis.huemanager.models.*
 import jakarta.inject.Inject
+import kotlinx.coroutines.runBlocking
 import jakarta.ws.rs.*
 import jakarta.ws.rs.core.Context
 import jakarta.ws.rs.core.HttpHeaders
@@ -256,6 +257,8 @@ class ApiResource @Inject constructor(
             eveningColor = evening.toApiConfig(),
             nightColor = night.toApiConfig(),
             toggleButtonSensorId = automationManager.getToggleButtonSensorId(),
+            lampSchedules = automationManager.getLampSchedules(),
+            timezone = automationManager.getTimezone(),
         )
     }
 
@@ -267,9 +270,16 @@ class ApiResource @Inject constructor(
     ): ApiSuccess {
         authVerifier.requireAuth(headers)
 
+        request.lampSchedules?.let { schedules ->
+            try {
+                runBlocking { automationManager.setLampSchedules(schedules, request.excludedLampIds?.toSet()) }
+            } catch (e: IllegalArgumentException) {
+                apiError(Response.Status.BAD_REQUEST, e.message ?: "Invalid lamp schedule")
+            }
+        }
         request.pseudoSunset?.let { automationManager.setPseudoSunset(it) }
         request.nightTime?.let { automationManager.setNightTime(it) }
-        request.excludedLampIds?.let { automationManager.setExcludedLamps(it.toSet()) }
+        if (request.lampSchedules == null) request.excludedLampIds?.let { automationManager.setExcludedLamps(it.toSet()) }
         request.daylightColor?.let { automationManager.setDaylightColor(it.toModeConfig()) }
         request.eveningColor?.let { automationManager.setEveningColor(it.toModeConfig()) }
         request.nightColor?.let { automationManager.setNightColor(it.toModeConfig()) }

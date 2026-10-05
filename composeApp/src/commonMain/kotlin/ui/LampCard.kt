@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,6 +33,11 @@ fun LampCard(
     onBrightnessChange: (Int) -> Unit,
     onColorChange: ((Int, Int) -> Unit)? = null,
     onClearOverride: () -> Unit,
+    hasSchedule: Boolean = false,
+    onEditSchedule: (() -> Unit)? = null,
+    controlMode: LampControlMode = LampControlMode.CYCLE,
+    onControlModeChange: ((LampControlMode) -> Unit)? = null,
+    savingAutomation: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     var sliderValue by remember(lamp.brightness) {
@@ -80,75 +86,103 @@ fun LampCard(
                     .padding(horizontal = 12.dp, vertical = 8.dp)
                     .alpha(if (isLoading) 0.5f else 1f)
             ) {
-                // Main row: name + status + brightness slider + controls
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Name and status
-                    Column(modifier = Modifier.width(100.dp)) {
-                        Text(
-                            text = lamp.name,
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            text = when {
-                                lamp.inEntertainment -> "Hue Sync"
-                                !lamp.reachable -> "Unreachable"
-                                lamp.on -> {
-                                    val pct = (lamp.brightness ?: 254) * 100 / 254
-                                    if (pct == 0) "Off" else "On ($pct%)"
-                                }
-                                else -> "Off"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (lamp.inEntertainment) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    // Inline brightness slider (when lamp is on and not in entertainment)
-                    if (lamp.on && lamp.reachable && lamp.brightness != null && !lamp.inEntertainment) {
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val brightnessOnSeparateRow = maxWidth < 420.dp
+                    val showBrightness = lamp.on && lamp.reachable && lamp.brightness != null && !lamp.inEntertainment
+                    val brightnessControl: @Composable () -> Unit = {
                         Slider(
                             value = sliderValue,
                             onValueChange = { sliderValue = it },
-                            onValueChangeFinished = {
-                                onBrightnessChange(sliderValue.toInt())
-                            },
+                            onValueChangeFinished = { onBrightnessChange(sliderValue.toInt()) },
                             valueRange = 1f..254f,
-                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                            enabled = !isLoading
+                            modifier = Modifier.widthIn(max = 320.dp).fillMaxWidth(),
+                            enabled = !isLoading,
                         )
-                    } else {
-                        Spacer(modifier = Modifier.weight(1f))
                     }
-
-                    // Controls: color picker + toggle
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (lamp.on && lamp.reachable && onColorChange != null && !lamp.inEntertainment) {
-                            IconButton(
-                                onClick = { isColorPickerExpanded = !isColorPickerExpanded },
-                                enabled = !isLoading,
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Palette,
-                                    contentDescription = "Color Picker",
-                                    tint = if (isColorPickerExpanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(20.dp)
+                    Column {
+                        // Main row: name + status + brightness slider + controls
+                        Row(
+                            modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Start,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Name and status
+                            Column(modifier = Modifier.widthIn(min = 64.dp, max = 100.dp)) {
+                                Text(
+                                    text = lamp.name,
+                                    style = MaterialTheme.typography.titleMedium
                                 )
+                                Text(
+                                    text = when {
+                                        lamp.inEntertainment -> "Hue Sync"
+                                        !lamp.reachable -> "Unreachable"
+                                        lamp.on -> {
+                                            val pct = (lamp.brightness ?: 254) * 100 / 254
+                                            if (pct == 0) "Off" else "On ($pct%)"
+                                        }
+                                        else -> "Off"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (lamp.inEntertainment) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (hasSchedule) {
+                                    Text("Scheduled", style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+
+                            // Inline brightness slider (when lamp is on and not in entertainment)
+                            if (showBrightness && !brightnessOnSeparateRow) {
+                                Box(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                                    brightnessControl()
+                                }
+                            } else {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+
+                            // Controls: color picker + toggle
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                onEditSchedule?.let { edit ->
+                                    IconButton(onClick = edit, modifier = Modifier.size(36.dp)) {
+                                        Icon(Icons.Default.Schedule,
+                                            contentDescription = if (hasSchedule) "Edit individual schedule" else "Set individual schedule",
+                                            tint = if (hasSchedule) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.size(20.dp))
+                                    }
+                                }
+                                if (lamp.on && lamp.reachable && onColorChange != null && !lamp.inEntertainment) {
+                                    IconButton(
+                                        onClick = { isColorPickerExpanded = !isColorPickerExpanded },
+                                        enabled = !isLoading,
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Palette,
+                                            contentDescription = "Color Picker",
+                                            tint = if (isColorPickerExpanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+
+                                // Hide toggle switch when in entertainment mode
+                                if (!lamp.inEntertainment) {
+                                    Switch(
+                                        checked = lamp.on,
+                                        onCheckedChange = { onToggle() },
+                                        enabled = lamp.reachable && !isLoading
+                                    )
+                                }
                             }
                         }
 
-                        // Hide toggle switch when in entertainment mode
-                        if (!lamp.inEntertainment) {
-                            Switch(
-                                checked = lamp.on,
-                                onCheckedChange = { onToggle() },
-                                enabled = lamp.reachable && !isLoading
-                            )
-                        }
+                        if (showBrightness && brightnessOnSeparateRow) brightnessControl()
                     }
+                }
+
+                onControlModeChange?.let { onSelect ->
+                    Spacer(Modifier.height(4.dp))
+                    LampControlModeSelector(controlMode, enabled = !savingAutomation, onSelect = onSelect)
                 }
 
                 // Color Picker (expandable, hide when in entertainment mode)
@@ -222,8 +256,8 @@ fun LampCard(
                     Spacer(modifier = Modifier.height(4.dp))
 
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(

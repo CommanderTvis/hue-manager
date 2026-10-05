@@ -7,6 +7,8 @@ import io.github.commandertvis.huemanager.hue.HueSensor
 import io.github.commandertvis.huemanager.hue.HueService
 import io.github.commandertvis.huemanager.hue.LampStateCache
 import io.github.commandertvis.huemanager.persistence.SettingsStore
+import io.github.commandertvis.huemanager.models.LampSchedule
+import io.github.commandertvis.huemanager.models.lampScheduleError
 import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
 import jakarta.enterprise.context.ApplicationScoped
@@ -18,10 +20,14 @@ import kotlinx.serialization.json.Json
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import org.jboss.logging.Logger
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -106,6 +112,7 @@ private const val KEY_DAYLIGHT_COLOR = "daylight_color"
 private const val KEY_EVENING_COLOR = "evening_color"
 private const val KEY_NIGHT_COLOR = "night_color"
 private const val KEY_TOGGLE_BUTTON = "toggle_button_sensor_id"
+private const val KEY_LAMP_SCHEDULES = "lamp_schedules"
 
 @ApplicationScoped
 class AutomationManager @Inject constructor(
@@ -123,8 +130,12 @@ class AutomationManager @Inject constructor(
 
     private var userState: UserState = UserState.ASLEEP
     private var wakeUpTime: Instant? = null
-    private val lampOverrides = mutableMapOf<String, LampOverride>()
+    private val lampOverrides = ConcurrentHashMap<String, LampOverride>()
     private val excludedLampIds = mutableSetOf<String>()
+    @Volatile
+    private var lampSchedules: List<LampSchedule> = emptyList()
+    private val scheduleMutex = Mutex()
+    private var scheduleJob: Job? = null
     private var pseudoSunset: LocalTime = parsePseudoSunset(config.pseudoSunset())
     private var nightTime: LocalTime = defaultNightTime(pseudoSunset)
 
@@ -140,7 +151,7 @@ class AutomationManager @Inject constructor(
     )
 
     // Pending operations for real-time sync across clients
-    private val pendingOperations = mutableMapOf<String, PendingOperation>()
+    private val pendingOperations = ConcurrentHashMap<String, PendingOperation>()
 
     // Smart-button toggle: sensor id whose state changes toggle wake/sleep
     @Volatile
@@ -156,8 +167,7 @@ class AutomationManager @Inject constructor(
     private val lampReachability = mutableMapOf<String, LampReachabilityState>()
     private val lampPowerStates = mutableMapOf<String, LampPowerState>()
 
-    @Volatile
-    private var syncVersion: Long = 0L
+    private val syncVersion = AtomicLong()
 
     private var heartbeatJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -178,15 +188,29 @@ class AutomationManager @Inject constructor(
         store.get(KEY_EVENING_COLOR)?.let { runCatching { eveningColor = json.decodeFromString(it) } }
         store.get(KEY_NIGHT_COLOR)?.let { runCatching { nightColor = json.decodeFromString(it) } }
         store.get(KEY_TOGGLE_BUTTON)?.let { toggleButtonSensorId = it.takeIf { id -> id.isNotBlank() } }
+        store.get(KEY_LAMP_SCHEDULES)?.let {
+            runCatching { lampSchedules = json.decodeFromString<List<LampSchedule>>(it) }
+                .onFailure { error -> logger.warn("Cannot load lamp schedules", error) }
+        }
         logger.info("Loaded persisted settings: userState=$userState, pseudoSunset=$pseudoSunset")
+        scheduleJob?.cancel()
+        scheduleJob = scope.launch {
+            while (isActive) {
+                delay(30.seconds)
+                try {
+                    applyLampSchedules()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.warn("Lamp schedule update failed", e)
+                }
+            }
+        }
     }
 
-    /**
-     * Re-applies the persisted automation state after startup. If the user was AWAKE when the
-     * server last shut down, automation and the heartbeat resume. Must be called after the lamp
-     * cache is initialized, since it writes lamp state.
-     */
+    /** Restores schedules after cache initialization, including when the user is asleep. */
     suspend fun resumeFromPersistedState() {
+        applyLampSchedules()
         if (userState != UserState.AWAKE) return
         logger.info("Restoring AWAKE state from persistence")
         wakeUpTime = Clock.System.now()
@@ -208,7 +232,70 @@ class AutomationManager @Inject constructor(
         return (manualOverrides + outOfSyncLamps).toList()
     }
 
-    fun getAutomatedLampIds(): Set<String> = lampStateCache.getLights().keys - excludedLampIds
+    fun getAutomatedLampIds(): Set<String> =
+        lampStateCache.getLights().keys - excludedLampIds - getScheduledLampIds()
+
+    fun getLampSchedules(): List<LampSchedule> = lampSchedules
+    fun getTimezone(): String = timeZone.id
+    fun getScheduledLampIds(): Set<String> = lampSchedules.filter { it.enabled }.map { it.lampId }.toSet()
+
+    suspend fun setLampSchedules(schedules: List<LampSchedule>, newExcludedLampIds: Set<String>? = null) {
+        require(schedules.map { it.lampId }.distinct().size == schedules.size) { "Only one schedule per lamp is allowed." }
+        schedules.forEach { schedule ->
+            val error = lampScheduleError(schedule)
+            require(error == null) { error!! }
+            require(lampStateCache.getLight(schedule.lampId) != null || lampSchedules.any { it.lampId == schedule.lampId }) {
+                "Unknown lamp: ${schedule.lampId}"
+            }
+            lampStateCache.getLight(schedule.lampId)?.let { light ->
+                require(schedule.intervals.none { it.temperatureKelvin != null } || light.state.ct != null) {
+                    "${light.name} does not support white temperature."
+                }
+                require(schedule.intervals.none { it.hue != null } || light.state.hue != null) {
+                    "${light.name} does not support RGB color."
+                }
+            }
+        }
+        val released = scheduleMutex.withLock {
+            val previousAutomatedIds = getAutomatedLampIds()
+            newExcludedLampIds?.let { setExcludedLamps(it) }
+            settingsStore.put(KEY_LAMP_SCHEDULES, json.encodeToString(schedules))
+            val changed = (lampSchedules + schedules).map { it.lampId }.toSet()
+                .filter { id -> lampSchedules.find { it.lampId == id } != schedules.find { it.lampId == id } }
+            val previousIds = getScheduledLampIds()
+            lampSchedules = schedules.toList()
+            changed.forEach { lampOverrides.remove(it) }
+            incrementSyncVersion()
+            (previousIds - getScheduledLampIds()) + (getAutomatedLampIds() - previousAutomatedIds)
+        }
+        applyLampSchedules()
+        for (id in released) clearLampOverride(id)
+    }
+
+    private suspend fun applyLampSchedules(forceLampId: String? = null) = scheduleMutex.withLock {
+        cleanExpiredOverrides()
+        val time = Clock.System.now().toLocalDateTime(timeZone)
+        val entertainment = getActiveEntertainmentLamps()
+        for (schedule in lampSchedules.filter { it.enabled }) {
+            val id = schedule.lampId
+            if (id in entertainment || lampOverrides.containsKey(id) || (id != forceLampId && id in getPendingLampIds())) continue
+            val light = lampStateCache.getLight(id) ?: continue
+            if (light.state.reachable != true) continue
+            val desired = schedule.desiredState(time, supportsBrightness = light.state.bri != null)
+            if (!light.state.matchesSchedule(desired)) {
+                addPendingOperations(listOf(id))
+                try {
+                    if (hueService.setLightState(id, desired)) incrementSyncVersion()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.warn("Schedule failed for lamp $id", e)
+                } finally {
+                    clearPendingOperations(listOf(id))
+                }
+            }
+        }
+    }
 
     fun getExcludedLampIds(): Set<String> = excludedLampIds.toSet()
 
@@ -247,7 +334,7 @@ class AutomationManager @Inject constructor(
         val outOfSync = mutableSetOf<String>()
         val entertainmentLamps = getActiveEntertainmentLamps()
 
-        for (lampId in getAutomatedLampIds()) {
+        for (lampId in getAutomatedLampIds() + getScheduledLampIds()) {
             val override = lampOverrides[lampId]
             if (override != null && override.overrideUntil >= now) continue // Active manual override
 
@@ -259,7 +346,13 @@ class AutomationManager @Inject constructor(
             // Ignore transient mismatches right after a lamp turns on (unless Hue Sync is active).
             if (isRecentlyTurnedOn(lampId, now) && lampId !in entertainmentLamps) continue
 
-            if (userState != UserState.AWAKE) {
+            val schedule = lampSchedules.find { it.enabled && it.lampId == lampId }
+            if (schedule != null) {
+                val desired = schedule.desiredState(now.toLocalDateTime(timeZone), supportsBrightness = light.state.bri != null)
+                if (lampId !in entertainmentLamps && !light.state.matchesSchedule(desired)) {
+                    outOfSync.add(lampId)
+                }
+            } else if (userState != UserState.AWAKE) {
                 if (light.state.on) {
                     outOfSync.add(lampId)
                 }
@@ -469,10 +562,10 @@ class AutomationManager @Inject constructor(
 
         stopHeartbeat()
 
-        // Clear all manual overrides - user explicitly wants lamps off
+        // Individual schedules and their overrides remain independent of sleep.
         if (lampOverrides.isNotEmpty()) {
             logger.info("Clearing ${lampOverrides.size} manual override(s)")
-            lampOverrides.clear()
+            lampOverrides.keys.removeAll(getAutomatedLampIds())
         }
 
         // Turn off all automated lamps
@@ -493,7 +586,7 @@ class AutomationManager @Inject constructor(
     }
 
     // Pending operations for cross-client synchronization
-    fun getSyncVersion(): Long = syncVersion
+    fun getSyncVersion(): Long = syncVersion.get()
 
     fun getPendingLampIds(): List<String> {
         cleanExpiredPendingOperations()
@@ -533,13 +626,17 @@ class AutomationManager @Inject constructor(
     }
 
     private fun incrementSyncVersion() {
-        syncVersion++
+        syncVersion.incrementAndGet()
     }
 
     suspend fun clearLampOverride(lampId: String) {
         lampOverrides.remove(lampId)
         incrementSyncVersion()
         logger.info("Cleared override for lamp $lampId")
+        if (lampId in getScheduledLampIds()) {
+            applyLampSchedules(forceLampId = lampId)
+            return
+        }
 
         // Immediately apply automation state to this lamp
         if (lampId in getAutomatedLampIds()) {

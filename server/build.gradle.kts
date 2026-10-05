@@ -32,4 +32,5 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
 
     testImplementation("io.quarkus:quarkus-junit5")
+    testImplementation("io.quarkus:quarkus-junit5-mockito")
 }

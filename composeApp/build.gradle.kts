@@ -109,6 +109,9 @@ kotlin.sourceSets.commonMain {
 compose.desktop.application {
     mainClass = "io.github.commandertvis.huemanager.MainKt"
     jvmArgs("--enable-native-access=ALL-UNNAMED")
+    if (System.getProperty("os.name").startsWith("Mac")) {
+        jvmArgs("-Xdock:name=Hue Manager")
+    }
 
     nativeDistributions {
         targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)

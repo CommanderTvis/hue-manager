@@ -54,6 +54,7 @@ class McpServer @Inject constructor(
             val status = when (id) {
                 in entertainmentLamps -> "hue_sync"
                 in overriddenLamps -> "manual_override"
+                in automationManager.getScheduledLampIds() -> "individual_schedule"
                 in automatedLamps -> "automation"
                 else -> "unmanaged"
             }
@@ -99,6 +100,7 @@ class McpServer @Inject constructor(
             val status = when {
                 isInEntertainment -> "Controlled by Hue Sync (entertainment mode active)"
                 isOverridden -> "Manual override active (will expire in ~1 hour)"
+                lampId in automationManager.getScheduledLampIds() -> "Under individual schedule control"
                 isAutomated -> "Under automation control"
                 else -> "Unmanaged (not part of automation)"
             }

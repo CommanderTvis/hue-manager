@@ -1,6 +1,5 @@
 package io.github.commandertvis.huemanager.ui
 
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -32,106 +31,29 @@ fun SchedulerEditorDialog(
     currentSettings: SchedulerSettings,
     onDismiss: () -> Unit,
     onSave: (SchedulerSettings) -> Unit,
+    inline: Boolean = false,
 ) {
-    var pseudoSunsetHour by remember { mutableStateOf(currentSettings.pseudoSunset.substringBefore(":")) }
-    var pseudoSunsetMinute by remember { mutableStateOf(currentSettings.pseudoSunset.substringAfter(":")) }
-    var nightTimeHour by remember { mutableStateOf(currentSettings.nightTime.substringBefore(":")) }
-    var nightTimeMinute by remember { mutableStateOf(currentSettings.nightTime.substringAfter(":")) }
+    var pseudoSunset by remember(currentSettings.pseudoSunset) { mutableStateOf(currentSettings.pseudoSunset) }
+    var nightTime by remember(currentSettings.nightTime) { mutableStateOf(currentSettings.nightTime) }
 
-    var daylightConfig by remember { mutableStateOf(currentSettings.daylightColor) }
-    var eveningConfig by remember { mutableStateOf(currentSettings.eveningColor) }
-    var nightConfig by remember { mutableStateOf(currentSettings.nightColor) }
+    var daylightConfig by remember(currentSettings.daylightColor) { mutableStateOf(currentSettings.daylightColor) }
+    var eveningConfig by remember(currentSettings.eveningColor) { mutableStateOf(currentSettings.eveningColor) }
+    var nightConfig by remember(currentSettings.nightColor) { mutableStateOf(currentSettings.nightColor) }
 
     var expandedMode by remember { mutableStateOf<String?>(null) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Schedule Editor") },
-        text = {
+    val content: @Composable () -> Unit = {
             val scrollState = rememberScrollState()
             Box(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(end = 8.dp)
-                        .verticalScroll(scrollState),
+                        .then(if (inline) Modifier else Modifier.verticalScroll(scrollState)),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                // Pseudo-sunset time
-                Text(
-                    text = "Evening time",
-                    style = MaterialTheme.typography.titleSmall
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    OutlinedTextField(
-                        value = pseudoSunsetHour,
-                        onValueChange = { v ->
-                            val filtered = v.filter { it.isDigit() }.take(2)
-                            if (filtered.isEmpty() || filtered.toIntOrNull()?.let { it in 0..23 } == true) {
-                                pseudoSunsetHour = filtered
-                            }
-                        },
-                        label = { Text("HH") },
-                        singleLine = true,
-                        modifier = Modifier.width(72.dp),
-                        textStyle = MaterialTheme.typography.bodyLarge
-                    )
-                    Text(":", style = MaterialTheme.typography.titleLarge)
-                    OutlinedTextField(
-                        value = pseudoSunsetMinute,
-                        onValueChange = { v ->
-                            val filtered = v.filter { it.isDigit() }.take(2)
-                            if (filtered.isEmpty() || filtered.toIntOrNull()?.let { it in 0..59 } == true) {
-                                pseudoSunsetMinute = filtered
-                            }
-                        },
-                        label = { Text("MM") },
-                        singleLine = true,
-                        modifier = Modifier.width(72.dp),
-                        textStyle = MaterialTheme.typography.bodyLarge
-                    )
-                }
-
-                // Night time
-                Text(
-                    text = "Night time",
-                    style = MaterialTheme.typography.titleSmall
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    OutlinedTextField(
-                        value = nightTimeHour,
-                        onValueChange = { v ->
-                            val filtered = v.filter { it.isDigit() }.take(2)
-                            if (filtered.isEmpty() || filtered.toIntOrNull()?.let { it in 0..23 } == true) {
-                                nightTimeHour = filtered
-                            }
-                        },
-                        label = { Text("HH") },
-                        singleLine = true,
-                        modifier = Modifier.width(72.dp),
-                        textStyle = MaterialTheme.typography.bodyLarge
-                    )
-                    Text(":", style = MaterialTheme.typography.titleLarge)
-                    OutlinedTextField(
-                        value = nightTimeMinute,
-                        onValueChange = { v ->
-                            val filtered = v.filter { it.isDigit() }.take(2)
-                            if (filtered.isEmpty() || filtered.toIntOrNull()?.let { it in 0..59 } == true) {
-                                nightTimeMinute = filtered
-                            }
-                        },
-                        label = { Text("MM") },
-                        singleLine = true,
-                        modifier = Modifier.width(72.dp),
-                        textStyle = MaterialTheme.typography.bodyLarge
-                    )
-                }
+                TimeField(value = pseudoSunset, onValueChange = { pseudoSunset = it }, label = "Evening time")
+                TimeField(value = nightTime, onValueChange = { nightTime = it }, label = "Night time")
 
                 HorizontalDivider()
 
@@ -165,35 +87,37 @@ fun SchedulerEditorDialog(
                     onConfigChange = { nightConfig = it }
                 )
             }
-                VerticalScrollbarCompat(
+                if (!inline) VerticalScrollbarCompat(
                     scrollState = scrollState,
                     modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight()
                 )
             }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    val hour = pseudoSunsetHour.padStart(2, '0')
-                    val minute = pseudoSunsetMinute.padStart(2, '0')
-                    val nHour = nightTimeHour.padStart(2, '0')
-                    val nMinute = nightTimeMinute.padStart(2, '0')
-                    onSave(
-                        SchedulerSettings(
-                            pseudoSunset = "$hour:$minute",
-                            nightTime = "$nHour:$nMinute",
-                            daylightColor = daylightConfig,
-                            eveningColor = eveningConfig,
-                            nightColor = nightConfig,
-                        )
-                    )
-                },
-                enabled = pseudoSunsetHour.isNotEmpty() && pseudoSunsetMinute.isNotEmpty()
-                        && nightTimeHour.isNotEmpty() && nightTimeMinute.isNotEmpty()
-            ) {
-                Text("Save")
+        }
+    val save = {
+        onSave(SchedulerSettings(pseudoSunset, nightTime, daylightConfig, eveningConfig, nightConfig))
+    }
+    val valid = io.github.commandertvis.huemanager.models.scheduleMinute(pseudoSunset) != null
+            && io.github.commandertvis.huemanager.models.scheduleMinute(nightTime) != null
+    val changed = SchedulerSettings(pseudoSunset, nightTime, daylightConfig, eveningConfig, nightConfig) != currentSettings
+    val saveButton: @Composable () -> Unit = {
+        TextButton(onClick = save, enabled = valid) { Text("Save") }
+        }
+    if (inline) {
+        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text("Day/night cycle", style = MaterialTheme.typography.titleMedium)
+            content()
+            Button(onClick = save, enabled = valid && changed, modifier = Modifier.fillMaxWidth()) {
+                Text("Save changes")
             }
-        },
+        }
+        return
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Schedule Editor") },
+        text = content,
+        confirmButton = saveButton,
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
@@ -250,13 +174,14 @@ private fun ModeColorEditor(
 }
 
 @Composable
-private fun ModeColorPickerContent(
+internal fun ModeColorPickerContent(
     config: AutomationModeColorConfig,
     onConfigChange: (AutomationModeColorConfig) -> Unit,
+    showBrightness: Boolean = true,
 ) {
     val controller = rememberColorPickerController()
     var hexCode by remember { mutableStateOf(configToHex(config)) }
-    var brightnessSlider by remember { mutableStateOf(config.brightness.toFloat()) }
+    var brightnessSlider by remember(config.brightness) { mutableStateOf(config.brightness.toFloat()) }
 
     // Initialize controller
     LaunchedEffect(Unit) {
@@ -265,8 +190,9 @@ private fun ModeColorPickerContent(
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         // Brightness slider
-        Row(
+        if (showBrightness) Row(
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(

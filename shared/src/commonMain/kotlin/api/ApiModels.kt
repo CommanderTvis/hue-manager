@@ -96,6 +96,8 @@ data class SettingsResponse(
     val eveningColor: AutomationModeColorConfig,
     val nightColor: AutomationModeColorConfig,
     val toggleButtonSensorId: String? = null,
+    val lampSchedules: List<LampSchedule> = emptyList(),
+    val timezone: String = "Europe/Berlin",
 )
 
 @Serializable
@@ -110,6 +112,7 @@ data class SettingsUpdateRequest(
     val nightColor: AutomationModeColorConfig? = null,
     // Empty string clears the configured button.
     val toggleButtonSensorId: String? = null,
+    val lampSchedules: List<LampSchedule>? = null,
 )
 
 // Sensor endpoint
