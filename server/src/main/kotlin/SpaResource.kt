@@ -31,7 +31,7 @@ class SpaResource {
     @Path("{path:.*}")
     fun spa(@PathParam("path") path: String): Response = serve(path)
 
-    private fun serve(path: String): Response {
+    internal fun serve(path: String, webDir: java.nio.file.Path = this.webDir): Response {
         if (RESERVED_PREFIXES.any { path == it || path.startsWith("$it/") }) {
             return Response.status(Response.Status.NOT_FOUND).build()
         }
@@ -53,8 +53,11 @@ class SpaResource {
             return Response.status(Response.Status.NOT_FOUND).build()
         }
 
-        val contentType = URLConnection.guessContentTypeFromName(file.fileName.toString())
-            ?: "application/octet-stream"
+        val contentType = if (file.fileName.toString().endsWith(".wasm")) {
+            "application/wasm"
+        } else {
+            URLConnection.guessContentTypeFromName(file.fileName.toString()) ?: "application/octet-stream"
+        }
         return Response.ok(file.readBytes()).type(contentType).build()
     }
 
