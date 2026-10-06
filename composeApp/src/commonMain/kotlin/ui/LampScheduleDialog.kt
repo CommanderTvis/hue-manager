@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -129,17 +131,25 @@ private fun ScheduleIntervalEditor(
                 label = "End", modifier = Modifier.weight(1f), error = endError)
         }
         errorFor(LampScheduleField.INTERVAL)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        Column {
-            listOf(listOf(1, 2, 3, 4), listOf(5, 6, 7)).forEach { row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    row.forEach { day ->
-                        FilterChip(
-                            selected = day in interval.days,
-                            onClick = { onChange(interval.copy(days = if (day in interval.days) interval.days - day else interval.days + day)) },
-                            label = { Text(listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")[day - 1]) },
-                        )
-                    }
-                }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            (1..7).forEach { day ->
+                val selected = day in interval.days
+                FilterChip(
+                    selected = selected,
+                    onClick = { onChange(interval.copy(days = if (selected) interval.days - day else interval.days + day)) },
+                    label = { Text(listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")[day - 1]) },
+                    leadingIcon = {
+                        if (selected) Icon(Icons.Default.Check, contentDescription = null,
+                            modifier = Modifier.size(FilterChipDefaults.IconSize))
+                        else Spacer(Modifier.size(FilterChipDefaults.IconSize))
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                        selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                )
             }
         }
         errorFor(LampScheduleField.DAYS)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
