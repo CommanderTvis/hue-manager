@@ -47,7 +47,8 @@ ENV BUILD_COMMIT=$BUILD_COMMIT
 # the build independent of the androidJdkImage cc limitation.
 RUN ./gradlew --no-configuration-cache \
       :composeApp:wasmJsBrowserDistribution \
-      :server:quarkusBuild -Dquarkus.native.enabled=true -Dquarkus.package.jar.enabled=false
+      :server:quarkusBuild -Dquarkus.native.enabled=true -Dquarkus.package.jar.enabled=false \
+      -Dquarkus.native.additional-build-args=-Dorg.sqlite.lib.exportPath=/app/server/build
 
 ### Runtime stage — micro glibc base without a package manager
 FROM quay.io/quarkus/ubi9-quarkus-micro-image:2.0
@@ -62,10 +63,12 @@ USER 1001:1001
 
 # Native binary + web assets (served by SpaResource from ./web relative to WORKDIR).
 COPY --from=build --chown=1001:1001 /app/server/build/*-runner ./server
+# Load SQLite from the immutable image instead of extracting it into a noexec /tmp.
+COPY --from=build /app/server/build/libsqlitejdbc.so ./libsqlitejdbc.so
 COPY --from=build --chown=1001:1001 /app/composeApp/build/dist/wasmJs/productionExecutable ./web
 
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD ["/app/healthcheck"]
 
-ENTRYPOINT ["./server", "-Dquarkus.http.host=0.0.0.0"]
+ENTRYPOINT ["./server", "-Dquarkus.http.host=0.0.0.0", "-Dorg.sqlite.lib.path=/app"]

@@ -92,7 +92,7 @@ jobs:
 
           PWHASH=$(printf 'smoke' | sha256sum | cut -d' ' -f1)
           docker run -d --name app --network huesmoke -p 8080:8080 \
-            --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true \
+            --read-only --tmpfs /tmp:noexec,nosuid,nodev --cap-drop ALL --security-opt no-new-privileges:true \
             -v huesmoke-data:/app/data \
             -e HUE_PASSWORD_HASH="$PWHASH" \
             -e HUE_JWT_SECRET=smoke-jwt-secret-at-least-32-bytes-long \

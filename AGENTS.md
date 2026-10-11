@@ -419,6 +419,8 @@ A single multi-stage **`Dockerfile`** is used for both local `docker compose up 
 - **Runtime stage** (`ubi9-quarkus-micro-image`, glibc): ships the native binary + `web/` dir,
   runs as a non-root user, healthcheck via a compiled probe (`server/container/healthcheck.c`).
   No package manager or curl; the upstream image still includes Bash and core utilities.
+  SQLite's native library is exported during compilation and loaded from `/app`, allowing
+  `/tmp` to remain `noexec` on Docker's tmpfs mount.
   (`Dockerfile.runtime` was removed.)
 
 CI (`.github/workflows/docker-publish.yml`) builds this Dockerfile via Docker **buildx** with GHA
