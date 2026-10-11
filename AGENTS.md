@@ -348,7 +348,7 @@ hue-manager/
 ├── androidApp/              # Android entry point
 ├── gradle/libs.versions.toml  # Gradle version catalog
 ├── .env.example             # Environment configuration template
-├── Dockerfile               # Multi-stage: GraalVM native build → ubi9-minimal runtime (used by compose + CI)
+├── Dockerfile               # Multi-stage: GraalVM native build → Quarkus UBI 9 Micro runtime (used by compose + CI)
 ├── docker-compose.yml       # hue-manager + hydra + hydra-migrate (+ optional Caddy)
 ├── .github/workflows/docker-publish.yml  # CI/CD pipeline (buildx native image → GHCR)
 ├── .github/workflows/release-desktop.yml # CI/CD pipeline (DMG + Homebrew Cask)
@@ -416,8 +416,10 @@ A single multi-stage **`Dockerfile`** is used for both local `docker compose up 
 - **Build stage** (`ghcr.io/graalvm/graalvm-community:21`): builds the Wasm SPA
   (`:composeApp:wasmJsBrowserDistribution`) and the native server
   (`:server:quarkusBuild -Dquarkus.native.enabled=true -Dquarkus.package.jar.enabled=false`).
-- **Runtime stage** (`ubi9-minimal`, glibc): ships the native binary + `web/` dir, runs as a
-  non-root user, healthcheck via `curl`. (`Dockerfile.runtime` was removed.)
+- **Runtime stage** (`ubi9-quarkus-micro-image`, glibc): ships the native binary + `web/` dir,
+  runs as a non-root user, healthcheck via a compiled probe (`server/container/healthcheck.c`).
+  No package manager or curl; the upstream image still includes Bash and core utilities.
+  (`Dockerfile.runtime` was removed.)
 
 CI (`.github/workflows/docker-publish.yml`) builds this Dockerfile via Docker **buildx** with GHA
 layer cache and pushes to GHCR (`ghcr.io/commandertvis/hue-manager:sha-...` + `latest`). The

@@ -92,6 +92,8 @@ jobs:
 
           PWHASH=$(printf 'smoke' | sha256sum | cut -d' ' -f1)
           docker run -d --name app --network huesmoke -p 8080:8080 \
+            --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true \
+            -v huesmoke-data:/app/data \
             -e HUE_PASSWORD_HASH="$PWHASH" \
             -e HUE_JWT_SECRET=smoke-jwt-secret-at-least-32-bytes-long \
             -e HUE_REGION=52.5,13.4 -e HUE_PSEUDO_SUNSET=21:05 -e HUE_TIMEZONE=UTC \
@@ -110,6 +112,7 @@ jobs:
             sleep 2
           done
           if [ "$code" != "200" ]; then echo "::error::app did not become healthy"; docker logs app; exit 1; fi
+          docker exec app /app/healthcheck
 
           fail=0
           check() {
@@ -151,3 +154,4 @@ jobs:
         run: |
           docker rm -f app hydra >/dev/null 2>&1 || true
           docker network rm huesmoke >/dev/null 2>&1 || true
+          docker volume rm huesmoke-data >/dev/null 2>&1 || true

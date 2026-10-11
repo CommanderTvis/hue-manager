@@ -17,6 +17,13 @@ WORKDIR /app
 # The Kotlin/Wasm build downloads a Node.js runtime whose binary needs libatomic at runtime.
 RUN microdnf install -y libatomic && microdnf clean all
 
+# Compile the fixed-purpose HTTP healthcheck; the runtime has no curl.
+COPY server/container/healthcheck.c /tmp/healthcheck.c
+RUN gcc -Os -Wall -Wextra -Werror -o /tmp/healthcheck /tmp/healthcheck.c \
+    && strip /tmp/healthcheck \
+    && mkdir -p /runtime-data \
+    && chown 1001:1001 /runtime-data
+
 # Build scripts first for layer caching (androidApp is configured but never built here —
 # it needs the Android SDK, which is absent; only :server and :composeApp tasks run).
 COPY gradlew settings.gradle.kts build.gradle.kts gradle.properties ./
@@ -42,18 +49,16 @@ RUN ./gradlew --no-configuration-cache \
       :composeApp:wasmJsBrowserDistribution \
       :server:quarkusBuild -Dquarkus.native.enabled=true -Dquarkus.package.jar.enabled=false
 
-### Runtime stage — minimal glibc base
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.7
+### Runtime stage — micro glibc base without a package manager
+FROM quay.io/quarkus/ubi9-quarkus-micro-image:2.0
 LABEL org.opencontainers.image.source=https://github.com/CommanderTvis/hue-manager
 WORKDIR /app
 
-# ubi9-minimal already ships curl-minimal (provides /usr/bin/curl for the healthcheck);
-# installing full curl conflicts with it, so don't.
-# The runtime user is a bare numeric UID — no /etc/passwd entry, no login shell, nothing to
-# escalate into. /app is only writable at /app/data (the settings-DB volume mount point), so
-# the container runs fine with a read-only root filesystem.
-RUN mkdir -p /app/data && chown -R 1001:1001 /app
-USER 1001
+# Prepare the settings-DB volume mount point without running commands in the runtime.
+# Only /app/data needs write access; Compose makes the root filesystem read-only.
+COPY --from=build --chown=1001:1001 /runtime-data/ /app/data/
+COPY --from=build --chmod=0755 /tmp/healthcheck /app/healthcheck
+USER 1001:1001
 
 # Native binary + web assets (served by SpaResource from ./web relative to WORKDIR).
 COPY --from=build --chown=1001:1001 /app/server/build/*-runner ./server
@@ -61,6 +66,6 @@ COPY --from=build --chown=1001:1001 /app/composeApp/build/dist/wasmJs/production
 
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD curl -fsS http://localhost:8080/api/status || exit 1
+    CMD ["/app/healthcheck"]
 
 ENTRYPOINT ["./server", "-Dquarkus.http.host=0.0.0.0"]
