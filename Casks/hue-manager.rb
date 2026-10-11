@@ -1,6 +1,6 @@
 cask "hue-manager" do
-  version "2026.10.11-4e07cd7"
-  sha256 "8a5ccd7b5205fe855c11304e148397366af7130d75c37db2283a45eb12726e29"
+  version "2026.10.11-dea2c19"
+  sha256 "2448f3705517d421c061197bf9fe41565fd284feec6b6dfbf137cacc84eccde2"
 
   url "https://github.com/CommanderTvis/hue-manager/releases/download/nightly/hue-manager.dmg"
   name "Hue Manager"
