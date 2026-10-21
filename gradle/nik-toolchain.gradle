@@ -30,8 +30,9 @@ abstract class NikFullResolver implements JavaToolchainResolver {
         connection.readTimeout = 30000
         def packages = connection.inputStream.withCloseable { new JsonSlurper().parse(it).result }
         def pkg = packages.find {
-            it.java_version == versions.nikVersion &&
-                it.filename.startsWith("bellsoft-liberica-vm-full-openjdk${versions.javaRuntimeVersion}+")
+            // Foojay's java_version has carried either the NIK or the JDK version; the filename has both.
+            it.filename.startsWith("bellsoft-liberica-vm-full-openjdk${versions.javaRuntimeVersion}+") &&
+                it.filename.contains("-${versions.nikVersion}-")
         }
         if (pkg == null) throw new GradleException("Foojay has no NIK Full ${versions.nikVersion} for ${os}/${arch}")
         return Optional.of(JavaToolchainDownload.fromUri(new URI(pkg.links.pkg_download_redirect)))
