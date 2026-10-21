@@ -14,6 +14,12 @@ FROM quay.io/quarkus/ubi9-quarkus-mandrel-builder-image:jdk-21 AS build
 USER root
 WORKDIR /app
 
+# The native image embeds this JDK's trust store; drop the compromised eMudhra roots from it
+# (https://emudhra.we-have-a-problem.com/) until a Mandrel release ships without them.
+COPY gradle/distrusted-ca-roots.txt gradle/DistrustCaRoots.java /tmp/ca/
+RUN java /tmp/ca/DistrustCaRoots.java /tmp/ca/distrusted-ca-roots.txt \
+      "$JAVA_HOME/lib/security/cacerts" "$JAVA_HOME/lib/security/cacerts"
+
 # The Kotlin/Wasm build downloads a Node.js runtime whose binary needs libatomic at runtime.
 RUN microdnf install -y libatomic && microdnf clean all
 

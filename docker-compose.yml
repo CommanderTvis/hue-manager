@@ -53,7 +53,16 @@ services:
   # /consent endpoints. SQLite-backed. Ports are NOT published — only Caddy and the app reach it
   # over the internal network.
   hydra-migrate:
-    image: oryd/hydra:v2.2.0
+    # v2.2.0 ships Alpine 3.18, whose CA bundle still trusts the compromised eMudhra roots
+    # (https://emudhra.we-have-a-problem.com/); pull the fixed bundle from Alpine 3.23.
+    build: &hydra-build
+      dockerfile_inline: |
+        FROM oryd/hydra:v2.2.0
+        USER root
+        RUN apk add --no-cache --upgrade --repository https://dl-cdn.alpinelinux.org/alpine/v3.23/main \
+              "ca-certificates>=20261020-r0" "ca-certificates-bundle>=20261020-r0"
+        USER ory
+    image: hue-hydra:v2.2.0
     container_name: hue-hydra-migrate
     command: migrate sql -e --yes
     # Hardening: no privilege escalation, no capabilities, immutable rootfs
@@ -69,7 +78,8 @@ services:
     restart: "no"
 
   hydra:
-    image: oryd/hydra:v2.2.0
+    build: *hydra-build
+    image: hue-hydra:v2.2.0
     container_name: hue-hydra
     command: serve all --dev   # --dev relaxes HTTPS; fine for local dev
     restart: unless-stopped

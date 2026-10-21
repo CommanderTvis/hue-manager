@@ -12,6 +12,8 @@ def modelsDir = new File(nativeRoot, 'resources')
 def compileDir = new File(nativeRoot, 'compile')
 def launcherDir = new File(nativeRoot, 'launcher')
 def bridgeDir = new File(nativeRoot, 'bridge')
+def trustStore = new File(nativeRoot, 'truststore/cacerts')
+def distrustedRoots = rootProject.file('gradle/distrusted-ca-roots.txt')
 def distDir = new File(nativeRoot, 'dist')
 def appDir = new File(distDir, 'Hue Manager.app')
 def executableDir = new File(appDir, 'Contents/MacOS')
@@ -68,7 +70,7 @@ tasks.register('compileNativeLauncher', JavaCompile) {
 
 tasks.register('nativeCompile', Exec) {
     dependsOn('compileNativeLauncher', 'nativeMetadata')
-    inputs.files(runtime, fileTree(new File(sourceRoot, 'metadata')), metadataDir, launcherDir, modelsDir)
+    inputs.files(runtime, fileTree(new File(sourceRoot, 'metadata')), metadataDir, launcherDir, modelsDir, distrustedRoots)
     inputs.properties(versions)
     outputs.dir(compileDir)
     doFirst {
@@ -80,10 +82,17 @@ tasks.register('nativeCompile', Exec) {
             throw new GradleException("Expected pinned NIK Full ${versions.nikVersion}; Gradle selected ${home}")
         }
         compileDir.mkdirs()
+        // The binary embeds the build-time trust store; drop the compromised eMudhra roots from it.
+        def distrust = providers.exec {
+            commandLine new File(home, 'bin/java'), rootProject.file('gradle/DistrustCaRoots.java'), distrustedRoots,
+                new File(home, 'lib/security/cacerts'), trustStore
+            ignoreExitValue = true
+        }
+        if (distrust.result.get().exitValue != 0) throw new GradleException(distrust.standardError.asText.get())
         // Gradle's provisioned bin/native-image may be an unexpanded symlink.
         executable = new File(home, 'lib/svm/bin/native-image')
         def configs = [new File(sourceRoot, 'metadata'), metadataDir]
-        args('--no-fallback', '-Djava.awt.headless=false', '--initialize-at-build-time=kotlin.DeprecationLevel',
+        args('--no-fallback', '-Djava.awt.headless=false', '-Djavax.net.ssl.trustStore=' + trustStore, '--initialize-at-build-time=kotlin.DeprecationLevel',
             '-H:ConfigurationFileDirectories=' + configs.join(','),
             '-cp', (runtime + files(launcherDir, modelsDir)).asPath,
             'NativeLauncher', new File(compileDir, 'hue-manager'))

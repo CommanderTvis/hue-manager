@@ -1,4 +1,5 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import org.jetbrains.compose.desktop.application.tasks.AbstractJLinkTask
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -118,6 +119,21 @@ compose.desktop.application {
             packageVersion = "1.0.0"
             modules("java.naming")
         }
+    }
+}
+
+// The bundled runtime's trust store still has the compromised eMudhra roots; drop them.
+tasks.withType<AbstractJLinkTask>().configureEach {
+    val patcher = rootProject.file("gradle/DistrustCaRoots.java")
+    val distrustedRoots = rootProject.file("gradle/distrusted-ca-roots.txt")
+    val jdk = javaHome
+    val runtimeDir = destinationDir
+    inputs.files(patcher, distrustedRoots)
+    doLast {
+        val cacerts = runtimeDir.get().file("lib/security/cacerts").asFile
+        val process = ProcessBuilder("${jdk.get()}/bin/java", "$patcher", "$distrustedRoots", "$cacerts", "$cacerts")
+            .inheritIO().start()
+        if (process.waitFor() != 0) throw GradleException("Could not distrust CA roots in $cacerts")
     }
 }
 
