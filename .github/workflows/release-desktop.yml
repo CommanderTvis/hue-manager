@@ -1,0 +1,112 @@
+name: Release Apps
+
+on:
+  push:
+    branches: [ "master" ]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      dmg-sha256: ${{ steps.sha.outputs.sha256 }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Compute version from date and commit
+        id: version
+        run: |
+          DATE_VER=$(date -u +%Y.%m.%d)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "version=$DATE_VER-$SHORT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: Decode keystore
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > /tmp/release.keystore
+
+      - name: Build NIK DMG and APK
+        run: ./gradlew :composeApp:nativeDmg :androidApp:assembleRelease --no-configuration-cache
+        env:
+          ANDROID_KEYSTORE_FILE: /tmp/release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Find and rename artifacts
+        run: |
+          cp composeApp/build/native/dmg/hue-manager.dmg hue-manager.dmg
+          APK_PATH=$(find androidApp/build/outputs/apk/release -name "*.apk" -type f | head -1)
+          cp "$APK_PATH" hue-manager-release.apk
+
+      - name: Compute DMG SHA256
+        id: sha
+        run: |
+          SHA=$(shasum -a 256 hue-manager.dmg | awk '{print $1}')
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Delete existing nightly release
+        run: gh release delete nightly --cleanup-tag --yes || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create nightly release
+        run: |
+          gh release create nightly hue-manager.dmg hue-manager-release.apk \
+            --title "Nightly" \
+            --notes "Built from $(git rev-parse --short HEAD) on $(date -u +%Y-%m-%d)" \
+            --prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Send APK to Telegram
+        run: |
+          MSG="$(git log -1 --pretty=%s)"
+          curl -s -F chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -F document=@hue-manager-release.apk \
+            -F caption="Nightly $(git rev-parse --short HEAD) — $(date -u +%Y-%m-%d): ${MSG}" \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument"
+
+  update-cask:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout brew branch
+        uses: actions/checkout@v5
+        with:
+          ref: brew
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Cask formula
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          SHA256="${{ needs.build.outputs.dmg-sha256 }}"
+          sed -i "s/version \".*\"/version \"$VERSION\"/" Casks/hue-manager.rb
+          sed -i "s/sha256 \".*\"/sha256 \"$SHA256\"/" Casks/hue-manager.rb
+
+      - name: Commit and push updated Cask
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/hue-manager.rb
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "Update Cask to ${{ needs.build.outputs.version }}"
+          git push origin brew

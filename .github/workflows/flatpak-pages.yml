@@ -1,0 +1,96 @@
+name: Flatpak (GitHub Pages)
+
+# Builds the Compose Desktop Linux app, packages it as a Flatpak, and publishes the
+# OSTree repo to GitHub Pages via the actions-based deployment (no gh-pages branch).
+#
+# Install: flatpak install --user https://commandertvis.github.io/hue-manager/hue-manager.flatpakref
+#
+# The repo is unsigned (the .flatpakref has no GPGKey, so flatpak adds the remote
+# with gpg-verify=false). Each run regenerates the OSTree repo from scratch with a
+# single fresh commit — fine for flatpak update, which pulls the ref's current commit.
+
+on:
+  push:
+    branches: [ "master" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Don't cancel an in-flight Pages deployment (per GitHub's starter workflow guidance)
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: Build Linux distributable
+        run: ./gradlew :composeApp:createDistributable
+
+      - name: Install flatpak-builder + freedesktop runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y --noninteractive flathub \
+            org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
+
+      - name: Stage app image for flatpak-builder
+        run: |
+          APP_DIR=$(find composeApp/build/compose/binaries/main/app -mindepth 1 -maxdepth 1 -type d | head -n 1)
+          echo "Staging app image: $APP_DIR"
+          cp -a "$APP_DIR" flatpak/app
+
+      - name: Build Flatpak OSTree repo
+        run: |
+          mkdir -p pages
+          flatpak-builder --user --force-clean --disable-rofiles-fuse \
+            --repo=pages/repo builddir flatpak/io.github.commandertvis.huemanager.yml
+          flatpak build-update-repo pages/repo
+
+      - name: Assemble Pages site
+        run: |
+          cp flatpak/hue-manager.flatpakref flatpak/hue-manager.flatpakrepo flatpak/index.html pages/
+          touch pages/.nojekyll
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
