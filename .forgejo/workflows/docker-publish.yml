@@ -1,5 +1,5 @@
 # Build the native server image (linux/amd64) on every push to master and publish it to this forge's registry.
-# Needs a runner with a Docker socket (label `docker`) and a REGISTRY_TOKEN repo secret (token with package write).
+# Needs a runner with a Docker socket (label `docker`) and the automatic token, or a REGISTRY_TOKEN repo secret (package write) if that is not allowed to push.
 on:
   push:
     branches: [master]
@@ -16,10 +16,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build and push
         env:
-          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           image=git.iaroslav.casa/commandertvis/hue-manager
-          echo "$REGISTRY_TOKEN" | docker login git.iaroslav.casa -u commandertvis --password-stdin
+          echo "$REGISTRY_TOKEN" | docker login git.iaroslav.casa -u "$GITHUB_ACTOR" --password-stdin
           docker build --pull --platform linux/amd64 --build-arg BUILD_COMMIT="$GITHUB_SHA" \
             -t "$image:latest" -t "$image:sha-$GITHUB_SHA" .
           docker push --all-tags "$image"
