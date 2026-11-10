@@ -71,7 +71,7 @@ fun LampCard(
     Card(
         modifier = modifier.fillMaxWidth()
     ) {
-        Row(modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxSize()) {
             // Colored left border
             Box(
                 modifier = Modifier

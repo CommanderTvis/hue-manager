@@ -306,6 +306,7 @@ fun MainScreen(
                                         val isLampPending = lamp.id in uiState.pendingLampIds
 
                                         LampCard(
+                                            modifier = Modifier.fillMaxHeight(),
                                             lamp = lamp,
                                             hasSchedule = uiState.lampSchedules.any { it.lampId == lamp.id && it.enabled },
                                             onEditSchedule = { scheduleLamp = lamp },
